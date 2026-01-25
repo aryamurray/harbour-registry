@@ -1,0 +1,52 @@
+# Template: CMake-based library
+# Use this for packages that use CMake as their build system
+
+[package]
+name = "PACKAGE_NAME"
+version = "VERSION"
+
+# Git source (recommended for most packages)
+[source.git]
+url = "https://github.com/ORG/REPO"
+rev = "FULL_40_CHAR_COMMIT_SHA"
+
+# OR tarball source (for stable releases)
+# [source.tarball]
+# url = "https://example.com/package-version.tar.gz"
+# sha256 = "64_CHAR_HEX_HASH"
+# strip_prefix = "package-version"
+
+[metadata]
+tier = 0  # 0=foundation, 1=serialization, 2=graphics, etc.
+category = "CATEGORY"
+license = "SPDX_LICENSE_ID"
+upstream_url = "https://github.com/ORG/REPO"
+min_platforms = 3
+
+[metadata.platforms]
+linux = true
+macos = true
+windows = true
+
+[metadata.harness]
+header = "package/header.h"
+test_call = "package_version()"
+lang = "c"  # or "cxx"
+
+[features]
+default = ["static"]
+
+[features.available.static]
+description = "Build static library"
+
+[features.available.shared]
+description = "Build shared library"
+
+[features.available.tests]
+description = "Build test suite"
+# Maps to: -DBUILD_TESTING=ON
+
+# Surface override (only if auto-discovery fails)
+# [surface_override.compile.public]
+# include_dirs = ["include"]
+# defines = ["SOME_DEFINE"]

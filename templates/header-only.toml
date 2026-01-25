@@ -1,0 +1,36 @@
+# Template: Header-only library
+# Use this for libraries that consist only of headers
+
+[package]
+name = "PACKAGE_NAME"
+version = "VERSION"
+
+[source.git]
+url = "https://github.com/ORG/REPO"
+rev = "FULL_40_CHAR_COMMIT_SHA"
+
+[metadata]
+tier = 0
+category = "CATEGORY"
+license = "SPDX_LICENSE_ID"
+upstream_url = "https://github.com/ORG/REPO"
+min_platforms = 3
+
+[metadata.platforms]
+linux = true
+macos = true
+windows = true
+
+[metadata.harness]
+header = "package/package.hpp"
+test_call = "/* header-only, just compile */"
+lang = "cxx"
+
+# No linkage features for header-only
+[features]
+default = []
+
+# Surface override required for header-only (no build step to discover)
+[surface_override.compile.public]
+include_dirs = ["include", "."]
+defines = []

@@ -1,0 +1,133 @@
+# Harbour Registry CI - Package Verification Matrix
+#
+# This workflow verifies all packages in the registry build correctly
+# across multiple platforms and linkage configurations.
+
+name: Verify Packages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index/**/*.toml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'index/**/*.toml'
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Specific package to verify (empty = all changed)'
+        required: false
+        type: string
+
+jobs:
+  # Detect which packages changed
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.changes.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed packages
+        id: changes
+        run: |
+          if [ -n "${{ github.event.inputs.package }}" ]; then
+            echo "packages=[\"${{ github.event.inputs.package }}\"]" >> $GITHUB_OUTPUT
+          else
+            # Find changed .toml files in index/
+            CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'index/**/*.toml' | \
+              sed 's|index/./\([^/]*\)/.*|\1|' | sort -u | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "packages=$CHANGED" >> $GITHUB_OUTPUT
+          fi
+
+  # Verify each package on the matrix
+  verify:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.packages != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.detect-changes.outputs.packages) }}
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        linkage: [static, shared]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Harbour
+        run: |
+          # TODO: Install harbour from releases or build from source
+          echo "Installing Harbour..."
+
+      - name: Verify package
+        run: |
+          harbour verify ${{ matrix.package }} --linkage ${{ matrix.linkage }}
+
+      - name: Upload artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-${{ matrix.package }}-${{ matrix.os }}-${{ matrix.linkage }}
+          path: |
+            .harbour/target/
+            *.log
+
+  # Generate packages.json for browsing
+  generate-index:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate packages.json
+        run: |
+          # Find all packages and generate index
+          python3 << 'EOF'
+          import json
+          import os
+          import tomllib
+          from pathlib import Path
+
+          packages = []
+          index_dir = Path("index")
+
+          for letter_dir in index_dir.iterdir():
+              if not letter_dir.is_dir():
+                  continue
+              for pkg_dir in letter_dir.iterdir():
+                  if not pkg_dir.is_dir():
+                      continue
+                  versions = []
+                  for toml_file in pkg_dir.glob("*.toml"):
+                      with open(toml_file, "rb") as f:
+                          data = tomllib.load(f)
+                      versions.append({
+                          "version": data["package"]["version"],
+                          "tier": data.get("metadata", {}).get("tier"),
+                          "category": data.get("metadata", {}).get("category"),
+                      })
+                  if versions:
+                      packages.append({
+                          "name": pkg_dir.name,
+                          "versions": sorted(versions, key=lambda v: v["version"], reverse=True),
+                      })
+
+          packages.sort(key=lambda p: p["name"])
+
+          with open("packages.json", "w") as f:
+              json.dump({"packages": packages}, f, indent=2)
+
+          print(f"Generated index with {len(packages)} packages")
+          EOF
+
+      - name: Commit packages.json
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add packages.json
+          git diff --staged --quiet || git commit -m "Update packages.json"
+          git push
