@@ -1,0 +1,82 @@
+[package]
+name = "libuv"
+version = "1.51.0"
+
+[source.git]
+url = "https://github.com/libuv/libuv"
+rev = "5152db2cbfeb5582e9c27c5ea1dba2cd9e10759b"
+
+[metadata]
+tier = 0
+category = "async"
+license = "MIT"
+upstream_url = "https://libuv.org/"
+min_platforms = 3
+description = "Cross-platform asynchronous I/O library (powers Node.js)"
+
+[metadata.platforms]
+linux = true
+macos = true
+windows = true
+freebsd = true
+
+[metadata.harness]
+header = "uv.h"
+test_call = "uv_version()"
+lang = "c"
+
+[features]
+default = ["static"]
+
+[features.available.static]
+description = "Build static library"
+
+[features.available.shared]
+description = "Build shared library"
+
+# Use CMake backend - libuv has complex platform-specific builds
+# CMake handles all the conditional compilation automatically
+[build]
+backend = "cmake"
+
+[build.cmake]
+# CMake options for libuv
+options = [
+    "-DLIBUV_BUILD_TESTS=OFF",
+    "-DLIBUV_BUILD_BENCH=OFF",
+]
+
+# Surface for consumers (what headers/libs to use)
+[surface_override.compile.public]
+include_dirs = ["include"]
+defines = []
+
+# Platform-specific link requirements
+[surface_override.link.public.platform.linux]
+libs = [
+    { name = "pthread", kind = "system" },
+    { name = "dl", kind = "system" },
+    { name = "rt", kind = "system" },
+]
+
+[surface_override.link.public.platform.freebsd]
+libs = [
+    { name = "pthread", kind = "system" },
+    { name = "kvm", kind = "system" },
+]
+
+[surface_override.link.public.platform.macos]
+libs = []
+frameworks = ["CoreFoundation", "CoreServices"]
+
+[surface_override.link.public.platform.windows]
+libs = [
+    { name = "ws2_32", kind = "system" },
+    { name = "psapi", kind = "system" },
+    { name = "iphlpapi", kind = "system" },
+    { name = "userenv", kind = "system" },
+    { name = "user32", kind = "system" },
+    { name = "dbghelp", kind = "system" },
+    { name = "ole32", kind = "system" },
+    { name = "shell32", kind = "system" },
+]
