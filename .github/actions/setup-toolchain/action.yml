@@ -38,7 +38,7 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y clang lld cmake
+        sudo apt-get install -y clang lld cmake build-essential libc6-dev gcc-multilib
 
         # Create wrapper scripts for FreeBSD cross-compilation
         echo "Setting up FreeBSD cross-compilation environment..."

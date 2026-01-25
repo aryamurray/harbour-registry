@@ -94,7 +94,8 @@ jobs:
             ~/.cargo/git
           key: harbour-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Install Harbour CLI
+      - name: Install Harbour CLI (Unix)
+        if: runner.os != 'Windows'
         run: |
           # Try to use cached binary first
           if command -v harbour &> /dev/null; then
@@ -106,8 +107,14 @@ jobs:
           fi
         shell: bash
 
-      - name: Verify package build
-        id: verify
+      - name: Install Harbour CLI (Windows)
+        if: runner.os == 'Windows'
+        run: cargo install --git https://github.com/aryamurray/harbour --bin harbour
+        shell: cmd
+
+      - name: Verify package build (Unix)
+        if: runner.os != 'Windows'
+        id: verify-unix
         run: |
           harbour verify ${{ matrix.package }} \
             --version ${{ matrix.version }} \
@@ -116,6 +123,15 @@ jobs:
             ${{ matrix.skip_harness && '--skip-harness' || '' }} \
             --registry-path .
         shell: bash
+        env:
+          HARBOUR_TARGET_TRIPLE: ${{ matrix.target_triple }}
+
+      - name: Verify package build (Windows)
+        if: runner.os == 'Windows'
+        id: verify-windows
+        run: |
+          harbour verify ${{ matrix.package }} --version ${{ matrix.version }} --output-format github ${{ matrix.skip_harness && '--skip-harness' || '' }} --registry-path .
+        shell: cmd
         env:
           HARBOUR_TARGET_TRIPLE: ${{ matrix.target_triple }}
 
