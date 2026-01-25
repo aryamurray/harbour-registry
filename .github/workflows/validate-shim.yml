@@ -102,8 +102,7 @@ jobs:
             harbour --version
           else
             echo "Installing Harbour from source..."
-            # Clone and build harbour (assumes it's in a sibling directory or use releases)
-            cargo install --git https://github.com/harbour-project/harbour --bin harbour
+            cargo install --git https://github.com/aryamurray/harbour --bin harbour
           fi
         shell: bash
 
