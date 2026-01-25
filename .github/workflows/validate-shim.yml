@@ -93,6 +93,11 @@ jobs:
           cache-targets: true
           shared-key: harbour-${{ runner.os }}
 
+      - name: Get Harbour latest commit
+        id: harbour-commit
+        run: echo "sha=$(git ls-remote https://github.com/aryamurray/harbour refs/heads/main | cut -f1)" >> $GITHUB_OUTPUT
+        shell: bash
+
       - name: Cache Harbour binary
         id: cache-harbour
         uses: actions/cache@v4
@@ -100,7 +105,7 @@ jobs:
           path: |
             ~/.cargo/bin/harbour
             ~/.cargo/bin/harbour.exe
-          key: harbour-bin-${{ runner.os }}-v2
+          key: harbour-bin-${{ runner.os }}-${{ steps.harbour-commit.outputs.sha }}
 
       # Install harbour BEFORE setting up cross-compile toolchain
       # to avoid cross-compile flags polluting the harbour build
