@@ -83,7 +83,7 @@ jobs:
           platform: ${{ matrix.platform }}
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Harbour build
         uses: actions/cache@v4
