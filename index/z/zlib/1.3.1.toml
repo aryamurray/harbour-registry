@@ -39,6 +39,10 @@ description = "Build shared library"
 [features.available.minizip]
 description = "Include minizip utilities"
 
+[surface_override]
+# zlib sources are in the root directory
+sources = ["*.c"]
+
 [surface_override.compile.public]
-include_dirs = ["include", "."]
+include_dirs = ["."]
 defines = ["ZLIB_CONST"]
