@@ -85,32 +85,36 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Harbour build
+      - name: Cache Rust compilation
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Cache cargo install artifacts
+          cache-targets: true
+          # Shared cache across jobs
+          shared-key: harbour-${{ runner.os }}
+
+      - name: Cache Harbour binary
+        id: cache-harbour
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/harbour
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: harbour-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+            ~/.cargo/bin/harbour.exe
+          key: harbour-bin-${{ runner.os }}-v2
 
       - name: Install Harbour CLI (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          # Try to use cached binary first
-          if command -v harbour &> /dev/null; then
-            echo "Using cached Harbour installation"
-            harbour --version
-          else
-            echo "Installing Harbour from source..."
-            cargo install --git https://github.com/aryamurray/harbour --bin harbour
-          fi
+        if: runner.os != 'Windows' && steps.cache-harbour.outputs.cache-hit != 'true'
+        run: cargo install --git https://github.com/aryamurray/harbour --bin harbour
         shell: bash
 
       - name: Install Harbour CLI (Windows)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.cache-harbour.outputs.cache-hit != 'true'
         run: cargo install --git https://github.com/aryamurray/harbour --bin harbour
         shell: cmd
+
+      - name: Verify Harbour installed
+        run: harbour --version
+        shell: bash
 
       - name: Verify package build (Unix)
         if: runner.os != 'Windows'
