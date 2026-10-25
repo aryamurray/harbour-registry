@@ -1,0 +1,5 @@
+[registry]
+name = "harbour-local"
+registry_version = 1
+layout = "letter/name/version"
+default_branch = "main"
