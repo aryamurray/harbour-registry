@@ -1,13 +1,5 @@
-# Harbour Curated Registry
-# High-quality package recipes for C/C++ libraries
-
 [registry]
-name = "harbour-curated"
+name = "from-shims"
 registry_version = 1
 layout = "letter/name/version"
 default_branch = "main"
-
-[curated]
-min_platform_count = 3
-requires_ci_pass = true
-requires_harness = true

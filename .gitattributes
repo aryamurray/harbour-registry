@@ -1,0 +1,2 @@
+# Patches are hashed by their exact bytes; never convert their line endings.
+*.patch -text

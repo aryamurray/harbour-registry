@@ -1,0 +1,11 @@
+[package]
+name = "freetype"
+version = "2.14.3"
+
+[source.git]
+url = "https://gitlab.freedesktop.org/freetype/freetype.git"
+rev = "0a0221a1347e2f1e07c395263540026e9a0aa7c7"
+
+[[patches]]
+file = "2.14.3.patch"
+sha256 = "7e8e41727451079a976238c15cbcc7b7fbd2134a1c351260c159eec7357de7e2"

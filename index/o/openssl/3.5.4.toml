@@ -1,0 +1,12 @@
+[package]
+name = "openssl"
+version = "3.5.4"
+
+[source.tarball]
+url = "https://github.com/openssl/openssl/releases/download/openssl-3.5.4/openssl-3.5.4.tar.gz"
+sha256 = "967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99"
+strip_prefix = "openssl-3.5.4"
+
+[[patches]]
+file = "3.5.4.patch"
+sha256 = "7ed327cf7eb9d21d52e3df076a46e56c1392e0eab958e458faf6d82012426e9f"

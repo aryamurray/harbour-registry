@@ -1,0 +1,12 @@
+[package]
+name = "cjson"
+version = "1.7.18"
+
+[source.tarball]
+url = "https://github.com/DaveGamble/cJSON/archive/refs/tags/v1.7.18.tar.gz"
+sha256 = "3aa806844a03442c00769b83e99970be70fbef03735ff898f4811dd03b9f5ee5"
+strip_prefix = "cJSON-1.7.18"
+
+[[patches]]
+file = "1.7.18.patch"
+sha256 = "f68b8ef5de62b8805aae87a3556ba5b44a6cb4076f20fc3385ed9c8d52add20f"

@@ -1,0 +1,12 @@
+[package]
+name = "curl"
+version = "8.22.0"
+
+[source.tarball]
+url = "https://github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.gz"
+sha256 = "d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1"
+strip_prefix = "curl-8.22.0"
+
+[[patches]]
+file = "8.22.0.patch"
+sha256 = "539275a1d23794ebf674c35671907195a46b572383e33ac6e506f06a301e5fe3"
