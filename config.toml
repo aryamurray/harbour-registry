@@ -1,5 +1,5 @@
 [registry]
-name = "harbour-local"
+name = "from-shims"
 registry_version = 1
 layout = "letter/name/version"
 default_branch = "main"
