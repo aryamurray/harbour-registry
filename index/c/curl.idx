@@ -1,0 +1,1 @@
+{"format_version":1,"name":"curl","version":"8.22.0","yanked":false,"deps":[],"checksum":"d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1","shim":"c/curl/8.22.0.toml"}

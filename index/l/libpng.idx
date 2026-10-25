@@ -1,0 +1,1 @@
+{"format_version":1,"name":"libpng","version":"1.6.50","yanked":false,"deps":[{"name":"zlib","version_req":"^1.3","optional":false,"default_features":true,"kind":"normal","registry":null}],"checksum":null,"shim":"l/libpng/1.6.50.toml"}

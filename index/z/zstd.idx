@@ -1,0 +1,1 @@
+{"format_version":1,"name":"zstd","version":"1.5.7","yanked":false,"deps":[],"checksum":"eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3","shim":"z/zstd/1.5.7.toml"}
