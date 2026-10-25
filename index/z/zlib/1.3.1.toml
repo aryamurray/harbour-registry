@@ -1,0 +1,12 @@
+[package]
+name = "zlib"
+version = "1.3.1"
+
+[source.tarball]
+url = "https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz"
+sha256 = "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
+strip_prefix = "zlib-1.3.1"
+
+[[patches]]
+file = "1.3.1.patch"
+sha256 = "438fd9bd6b6c45cbc585316ce8c942f3ba6c3b5e39e019f9087ba5c9d8662d87"
