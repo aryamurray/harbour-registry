@@ -1,13 +1,13 @@
 diff --git a/Harbour.toml b/Harbour.toml
 new file mode 100644
-index 0000000..9b10ce8
+index 0000000..ce13f75
 --- /dev/null
 +++ b/Harbour.toml
 @@ -0,0 +1,74 @@
 +[package]
 +name = "freetype"
 +version = "2.14.3"
-+license = "FTL"
++license = "FTL OR GPL-2.0-or-later"
 +
 +[dependencies]
 +zlib = "^1.3"

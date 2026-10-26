@@ -7,6 +7,9 @@ url = "https://dist.libuv.org/dist/v1.51.0/libuv-v1.51.0.tar.gz"
 sha256 = "5f0557b90b1106de71951a3c3931de5e0430d78da1d9a10287ebc7a3f78ef8eb"
 strip_prefix = "libuv-v1.51.0"
 
+[metadata]
+license = "MIT"
+
 [[patches]]
 file = "1.51.0.patch"
 sha256 = "c0917fee9681325116d9d912469e56a54af6ff8d9a3ad338cd85931cb7258a3e"

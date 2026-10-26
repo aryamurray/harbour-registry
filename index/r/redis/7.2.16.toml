@@ -1,0 +1,15 @@
+[package]
+name = "redis"
+version = "7.2.16"
+
+[source.tarball]
+url = "https://download.redis.io/releases/redis-7.2.16.tar.gz"
+sha256 = "960a8ec15e34ff40e57ff16837b26b33bd81f2da6d24497bb63de532a323a18e"
+strip_prefix = "redis-7.2.16"
+
+[metadata]
+license = "BSD-3-Clause"
+
+[[patches]]
+file = "7.2.16.patch"
+sha256 = "ef4776e726362cc58d90854b45a18a4235d5363dd04a3ae30ea434eb2c4aab2a"

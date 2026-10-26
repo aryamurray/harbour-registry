@@ -6,6 +6,10 @@ version = "2.14.3"
 url = "https://gitlab.freedesktop.org/freetype/freetype.git"
 rev = "0a0221a1347e2f1e07c395263540026e9a0aa7c7"
 
+[metadata]
+license = "FTL OR GPL-2.0-or-later"
+upstream_url = "https://gitlab.freedesktop.org/freetype/freetype.git"
+
 [[patches]]
 file = "2.14.3.patch"
-sha256 = "7e8e41727451079a976238c15cbcc7b7fbd2134a1c351260c159eec7357de7e2"
+sha256 = "1c4797fe3caa53ea5908a56c6e01947d8d29d58d64cc7da45a0c4d3d9f396bd4"

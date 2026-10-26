@@ -1,0 +1,1 @@
+{"format_version":1,"name":"redis","version":"7.2.16","yanked":false,"deps":[],"checksum":"960a8ec15e34ff40e57ff16837b26b33bd81f2da6d24497bb63de532a323a18e","license":"BSD-3-Clause","shim":"r/redis/7.2.16.toml"}

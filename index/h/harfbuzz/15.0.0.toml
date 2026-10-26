@@ -6,6 +6,10 @@ version = "15.0.0"
 url = "https://github.com/harfbuzz/harfbuzz.git"
 rev = "35f656a1a2bab548ea7f54a6dd3fba2b09680d14"
 
+[metadata]
+license = "MIT"
+upstream_url = "https://github.com/harfbuzz/harfbuzz.git"
+
 [[patches]]
 file = "15.0.0.patch"
 sha256 = "f045eeb4a7680f04577306eca79bf54fbca3702274a347071cc781786afb92c5"

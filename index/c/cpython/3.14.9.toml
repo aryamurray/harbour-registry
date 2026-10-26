@@ -1,0 +1,15 @@
+[package]
+name = "cpython"
+version = "3.14.9"
+
+[source.tarball]
+url = "https://www.python.org/ftp/python/3.14.9/Python-3.14.9.tgz"
+sha256 = "8b47e85ee67e93945e93620a051a8f44bfc1e9735ed67075d166f4a74b7a060b"
+strip_prefix = "Python-3.14.9"
+
+[metadata]
+license = "PSF-2.0"
+
+[[patches]]
+file = "3.14.9.patch"
+sha256 = "f8e997c62dada8768c0a824f76955c19038dcc9a5eff71189bc7048574734e80"

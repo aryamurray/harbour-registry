@@ -1,1 +1,1 @@
-{"format_version":1,"name":"openssl","version":"3.5.4","yanked":false,"deps":[],"checksum":"967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99","shim":"o/openssl/3.5.4.toml"}
+{"format_version":1,"name":"openssl","version":"3.5.4","yanked":false,"deps":[],"checksum":"967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99","license":"Apache-2.0","shim":"o/openssl/3.5.4.toml"}

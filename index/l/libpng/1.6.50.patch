@@ -1,13 +1,13 @@
 diff --git a/Harbour.toml b/Harbour.toml
 new file mode 100644
-index 0000000..5f61c8f
+index 0000000..476ef82
 --- /dev/null
 +++ b/Harbour.toml
 @@ -0,0 +1,20 @@
 +[package]
 +name = "libpng"
 +version = "1.6.50"
-+license = "Libpng"
++license = "libpng-2.0"
 +
 +[dependencies]
 +zlib = "^1.3"
