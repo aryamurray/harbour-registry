@@ -15,6 +15,7 @@ tag = "{version}"
 version = "20260817.0.0"
 upstream_version = "20260817.0"
 rev = "2065f4ded0558c6f89fee67c8e5228feb4eb960e"
+license_sha256 = "a4556fb36a48445d06a85345993126cec15013d8c882ebe5d0b455e53c498354"
 
 [test]
 platforms = ["linux", "macos"]
