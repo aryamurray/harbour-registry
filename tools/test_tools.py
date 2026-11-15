@@ -11,6 +11,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import re
 import tarfile
 import os
 import shutil
@@ -365,8 +366,9 @@ class OnACopy(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("published at HEAD but would change", r.stdout)
         # ... unless a human acknowledges the republish on that release.
-        self.edit("packages/zlib/package.toml", lambda s: s.replace('[[release]]\nversion = "1.3.1"\n',
-                                                                    '[[release]]\nversion = "1.3.1"\nrepublish = "test"\n'))
+        # (zlib already records a republish of its own, so drop that line first: a duplicate key is a parse error.)
+        self.edit("packages/zlib/package.toml", lambda s: re.sub(r'^republish = .*\n', '', s, flags=re.M).replace(
+            '[[release]]\nversion = "1.3.1"\n', '[[release]]\nversion = "1.3.1"\nrepublish = "test"\n'))
         self.assertEqual(self.py("render.py", "zlib").returncode, 0)
         r = self.py("render.py", "--check", "--base", "HEAD")
         self.assertEqual(r.returncode, 0, r.stdout)
