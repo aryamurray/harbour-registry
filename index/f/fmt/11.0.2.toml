@@ -1,0 +1,15 @@
+[package]
+name = "fmt"
+version = "11.0.2"
+
+[source.git]
+url = "https://github.com/fmtlib/fmt"
+rev = "0c9fce2ffefecfdce794e1859584e25877b7b592"
+
+[metadata]
+license = "MIT"
+upstream_url = "https://github.com/fmtlib/fmt"
+
+[[patches]]
+file = "11.0.2.patch"
+sha256 = "ddbc1aed124f3436c9489ee2612c7aba76d4366ffe32fd06cee497f54ca3f097"

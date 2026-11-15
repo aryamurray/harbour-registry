@@ -1,0 +1,16 @@
+# Consumer for snappy: depends on it THROUGH THE REGISTRY (tools/test.py points Harbour at this
+# checkout), never by path. "*" means "whatever the registry's newest version is".
+[package]
+name = "snappy-test"
+version = "0.1.0"
+
+[dependencies]
+snappy = "*"
+
+[targets.snappy-test]
+kind = "exe"
+lang = "c++"
+sources = ["src/main.cc"]
+
+[targets.snappy-test.deps]
+snappy = { target = "snappy" }

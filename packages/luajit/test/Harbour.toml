@@ -1,0 +1,12 @@
+# Consumer test for luajit: depends on it THROUGH THE REGISTRY (tools/test.py points Harbour at this
+# checkout), never by path. "*" means "whatever the registry's newest version is".
+[package]
+name = "luajit-test"
+version = "0.1.0"
+
+[dependencies]
+luajit = "*"
+
+[targets.luajit-test]
+kind = "exe"
+sources = ["src/main.c"]

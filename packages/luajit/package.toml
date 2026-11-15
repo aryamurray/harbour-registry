@@ -1,0 +1,31 @@
+[package]
+name = "luajit"
+description = "Just-in-time compiler and interpreter for the Lua language"
+license = "MIT"
+homepage = "https://luajit.org"
+
+[upstream]
+git = "https://github.com/LuaJIT/LuaJIT"
+# LuaJIT is a rolling release: it has no release tags at all (`git ls-remote --tags` is empty), only the
+# `v2.1` branch. The release is pinned by commit, and its version is the one LuaJIT reports itself
+# (`jit.version` = "LuaJIT 2.1.<n>"), where <n> is the committer timestamp of the commit. The watcher
+# has nothing to follow, so a new revision is a human decision (the overlay's LUAJIT_RELVER must move
+# with it).
+watch = false
+
+[[release]]
+version = "2.1.1792588164"
+rev = "a4c064539ea931274d407e1249b4bb575424a0f4"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+# 76 = the library's 70 (69 C files + the generated lj_vm.S) plus the host tools' 6 (`minilua` 1, `buildvm` 5):
+# on a native build the tools' objects sit in the package's own object directory, so they are counted.
+# Windows is 75: the 69 C files and the 6 tool files; the VM object is written by `buildvm -m peobj`, not compiled.
+objects = { default = 76, windows = 75 }
+# verify stays off. It passes on Linux x86_64 (56 of 82 headers included, linked, 34 s on top of a 6 s test: a
+# second release-profile build that also runs both generators), but nothing has run `harbour verify` of this
+# package under MSVC or macOS, and one flag covers every platform. Turn it on once CI shows it green there.
+
+[review]
+generators = true

@@ -1,0 +1,22 @@
+[package]
+name = "crc32c"
+description = "CRC32C implementation with support for CPU-specific acceleration instructions"
+license = "BSD-3-Clause"
+homepage = "https://github.com/google/crc32c"
+
+[upstream]
+git = "https://github.com/google/crc32c"
+tag = "{version}"
+# No `url`/`strip_prefix`: crc32c publishes no release asset, and GitHub's auto-generated tag archives
+# are not byte-stable. The release is pinned by the git commit its (lightweight) tag points at.
+
+[[release]]
+version = "1.1.0"
+rev = "83c31e797274a5b26e9e4a5355ba394cd0cabc10"
+
+[test]
+platforms = ["linux", "macos"]
+# Four translation units on every architecture: the dispatcher, the portable code and the two ISA
+# groups, one of which is empty (each ISA source is `#if`-guarded to an empty unit on the other arch).
+objects = 4
+verify = true
