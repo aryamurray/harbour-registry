@@ -33,10 +33,20 @@
 # `.s` per architecture into the shim -- was rejected: see
 # `docs/superpowers/specs/2026-09-12-openssl-generated-sources.md`.
 #
-# Windows: unsupported, and refused rather than left undefined. Harbour
-# rejects a target with assembly sources under MSVC (MANIFEST.md, "Assembly
-# Sources"), and openssl's perlasm would need the `nasm`/`masm` flavours and
-# an assembler Harbour does not drive. `supports` says so.
+# Windows (MSVC, x86_64): the portable no-assembly baseline below, which is what
+# `Configure VC-WIN64A no-asm` builds for these primitives. Harbour rejects a target
+# with assembly sources under MSVC (MANIFEST.md, "Assembly Sources"), and openssl's
+# perlasm would need the `nasm`/`masm` flavours and an assembler Harbour does not
+# drive, so no `when` block adds assembly there. What `VC-WIN64A` (10-main.conf,
+# `VC-common`, `VC-noCE-common`, `VC-WIN64-common`) changes for this slice: the
+# defines OPENSSL_SYS_WIN32, WIN32_LEAN_AND_MEAN, UNICODE, _UNICODE,
+# _CRT_SECURE_NO_DEPRECATE, _WINSOCK_DEPRECATED_NO_WARNINGS and (lib_defines)
+# L_ENDIAN; bn_ops SIXTY_FOUR_BIT (LLP64: `long` is 32-bit but BN_ULONG is 64-bit,
+# so `bn_conf.h` is generated from `b64`, not `b64l`); dso_scheme win32 and
+# perl_platform Windows::MSVC for `dso_conf.h`; and `no-asm`, which puts
+# OPENSSL_NO_ASM in `configuration.h`. Step 1 below writes those into configdata.pm
+# when HARBOUR_TARGET_OS is windows. The generators are still perl (Strawberry
+# Perl is on the Windows runners' PATH).
 
 [package]
 name = "openssl"
@@ -50,7 +60,7 @@ requires = "hosted"
 # without perl is told so in one sentence before any generator runs, instead of
 # a prebuild step failing with `No such file or directory`.
 build_tools = ["perl"]
-supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
 
 [targets.crypto]
 kind = "staticlib"
@@ -151,13 +161,14 @@ die "HARBOUR_PROBE_SIZEOF_LONG is not set. It is answered by the\n"
   . "and a wrong SIXTY_FOUR_BIT_LONG is a miscompiled bignum layout that\n"
   . "nothing downstream would report.\n"
   unless defined $size && $size =~ /^[0-9]+$/;
+my $win = (lc($ENV{HARBOUR_TARGET_OS} // "") eq "windows");
 my ($b64l, $b64, $b32) =
-    $size == 8 ? (1, 0, 0)
+    $win         ? (0, 1, 0)   # VC-WIN64A: bn_ops SIXTY_FOUR_BIT; `long` is 4 bytes there
+  : $size == 8 ? (1, 0, 0)
   : $size == 4 ? (0, 0, 1)
   : die "sizeof(long) = $size: openssl's bn_conf.h has no layout for that\n";
 
-open(my $fh, ">", "configdata.pm") or die "configdata.pm: $!";
-print $fh <<'PM';
+my $pm = <<'PM';
 package configdata;
 use strict; use warnings; use Exporter;
 our @ISA = qw(Exporter);
@@ -167,9 +178,9 @@ our %config = (
   version => "3.5.4", full_version => "3.5.4", major => 3, minor => 5, patch => 4,
   prerelease => "", release_date => "", shlib_version => "3", build_metadata => "",
 PM
-print $fh "  b64l => $b64l, b64 => $b64, b32 => $b32, "
-        . "processor => \"\", rc4_int => \"unsigned int\",\n";
-print $fh <<'PM';
+$pm .= "  b64l => $b64l, b64 => $b64, b32 => $b32, "
+     . "processor => \"\", rc4_int => \"unsigned int\",\n";
+$pm .= <<'PM';
   openssl_sys_defines => [], openssl_feature_defines => [],
   openssl_api_defines => ["OPENSSL_CONFIGURED_API=30500"],
   api => 30500,
@@ -180,6 +191,15 @@ our %withargs = ();
 our %unified_info = ();
 1;
 PM
+if ($win) {
+  $pm =~ s/perl_platform => "Unix"/perl_platform => "Windows::MSVC"/g;
+  $pm =~ s/dso_scheme => "dlfcn"/dso_scheme => "win32"/;
+  $pm =~ s/openssl_sys_defines => \[\]/openssl_sys_defines => ["OPENSSL_SYS_WIN32"]/;
+  $pm =~ s/openssl_feature_defines => \[\]/openssl_feature_defines => ["OPENSSL_NO_ASM"]/;
+  $pm =~ s/our %disabled = \(\);/our %disabled = (asm => "option");/;
+}
+open(my $fh, ">", "configdata.pm") or die "configdata.pm: $!";
+print $fh $pm;
 close($fh) or die "configdata.pm: $!";
 ''',
 ]
@@ -305,19 +325,10 @@ defines = ["SHA1_ASM", "SHA256_ASM", "SHA512_ASM", "OPENSSL_CPUID_OBJ"]
 # This is also why the baseline is a *portable configure*, not an
 # intersection of the harvested platforms: `aes_core.c` appears in no
 # assembly-enabled platform's source list.
-[[targets.crypto.when]]
-arch = "x86_64"
-sources = [
-  "crypto/sha/sha1-x86_64.s",
-  "crypto/sha/sha256-x86_64.s",
-  "crypto/sha/sha512-x86_64.s",
-  "crypto/aes/aes-x86_64.s",
-  "crypto/x86_64cpuid.s",
-  "crypto/cpuid.c",
-  "crypto/ctype.c",
-]
-exclude = ["crypto/aes/aes_core.c"]
-defines = ["SHA1_ASM", "SHA256_ASM", "SHA512_ASM", "AES_ASM", "OPENSSL_CPUID_OBJ"]
+# (The sources, `exclude` and defines of this assembly are in the two
+# `os` + `arch = "x86_64"` blocks below, next to the perlasm generators that
+# write them, and not in one `arch = "x86_64"` block: Windows is also x86_64,
+# and is the portable baseline, with no assembly.)
 
 # ---------------------------------------------------------------------------
 # Linux: mark the assembly as not needing an executable stack.
@@ -427,6 +438,17 @@ outputs = ["crypto/arm64cpuid.S"]
 [[targets.crypto.when]]
 os = "macos"
 arch = "x86_64"
+sources = [
+  "crypto/sha/sha1-x86_64.s",
+  "crypto/sha/sha256-x86_64.s",
+  "crypto/sha/sha512-x86_64.s",
+  "crypto/aes/aes-x86_64.s",
+  "crypto/x86_64cpuid.s",
+  "crypto/cpuid.c",
+  "crypto/ctype.c",
+]
+exclude = ["crypto/aes/aes_core.c"]
+defines = ["SHA1_ASM", "SHA256_ASM", "SHA512_ASM", "AES_ASM", "OPENSSL_CPUID_OBJ"]
 [[targets.crypto.when.prebuild]]
 program = "perl"
 args = ["crypto/sha/asm/sha1-x86_64.pl", "macosx", "crypto/sha/sha1-x86_64.s"]
@@ -451,6 +473,17 @@ outputs = ["crypto/x86_64cpuid.s"]
 [[targets.crypto.when]]
 os = "linux"
 arch = "x86_64"
+sources = [
+  "crypto/sha/sha1-x86_64.s",
+  "crypto/sha/sha256-x86_64.s",
+  "crypto/sha/sha512-x86_64.s",
+  "crypto/aes/aes-x86_64.s",
+  "crypto/x86_64cpuid.s",
+  "crypto/cpuid.c",
+  "crypto/ctype.c",
+]
+exclude = ["crypto/aes/aes_core.c"]
+defines = ["SHA1_ASM", "SHA256_ASM", "SHA512_ASM", "AES_ASM", "OPENSSL_CPUID_OBJ"]
 [[targets.crypto.when.prebuild]]
 program = "perl"
 args = ["crypto/sha/asm/sha1-x86_64.pl", "elf", "crypto/sha/sha1-x86_64.s"]
@@ -471,6 +504,16 @@ outputs = ["crypto/aes/aes-x86_64.s"]
 program = "perl"
 args = ["crypto/x86_64cpuid.pl", "elf", "crypto/x86_64cpuid.s"]
 outputs = ["crypto/x86_64cpuid.s"]
+
+# Windows: `Configure VC-WIN64A no-asm`. No sources are added (the baseline is the
+# build) and no generators run besides the two above. The defines are `VC-common`'s
+# `defines` and `lib_defines` (see the comment at the top).
+[[targets.crypto.when]]
+os = "windows"
+defines = [
+  "OPENSSL_SYS_WIN32", "WIN32_LEAN_AND_MEAN", "UNICODE", "_UNICODE",
+  "_CRT_SECURE_NO_DEPRECATE", "_WINSOCK_DEPRECATED_NO_WARNINGS", "L_ENDIAN",
+]
 
 # ---------------------------------------------------------------------------
 # There is deliberately no 32-bit `when` block.

@@ -1,9 +1,9 @@
 diff --git a/Harbour.toml b/Harbour.toml
 new file mode 100644
-index 0000000..837116a
+index 0000000..b6e1c9f
 --- /dev/null
 +++ b/Harbour.toml
-@@ -0,0 +1,428 @@
+@@ -0,0 +1,514 @@
 +# Harbour shim for curl 8.22.0, copied into the extracted upstream tree by
 +# `ci/canary/curl/run.sh`.
 +#
@@ -73,9 +73,26 @@ index 0000000..837116a
 +# one place, on the surface that carries it to consumers.
 +defines = ["CURL_STATICLIB"]
 +
-+[targets.curl.surface.link.public]
-+# curl's threaded resolver and `curl_threads.c` need pthreads.
++# curl's threaded resolver and `curl_threads.c` need pthreads. Not on Windows, where they use
++# the Win32 thread API (`curl_threads.c` selects it on `_WIN32`).
++[[targets.curl.surface.when]]
++os = "linux"
++[targets.curl.surface.when."link.public"]
 +libs = ["pthread"]
++
++[[targets.curl.surface.when]]
++os = "macos"
++[targets.curl.surface.when."link.public"]
++libs = ["pthread"]
++
++# Windows (MSVC). The libraries curl's CMakeLists.txt links on WIN32: `CURL_NETWORK_AND_TIME_LIBS`
++# ws2_32 and iphlpapi (if_nametoindex), bcrypt (BCryptGenRandom), and advapi32 and crypt32 for
++# USE_WIN32_CRYPTO (NTLM, md4/md5/sha256, CryptoAPI). Not linked: secur32 (only for
++# USE_WINDOWS_SSPI, which only the Schannel option turns on).
++[[targets.curl.surface.when]]
++os = "windows"
++[targets.curl.surface.when."link.public"]
++libs = ["ws2_32", "iphlpapi", "bcrypt", "advapi32", "crypt32"]
 +
 +# `lib/macos.c` reads the system proxy configuration through
 +# SystemConfiguration, so `Curl_macos_init` leaves `SCDynamicStoreCopyProxies`
@@ -121,31 +138,25 @@ index 0000000..837116a
 +  "USE_IPV6=1",
 +  "USE_UNIX_SOCKETS=1",
 +  "USE_RESOLV_THREADED=1",
-+  "HAVE_THREADS_POSIX=1",
-+  # `off_t` is 64-bit because `_FILE_OFFSET_BITS` says so, and curl's
-+  # `SIZEOF_OFF_T` probe below is measured *with* that define in scope.
-+  "_FILE_OFFSET_BITS=64",
++  # (`HAVE_THREADS_POSIX` and `_FILE_OFFSET_BITS` are Unix answers, in the
++  # `linux` and `macos` blocks below: curl's CMake sets them `if(NOT WIN32)`
++  # and from `CMake/win32-cache.cmake` respectively.)
 +  # The name curl puts in its user agent and in `curl_version()`. A string,
 +  # so it is a packager's choice by construction.
 +  "CURL_OS=\"harbour\"",
 +
 +  # --- Not choices: assertions. -------------------------------------------
-+  # These four are answers no probe kind can give, and they are the same on
-+  # both platforms this canary supports, so they need no `[[when]]` block.
++  # These two are answers no probe kind can give, and they are the same on
++  # every platform, so they need no `[[when]]` block. (The other two that were
++  # here, HAVE_ATOMIC and HAVE_DECL_FSEEKO, are Unix answers; so is
++  # HAVE_WRITABLE_ARGV. They are in the `linux` and `macos` blocks below.)
 +  # They are grouped and labelled rather than scattered, because the one
 +  # thing a generated config header must never do is make an assertion look
 +  # like a measurement.
 +  #
 +  # Each is a `check_c_source_compiles` in curl's cmake over a program with
 +  # no declarative shape -- the category the probe design rejects by name.
-+  "HAVE_ATOMIC=1",
-+  "HAVE_DECL_FSEEKO=1",
 +  "HAVE_GETADDRINFO_THREADSAFE=1",
-+  # And this one is a *run* probe: curl's test writes to `argv[0]` and sees
-+  # whether it took. Permanently out of scope by the design's organising
-+  # principle, and curl's own cmake hardcodes it per platform too, which is
-+  # the same admission made in a different file.
-+  "HAVE_WRITABLE_ARGV=1",
 +]
 +
 +# Header existence: 35 questions, the same list `ci/canary/curl-config/`
@@ -387,6 +398,24 @@ index 0000000..837116a
 +  "HAVE_POSIX_STRERROR_R=1",
 +  # `__builtin_available` is a clang/Darwin extension.
 +  "HAVE_BUILTIN_AVAILABLE=1",
++
++  # The answers that hold on both Unixes (and that Windows must not get; see
++  # the `windows` block below).
++  #
++  # `HAVE_ATOMIC` and `HAVE_DECL_FSEEKO` are check_c_source_compiles / a
++  # follow-on of fseeko in curl's cmake (`CMake/unix-cache.cmake` sets both).
++  # `HAVE_THREADS_POSIX` is `find_package(Threads)` under `if(NOT WIN32)`.
++  # `HAVE_WRITABLE_ARGV` is a *run* probe: curl's test writes to `argv[0]` and
++  # sees whether it took. Permanently out of scope by the design's organising
++  # principle, and curl's own cmake hardcodes it per platform too, which is
++  # the same admission made in a different file.
++  # `off_t` is 64-bit because `_FILE_OFFSET_BITS` says so, and curl's
++  # `SIZEOF_OFF_T` probe is measured *with* that define in scope.
++  "HAVE_ATOMIC=1",
++  "HAVE_DECL_FSEEKO=1",
++  "HAVE_THREADS_POSIX=1",
++  "HAVE_WRITABLE_ARGV=1",
++  "_FILE_OFFSET_BITS=64",
 +]
 +
 +[[targets.curl.when]]
@@ -431,4 +460,61 @@ index 0000000..837116a
 +  # answers that the name links -- which it does on glibc and not on Darwin
 +  # -- and says nothing about the arity.
 +  "HAVE_GETHOSTBYNAME_R_6=1",
++
++  # The Unix answers shared with macOS; see the `macos` block above.
++  "HAVE_ATOMIC=1",
++  "HAVE_DECL_FSEEKO=1",
++  "HAVE_THREADS_POSIX=1",
++  "HAVE_WRITABLE_ARGV=1",
++  "_FILE_OFFSET_BITS=64",
++]
++
++# Windows (MSVC). curl's modern Windows builds are CMake builds, which pre-fill
++# the answers that cannot be measured by a compile on a machine with no POSIX
++# headers (`CMake/win32-cache.cmake`) and then generate `curl_config.h` from
++# `lib/curl_config-cmake.h.in`, with HAVE_CONFIG_H defined, exactly as here.
++# (The hand-written `lib/config-win32.h` is not an option: it `#error`s on any
++# MSVC newer than 2013.) So the probes run and write the header on Windows too,
++# and this block asserts the 1-answers of win32-cache.cmake that a probe with no
++# Winsock header or import library in scope cannot reproduce. Its 0-answers
++# (every POSIX header and function) are what the probes measure. Not set, as in
++# CMake on Windows: HAVE_THREADS_POSIX, HAVE_ATOMIC and HAVE_STDATOMIC_H (0 on
++# MSVC), HAVE_FSEEKO, HAVE_WRITABLE_ARGV, _FILE_OFFSET_BITS (HAVE_FILE_OFFSET_BITS
++# is 0 on MSVC). Not enabled either: Schannel (CURL_USE_SCHANNEL is OFF by
++# default upstream, as is every TLS backend here), so this is the same
++# no-TLS configuration as Linux and macOS.
++[[targets.curl.when]]
++os = "windows"
++defines = [
++  "HAVE_CLOSESOCKET=1",
++  "HAVE_FCNTL_H=1",
++  "HAVE_FREEADDRINFO=1",
++  "HAVE_GETADDRINFO=1",
++  "HAVE_GETHOSTNAME=1",
++  "HAVE_GETPEERNAME=1",
++  "HAVE_GETSOCKNAME=1",
++  "HAVE_IOCTLSOCKET=1",
++  "HAVE_IOCTLSOCKET_FIONBIO=1",
++  "HAVE_IO_H=1",
++  "HAVE_LOCALE_H=1",
++  "HAVE_RECV=1",
++  "HAVE_SEND=1",
++  "HAVE_SETLOCALE=1",
++  "HAVE_SIGNAL=1",
++  "HAVE_SOCKADDR_IN6_SIN6_SCOPE_ID=1",
++  "HAVE_SOCKET=1",
++  "HAVE_STDBOOL_H=1",
++  "HAVE_BOOL_T=1",
++  "HAVE_STRUCT_SOCKADDR_STORAGE=1",
++  "HAVE_STRUCT_TIMEVAL=1",
++  "HAVE_SYS_TYPES_H=1",
++  "HAVE_SYS_UTIME_H=1",
++  "HAVE_UTIME=1",
++  # curl_config-cmake.h.in `#cmakedefine ssize_t ${ssize_t}`: MSVC has no
++  # ssize_t, and CMake picks `__int64` when it is as wide as size_t (it is, on
++  # x86_64).
++  "ssize_t=__int64",
++  # Set by CMakeLists.txt for WIN32 (`set(USE_WIN32_CRYPTO ON)`), which is what
++  # makes it link advapi32 and crypt32.
++  "USE_WIN32_CRYPTO=1",
 +]
