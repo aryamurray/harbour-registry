@@ -1,0 +1,17 @@
+[package]
+name = "harfbuzz"
+description = "OpenType text shaping engine"
+license = "MIT"
+homepage = "https://harfbuzz.github.io"
+
+[upstream]
+git = "https://github.com/harfbuzz/harfbuzz.git"
+tag = "{version}"
+
+[[release]]
+version = "15.0.0"
+rev = "35f656a1a2bab548ea7f54a6dd3fba2b09680d14"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 1

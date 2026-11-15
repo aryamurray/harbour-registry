@@ -1,0 +1,14 @@
+# Consumer test for cjson, through the registry (see ../../zlib/test/Harbour.toml).
+[package]
+name = "cjson-test"
+version = "0.1.0"
+
+[dependencies]
+cjson = "*"
+
+[targets.cjson-test]
+kind = "exe"
+sources = ["src/main.c"]
+
+[targets.cjson-test.deps]
+cjson = "cjson"

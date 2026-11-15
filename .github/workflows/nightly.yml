@@ -1,0 +1,120 @@
+name: Nightly
+
+# Every package on every platform it lists, weekly. Packages rot without any commit to
+# this repository: upstream deletes a tarball, a runner image moves its compiler, a
+# mirror goes away. PRs only test what they touch, so something has to look at the rest.
+# A failure opens (or comments on) ONE issue per package, labelled `rot`; the issue closes
+# itself when the package passes again.
+on:
+  schedule:
+    # Mondays 04:23 UTC: off the hour, when scheduled runs are most delayed.
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A manual run while the weekly one is in flight queues behind it rather than cancelling it.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      runners: ${{ steps.plan.outputs.runners }}
+      packages: ${{ steps.plan.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - id: plan
+        run: python tools/plan.py --all
+
+  harbour:
+    name: Harbour (${{ matrix.runner }})
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.runners) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-harbour
+
+  test:
+    name: ${{ matrix.package }} (${{ matrix.os }})
+    needs: [plan, harbour]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      MSYS: winsymlinks:lnk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-harbour
+      - name: Consumer test
+        env:
+          PKG: ${{ matrix.package }}
+        run: |
+          set -o pipefail
+          python tools/test.py "$PKG" 2>&1 | tee test.log
+      # What the `report` job reads. Uploaded only on failure, so "no artifact" means "passed".
+      # The tail is enough to see the error; the full log is in this run.
+      - name: Keep the failure for the issue
+        if: failure()
+        env:
+          PKG: ${{ matrix.package }}
+          PLATFORM: ${{ matrix.os }}
+        run: |
+          mkdir -p failures
+          tail -n 120 test.log > "failures/failure-$PKG-$PLATFORM.txt" 2>/dev/null || echo "no log" > "failures/failure-$PKG-$PLATFORM.txt"
+      - name: Upload the failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-${{ matrix.package }}-${{ matrix.os }}
+          path: failures/
+          retention-days: 3
+
+  # The only job that can write issues, and it checks out nothing and runs no package code.
+  report:
+    name: Report rot
+    needs: [plan, test]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: failure-*
+          path: failures
+          merge-multiple: true
+      - name: Open, update or close the rot issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGES: ${{ needs.plan.outputs.packages }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python tools/rot_issues.py --failed-dir failures --packages "$PACKAGES" --run-url "$RUN_URL"

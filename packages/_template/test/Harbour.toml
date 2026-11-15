@@ -1,0 +1,13 @@
+# The consumer test. It depends on the package THROUGH THE REGISTRY (tools/test.py points Harbour at
+# this checkout as the only registry). "*" = whatever the registry's newest version is.
+# A bot may never edit this directory: it is part of what judges the package.
+[package]
+name = "example-test"
+version = "0.1.0"
+
+[dependencies]
+example = "*"
+
+[targets.example-test]
+kind = "exe"
+sources = ["src/main.c"]

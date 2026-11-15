@@ -1,0 +1,19 @@
+[package]
+name = "libuv"
+description = "Cross-platform asynchronous I/O"
+license = "MIT"
+homepage = "https://libuv.org"
+
+[upstream]
+git = "https://github.com/libuv/libuv"
+tag = "v{version}"
+url = "https://dist.libuv.org/dist/{tag}/libuv-{tag}.tar.gz"
+strip_prefix = "libuv-{tag}"
+
+[[release]]
+version = "1.51.0"
+sha256 = "5f0557b90b1106de71951a3c3931de5e0430d78da1d9a10287ebc7a3f78ef8eb"
+
+[test]
+platforms = ["linux", "macos"]
+objects = { default = 37, linux = 35 }

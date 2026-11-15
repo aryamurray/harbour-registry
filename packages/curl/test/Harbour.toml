@@ -1,0 +1,11 @@
+# Consumer test for curl, through the registry (see ../../zlib/test/Harbour.toml).
+[package]
+name = "curl-test"
+version = "0.1.0"
+
+[dependencies]
+curl = "*"
+
+[targets.curl-test]
+kind = "exe"
+sources = ["src/**/*.c"]

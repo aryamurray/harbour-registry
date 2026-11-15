@@ -1,0 +1,12 @@
+# The same stub with cpython's `zlib` feature ON: that changes a *generated*
+# file (the built-in module table) and pulls zlib from the same registry.
+[package]
+name = "cpython-test"
+version = "0.1.0"
+
+[dependencies]
+cpython = { version = "*", features = ["zlib"] }
+
+[targets.cpython-test]
+kind = "exe"
+sources = ["src/main.c"]

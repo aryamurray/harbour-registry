@@ -1,0 +1,14 @@
+# Consumer test for zstd, through the registry (see ../../zlib/test/Harbour.toml).
+[package]
+name = "zstd-test"
+version = "0.1.0"
+
+[dependencies]
+zstd = "*"
+
+[targets.zstd-test]
+kind = "exe"
+sources = ["src/main.c"]
+
+[targets.zstd-test.deps]
+zstd = { target = "zstd" }
