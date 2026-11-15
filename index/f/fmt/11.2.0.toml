@@ -12,4 +12,4 @@ upstream_url = "https://github.com/fmtlib/fmt"
 
 [[patches]]
 file = "11.2.0.patch"
-sha256 = "099db5147e99aa056a5e2d6922c047fec3eeb67e67af035bd6313812e1015d57"
+sha256 = "c145a920fe63e0e2609c222961122772a5c6d1619a4526add63cc9d64a92a6de"

@@ -13,8 +13,9 @@ strip_prefix = "expat-{version}"
 [[release]]
 version = "2.10.0"
 sha256 = "5466a341f9c692ef7a958a6881311be597f8e1ce345984cf78414f54793dea4c"
+republish = "gains Windows (MSVC) support; Linux and macOS build unchanged"
 
 [test]
-platforms = ["linux", "macos"]
+platforms = ["linux", "macos", "windows"]
 objects = 5
 verify = true

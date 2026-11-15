@@ -258,10 +258,23 @@ static void check_escape(void)
  * transfer's descriptors non-blocking through `curlx/nonblock.c`, which
  * picks its mechanism from the config header), on the `select`/`poll`
  * answers, and on SIZEOF_CURL_OFF_T for the content-length bookkeeping. */
+static void file_url(char *url, size_t size, const char *path)
+{
+#ifdef _WIN32
+    /* `C:\dir\file` is spelled `file:///C:/dir/file` in a URL. */
+    size_t n = (size_t) snprintf(url, size, "file:///%s", path);
+    for (size_t i = 0; i < n && i < size; i++)
+        if (url[i] == '\\')
+            url[i] = '/';
+#else
+    snprintf(url, size, "file://%s", path);
+#endif
+}
+
 static void check_file_transfer(const char *path)
 {
     char url[2048];
-    snprintf(url, sizeof(url), "file://%s", path);
+    file_url(url, sizeof(url), path);
 
     struct sink got;
     memset(&got, 0, sizeof(got));
@@ -325,7 +338,7 @@ static void check_file_transfer(const char *path)
 static void check_multi_transfer(const char *path)
 {
     char url[2048];
-    snprintf(url, sizeof(url), "file://%s", path);
+    file_url(url, sizeof(url), path);
 
     struct sink got;
     memset(&got, 0, sizeof(got));
@@ -394,7 +407,11 @@ int main(void)
     }
 
     char abspath[4096];
+#ifdef _WIN32
+    if (!_fullpath(abspath, path, sizeof(abspath))) {
+#else
     if (!realpath(path, abspath)) {
+#endif
         printf("FAIL could not resolve the payload path\n");
         failures++;
         abspath[0] = '\0';

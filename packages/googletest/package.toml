@@ -13,8 +13,9 @@ strip_prefix = "googletest-{version}"
 [[release]]
 version = "1.18.0"
 sha256 = "6e3191c1455468b3fc35a417fb565c1c5071aee1b7e7f85e30cf48a98d37d8b5"
+republish = "gains Windows (MSVC) support; Linux and macOS build unchanged"
 
 [test]
-platforms = ["linux", "macos"]
+platforms = ["linux", "macos", "windows"]
 objects = 4
 verify = true

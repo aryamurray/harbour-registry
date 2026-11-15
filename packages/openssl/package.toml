@@ -13,10 +13,11 @@ strip_prefix = "openssl-{version}"
 [[release]]
 version = "3.5.4"
 sha256 = "967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99"
+republish = "gains Windows (MSVC) support as the portable no-assembly build; Linux and macOS build unchanged (the x86_64 assembly moved from one arch block into the linux and macos x86_64 blocks)"
 
 [test]
-platforms = ["linux", "macos"]
-objects = 15
+platforms = ["linux", "macos", "windows"]
+objects = { default = 15, windows = 9 }   # windows: the portable no-assembly baseline
 verify = true
 needs = ["perl"]                      # the generators are perl (perlasm, configdata.pm)
 

@@ -14,9 +14,10 @@ tag = "{version}"
 [[release]]
 version = "11.2.0"
 rev = "40626af88bd7df9a5fb80be7b25ac85b122d6c21"
+republish = "gains Windows (MSVC) support; Linux and macOS build unchanged"
 
 [test]
-platforms = ["linux", "macos"]
+platforms = ["linux", "macos", "windows"]
 objects = 2
 # verify stays off: `harbour verify` includes every header matched by `public_headers = ["include/fmt/*.h"]`
 # on its own, including `format-inl.h`, which is fmt's implementation header (it defines the compiled-mode

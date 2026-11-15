@@ -26,7 +26,13 @@ fi
 
 dep="$work/consumer/.harbour/target/debug/deps/crc32c-$REGISTRY_TEST_VERSION"
 [ -d "$dep" ] || fail "no built dependency directory $dep"
-command -v nm >/dev/null 2>&1 || fail "\`nm\` is not on PATH, so the symbol-level checks cannot run (install binutils)"
+# Windows (cl) writes COFF .obj files whose symbols are MSVC-mangled and which `nm` may not read, so there
+# the witness is the mangled name's presence in the object file (see the windows branch below).
+win=0
+[ "${REGISTRY_TEST_PLATFORM:-}" = "windows" ] && win=1
+ext=o
+[ "$win" = 1 ] && ext=obj
+[ "$win" = 1 ] || command -v nm >/dev/null 2>&1 || fail "\`nm\` is not on PATH, so the symbol-level checks cannot run (install binutils)"
 
 find_object() { find "$dep" -type d \( -name host-tools -o -name host-bin -o -name probe \) -prune -o -name "$1" -print -quit; }
 
@@ -66,23 +72,38 @@ ARM64_SYM='_ZN6crc32c11ExtendArm64EjPKhm'
 # unit. Both are asserted: the live one defines its entry point, and the dead one does not, which is what
 # catches an `arch` block that matches the wrong machine (an ISA flag leaking onto a target that runs on
 # CPUs without it).
-for o in crc32c_sse42.o crc32c_arm64.o; do
+for o in crc32c_sse42.$ext crc32c_arm64.$ext; do
   [ -n "$(find_object "$o")" ] || fail "expected object \`$o\` was not compiled"
   echo "ok   object present: $o"
 done
-case "$(uname -m)" in
-  x86_64 | amd64)
-    defines crc32c_sse42.o "$SSE42_SYM"
-    lacks crc32c_arm64.o "$ARM64_SYM"
-    references crc32c.o "$SSE42_SYM"
-    ;;
-  arm64 | aarch64)
-    defines crc32c_arm64.o "$ARM64_SYM"
-    lacks crc32c_sse42.o "$SSE42_SYM"
-    references crc32c.o "$ARM64_SYM"
-    ;;
-  *) fail "no expected accelerated object for $(uname -m)" ;;
-esac
+if [ "$win" = 1 ]; then
+  # An MSVC object keeps the (mangled) name of every function it defines or calls in its symbol table, so
+  # the name's presence is the witness: the live ISA object defines its entry point, the dead one has
+  # nothing to name, and the dispatcher calls it. x86_64 only: cl has no ARM CRC32C flag (upstream's
+  # CMakeLists.txt: "TODO: insert correct flag when VS gets ARM64 CRC32C support").
+  mentions() { grep -aq "$2" "$(find_object "$1")"; }
+  mentions crc32c_sse42.obj ExtendSse42 || fail "crc32c_sse42.obj does not define ExtendSse42: its code was compiled away behind an #if"
+  echo "ok   crc32c_sse42.obj defines ExtendSse42"
+  if mentions crc32c_arm64.obj ExtendArm64; then fail "crc32c_arm64.obj mentions ExtendArm64 on x86_64"; fi
+  echo "ok   crc32c_arm64.obj does not mention ExtendArm64"
+  mentions crc32c.obj ExtendSse42 || fail "crc32c.obj has no reference to ExtendSse42: it is not dispatching to the accelerated implementation"
+  echo "ok   crc32c.obj references ExtendSse42 (dispatches to it)"
+else
+  case "$(uname -m)" in
+    x86_64 | amd64)
+      defines crc32c_sse42.$ext "$SSE42_SYM"
+      lacks crc32c_arm64.$ext "$ARM64_SYM"
+      references crc32c.$ext "$SSE42_SYM"
+      ;;
+    arm64 | aarch64)
+      defines crc32c_arm64.$ext "$ARM64_SYM"
+      lacks crc32c_sse42.$ext "$SSE42_SYM"
+      references crc32c.$ext "$ARM64_SYM"
+      ;;
+    *) fail "no expected accelerated object for $(uname -m)" ;;
+  esac
+
+fi
 
 # `HAVE_STRONG_GETAUXVAL` is the one answer that really differs per OS, and it is a *measured* one
 # (`probes.named`). On aarch64 Linux it is what lets `CanUseArm64Linux()` ask the kernel whether the CPU
@@ -113,6 +134,6 @@ case "$(uname -s)-$(uname -m)" in
     ;;
 esac
 
-exe="$(find .harbour/target -path '*/bin/crc32c-test' -print -quit)"
+exe="$(find .harbour/target \( -path '*/bin/crc32c-test' -o -path '*/bin/crc32c-test.exe' \) -print -quit)"
 [ -x "$exe" ] || fail "the consumer executable was not built"
 "$exe"
