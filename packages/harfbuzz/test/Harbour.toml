@@ -1,13 +1,9 @@
 # Consumer test for harfbuzz, through the registry (see ../../zlib/test/Harbour.toml).
-# harfbuzz is C++ (one translation unit, `harfbuzz.cc`). The consumer is written
-# in the C subset but compiled as C++ on purpose: as plain C it does not link
-# ("undefined reference to `__gxx_personality_v0'" and to libm's floor/ceil),
-# because the published manifest does not put libstdc++/libm on its public link
-# surface and Harbour does not link a C program with the C++ driver for it. That
-# is a defect of the published harfbuzz 15.0.0 entry (fixing it changes its patch
-# and therefore the sha256 lockfiles pin), recorded rather than papered over:
-# when it is republished with `[targets.harfbuzz.public] system_libs`, switch
-# this back to a C consumer.
+# harfbuzz is C++ (one translation unit, `harfbuzz.cc`) with a C API, and this
+# consumer is a plain C program on purpose: that is how most programs use it.
+# It only links because Harbour chooses the C++ link driver when anything
+# statically linked into a program is C++; with a C driver it fails on
+# `__gxx_personality_v0`. So this test is also the registry's check on that.
 [package]
 name = "harfbuzz-test"
 version = "0.1.0"
@@ -17,5 +13,5 @@ harfbuzz = "*"
 
 [targets.harfbuzz-test]
 kind = "exe"
-lang = "c++"
-sources = ["src/main.cc"]
+lang = "c"
+sources = ["src/main.c"]

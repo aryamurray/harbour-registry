@@ -23,6 +23,13 @@ include_dirs = ["src"]
 [targets.harfbuzz.surface.compile.private]
 defines = ["HB_NO_PRAGMA_GCC_DIAGNOSTIC_ERROR"]
 
+# HarfBuzz calls libm (floor, ceil, round, fmod, hypotf). A consumer that is a
+# C program is linked with the C++ driver because this library is C++ (Harbour
+# picks the driver from what is statically linked in), but the driver supplying
+# libm is a habit of g++, not a guarantee: say so here.
+[targets.harfbuzz.surface.link.public]
+libs = ["m"]
+
 [[targets.harfbuzz.surface.when]]
 feature = "freetype"
 [targets.harfbuzz.surface.when."compile.public"]
