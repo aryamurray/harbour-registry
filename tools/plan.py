@@ -31,7 +31,7 @@ import regtools as rt
 # ones `[test] platforms` uses. Images are pinned (not `*-latest`) so a moved alias cannot
 # change what "passing" means between two runs; bump deliberately, in a reviewed change to
 # this file (CODEOWNERS).
-RUNNERS = {"linux": "ubuntu-24.04", "macos": "macos-14", "windows": "windows-2022"}
+RUNNERS = {"linux": "ubuntu-24.04", "macos": "macos-26", "windows": "windows-2022"}
 
 # Paths whose change can alter how every package is judged.
 JUDGE_PREFIXES = ("tools/", ".github/")
