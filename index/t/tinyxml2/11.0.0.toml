@@ -1,0 +1,15 @@
+[package]
+name = "tinyxml2"
+version = "11.0.0"
+
+[source.git]
+url = "https://github.com/leethomason/tinyxml2.git"
+rev = "9148bdf719e997d1f474be6bcc7943881046dba1"
+
+[metadata]
+license = "Zlib"
+upstream_url = "https://github.com/leethomason/tinyxml2.git"
+
+[[patches]]
+file = "11.0.0.patch"
+sha256 = "d6f93cad50c924fc058af5bf627e599866853164261c8a95f5b657e4fdc9c6d5"

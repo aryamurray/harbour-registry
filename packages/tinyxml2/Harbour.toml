@@ -1,0 +1,32 @@
+[package]
+name = "tinyxml2"
+version = "11.0.0"
+license = "Zlib"
+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
+
+# Everything below is read from upstream 11.0.0's CMakeLists.txt:
+#   add_library(tinyxml2 tinyxml2.cpp tinyxml2.h)           -> one translation unit, in the root;
+#   target_include_directories(tinyxml2 PUBLIC <root>)      -> the include directory is the root
+#                                                              (tinyxml2.h sits beside the sources);
+#   PUBLIC _FILE_OFFSET_BITS=64                              -> a public define (large-file fseek/ftell);
+#   PRIVATE _CRT_SECURE_NO_WARNINGS when the compiler is MSVC -> a private define, MSVC only.
+# Not carried over: the PUBLIC TINYXML2_DEBUG that CMake adds in its Debug configuration (it switches
+# on TIXMLASSERT and is not part of the library's interface), and TINYXML2_IMPORT/TINYXML2_EXPORT,
+# which only matter for a shared library (this is a static one).
+# cpp_std: upstream requires none (the line that would require C++11 is commented out in its
+# CMakeLists.txt and the code compiles as C++03); "11" is the lowest standard a Harbour manifest can
+# name, so it is the minimum here.
+[targets.tinyxml2]
+kind = "staticlib"
+lang = "c++"
+cpp_std = "11"
+sources = ["tinyxml2.cpp"]
+public_headers = ["tinyxml2.h"]
+
+[targets.tinyxml2.public]
+include_dirs = ["."]
+defines = ["_FILE_OFFSET_BITS=64"]
+
+[[targets.tinyxml2.when]]
+compiler = "msvc"
+defines = ["_CRT_SECURE_NO_WARNINGS"]

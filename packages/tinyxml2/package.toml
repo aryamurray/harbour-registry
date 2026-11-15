@@ -1,0 +1,18 @@
+[package]
+name = "tinyxml2"
+description = "Simple, small, efficient C++ XML parser (DOM-style)"
+license = "Zlib"
+homepage = "https://github.com/leethomason/tinyxml2"
+
+[upstream]
+git = "https://github.com/leethomason/tinyxml2.git"
+tag = "{version}"
+
+[[release]]
+version = "11.0.0"
+rev = "9148bdf719e997d1f474be6bcc7943881046dba1"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 1
+verify = true

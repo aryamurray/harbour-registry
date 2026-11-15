@@ -1,0 +1,29 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..4532303
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,23 @@
++[package]
++name = "pugixml"
++version = "1.16.0"
++license = "MIT"
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
++
++# One translation unit, src/pugixml.cpp (upstream's CMakeLists.txt: PUGIXML_SOURCE is exactly that
++# file). The public include directory is src/ (CMakeLists.txt: target_include_directories PUBLIC src).
++# cpp_std is the documented MINIMUM: upstream's CMakeLists.txt defaults to C++17 "if available" and
++# falls back to C++11 (CMAKE_CXX_STANDARD 11); only the optional PUGIXML_CHARCONV_FLOAT needs 17,
++# and it is off. pugixml defines nothing else for a default build (the PUGIXML_WCHAR_MODE,
++# PUGIXML_COMPACT, PUGIXML_NO_* options are off by default and would have to be public to
++# agree between library and consumer, so none is set). The library is written to cope with MSVC
++# itself (pragmas for warnings; no _CRT_SECURE_NO_WARNINGS or NOMINMAX is set by upstream).
++[targets.pugixml]
++kind = "staticlib"
++lang = "c++"
++cpp_std = "11"
++sources = ["src/pugixml.cpp"]
++public_headers = ["src/pugixml.hpp", "src/pugiconfig.hpp"]
++
++[targets.pugixml.public]
++include_dirs = ["src"]

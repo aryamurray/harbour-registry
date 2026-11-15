@@ -201,6 +201,17 @@ def read_toml(path: Path) -> dict:
         raise RegistryError(f"{rel(path)}: not valid UTF-8") from None
 
 
+def is_header_only(manifest: dict) -> bool:
+    """True when every target of a parsed Harbour.toml is `kind = "header-only"`.
+
+    Such a package compiles nothing: Harbour makes no `deps/<name>-<version>/` directory for it and its
+    consumers get include directories only. Its `[test] objects` is therefore 0 (and 0 is only valid
+    for it)."""
+    targets = manifest.get("targets")
+    return (isinstance(targets, dict) and bool(targets)
+            and all(isinstance(t, dict) and t.get("kind") == "header-only" for t in targets.values()))
+
+
 def rel(path: Path) -> str:
     try:
         return path.resolve().relative_to(ROOT).as_posix()

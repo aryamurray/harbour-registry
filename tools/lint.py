@@ -334,13 +334,24 @@ class Linter:
         if len(set(plats)) != len(plats):
             self.err(name, "[test] platforms lists a platform twice", ptoml)
         objects = test.get("objects")
+        try:
+            header_only = rt.is_header_only(rt.read_toml(pkg.dir / "Harbour.toml"))
+        except (RegistryError, OSError):
+            header_only = False  # lint_manifest reports an unreadable Harbour.toml
         valid_keys = {"default"} | set(rt.PLATFORMS) | {f"{o}-{a}" for o in rt.PLATFORMS for a in ("x86_64", "aarch64")}
         if isinstance(objects, bool) or objects is None:
             self.err(name, "[test] objects is required: an integer, or a table of integers keyed by "
                            "default / <os> / <os>-<arch>", ptoml)
+        elif header_only:
+            # A header-only package compiles nothing, so the count is exactly 0, and nothing else may be
+            # recorded for it (a stale non-zero count would mean a target that is not header-only).
+            if objects != 0 or isinstance(objects, bool):
+                self.err(name, "every target in Harbour.toml is `header-only`, which compiles nothing: "
+                               "[test] objects must be 0", ptoml)
         elif isinstance(objects, int):
             if objects < 1:
-                self.err(name, "[test] objects must be at least 1", ptoml)
+                self.err(name, "[test] objects must be at least 1 (0 is only for a package whose targets are all "
+                               "`kind = \"header-only\"`)", ptoml)
         elif isinstance(objects, dict):
             for k, v in objects.items():
                 if k not in valid_keys or isinstance(v, bool) or not isinstance(v, int) or v < 1:

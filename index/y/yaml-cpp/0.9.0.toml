@@ -1,0 +1,15 @@
+[package]
+name = "yaml-cpp"
+version = "0.9.0"
+
+[source.git]
+url = "https://github.com/jbeder/yaml-cpp.git"
+rev = "56e3bb550c91fd7005566f19c079cb7a503223cf"
+
+[metadata]
+license = "MIT"
+upstream_url = "https://github.com/jbeder/yaml-cpp.git"
+
+[[patches]]
+file = "0.9.0.patch"
+sha256 = "5d62f38f5bf97b7faeefdb3e65b4844b0930aca1f311368b7d5a29daaad85d0e"

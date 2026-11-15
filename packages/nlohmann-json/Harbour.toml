@@ -1,0 +1,28 @@
+[package]
+name = "nlohmann-json"
+version = "3.12.0"
+license = "MIT"
+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
+
+# A header-only target: nothing is compiled or linked, and a consumer gets the include directory
+# (and the C++ standard below as a minimum) and nothing else.
+#
+# Which headers: the multi-header `include/` tree, not `single_include/nlohmann/json.hpp`. That is what
+# upstream's own CMake install uses by default (CMakeLists.txt: option JSON_MultipleHeaders ... ON, so
+# NLOHMANN_JSON_INCLUDE_BUILD_DIR is `include/`, and `install(DIRECTORY include/nlohmann ...)`);
+# `single_include/` is the opt-in alternative. `#include <nlohmann/json.hpp>` and
+# `<nlohmann/json_fwd.hpp>` both work with either; the tree keeps the forward declaration header.
+#
+# cpp_std = "11" is `target_compile_features(... INTERFACE cxx_std_11)` in upstream's CMakeLists.txt:
+# the documented minimum. Upstream's other interface defines (JSON_USE_GLOBAL_UDLS=0,
+# JSON_USE_IMPLICIT_CONVERSIONS=0, JSON_DIAGNOSTICS=1, ...) are all opt-in cache options that are OFF
+# or default to the library's own defaults, so none is set. The library needs no system library and
+# no define on MSVC that CMake sets (it is not claimed for Windows here anyway: see package.toml).
+[targets.json]
+kind = "header-only"
+lang = "c++"
+cpp_std = "11"
+public_headers = ["include/nlohmann/**/*.hpp"]
+
+[targets.json.public]
+include_dirs = ["include"]

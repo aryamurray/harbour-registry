@@ -1,0 +1,20 @@
+[package]
+name = "googletest"
+description = "Google's C++ testing (gtest) and mocking (gmock) framework"
+license = "BSD-3-Clause"
+homepage = "https://google.github.io/googletest"
+
+[upstream]
+git = "https://github.com/google/googletest.git"
+tag = "v{version}"
+url = "https://github.com/google/googletest/releases/download/{tag}/googletest-{version}.tar.gz"
+strip_prefix = "googletest-{version}"
+
+[[release]]
+version = "1.18.0"
+sha256 = "6e3191c1455468b3fc35a417fb565c1c5071aee1b7e7f85e30cf48a98d37d8b5"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 4
+verify = true

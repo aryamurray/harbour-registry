@@ -23,7 +23,9 @@ For each package the runner:
   5. counts the translation units compiled for the *dependency* (objects under
      `.harbour/target/<profile>/deps/<name>-<version>/`, excluding probes and host tools)
      and requires exactly `[test] objects` for this platform. A source list that silently
-     shrinks still links and still passes; this is what notices;
+     shrinks still links and still passes; this is what notices. A header-only package has
+     `objects = 0`: it has no such directory, so what is checked instead is that the consumer's
+     Harbour.lock pins it from the registry and that no object was built for it;
   6. if the package sets `[test] verify = true`, runs `harbour verify <pkg> --registry-path
      <snapshot> --format json` as an independent second signal (every public header that can
      compile on its own does, and a harness links against the library and runs) and requires
@@ -122,6 +124,39 @@ def find_dep_dirs(work: Path, name: str, version: str) -> list[Path]:
 
 class Failure(Exception):
     pass
+
+
+def dependency_objects(work: Path, name: str, version: str, want: int, log: list[str]) -> int:
+    """Translation units compiled for the dependency, found under `work`.
+
+    A library that compiles something leaves `deps/<name>-<version>/` behind and the objects under it
+    are counted (exactly one such directory must exist). A header-only package (`want == 0`) leaves no
+    directory at all: Harbour compiles and links nothing for it, and the consumer's compile line just
+    gets its include directory. The evidence that the package was nevertheless built through the
+    registry is then the consumer's `Harbour.lock`, which must pin `name version` from a `registry+`
+    source; and if a `deps/` directory does exist, it must hold no object."""
+    dirs = find_dep_dirs(work, name, version)
+    if want > 0:
+        if len(dirs) != 1:
+            raise Failure(f"expected exactly one built dependency directory `deps/{name}-{version}` "
+                          f"under {work}, found {len(dirs)} ({[str(d) for d in dirs]}). The consumer must "
+                          "build the newest release of the package through the registry.")
+        return count_objects(dirs[0])
+    got = sum(count_objects(d) for d in dirs)
+    pinned = False
+    for lock in work.glob("**/Harbour.lock"):
+        try:
+            packages = rt.read_toml(lock).get("package", [])
+        except RegistryError:
+            continue
+        pinned = pinned or any(p.get("name") == name and p.get("version") == version
+                               and str(p.get("source", "")).startswith("registry+") for p in packages)
+    log.append(f"== header-only: {'Harbour.lock pins' if pinned else 'NO lock entry for'} {name} {version} "
+               f"from the registry; {len(dirs)} deps directory(ies)")
+    if not pinned:
+        raise Failure(f"[test] objects = 0 (header-only), but no Harbour.lock under {work} resolves "
+                      f"`{name} {version}` from the registry: the consumer must depend on it through the registry.")
+    return got
 
 
 class Runner:
@@ -250,13 +285,8 @@ class Runner:
                 raise Failure("the last line of the test's output must be `OK` (or start with `OK `); it was: "
                               + (repr(lines[-1]) if lines else "nothing"))
 
-            dirs = find_dep_dirs(work, pkg.name, newest.version)
-            if len(dirs) != 1:
-                raise Failure(f"expected exactly one built dependency directory `deps/{pkg.name}-{newest.version}` "
-                              f"under {work}, found {len(dirs)} ({[str(d) for d in dirs]}). The consumer must "
-                              "build the newest release of the package through the registry.")
-            got = count_objects(dirs[0])
-            log.append(f"== compiled {got} translation unit(s) in {dirs[0]} (expected {want_objects})")
+            got = dependency_objects(work, pkg.name, newest.version, want_objects, log)
+            log.append(f"== compiled {got} translation unit(s) for {pkg.name} (expected {want_objects})")
             if got != want_objects:
                 raise Failure(
                     f"compiled {got} translation units, expected {want_objects} ([test] objects for "

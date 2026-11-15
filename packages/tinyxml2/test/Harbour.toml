@@ -1,0 +1,17 @@
+# Consumer test for tinyxml2, through the registry (see ../../zlib/test/Harbour.toml).
+# The consumer asks for C++14 while tinyxml2 declares an 11 minimum, so the graph (tinyxml2 too)
+# is compiled at 14.
+[package]
+name = "tinyxml2-test"
+version = "0.1.0"
+
+[build]
+cpp_std = "14"
+
+[dependencies]
+tinyxml2 = "*"
+
+[targets.tinyxml2-test]
+kind = "exe"
+lang = "c++"
+sources = ["src/main.cpp"]
