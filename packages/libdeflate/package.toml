@@ -1,0 +1,21 @@
+[package]
+name = "libdeflate"
+description = "Fast whole-buffer DEFLATE, zlib and gzip compression and decompression"
+license = "MIT"
+homepage = "https://github.com/ebiggers/libdeflate"
+
+[upstream]
+git = "https://github.com/ebiggers/libdeflate"
+tag = "v{version}"
+url = "https://github.com/ebiggers/libdeflate/releases/download/{tag}/libdeflate-{version}.tar.gz"
+strip_prefix = "libdeflate-{version}"
+
+[[release]]
+version = "1.26.0"
+upstream_version = "1.26"
+sha256 = "125856d4656e0feab660f94842f835923410c9281fedbcee64598c918da42b5a"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 11
+verify = true

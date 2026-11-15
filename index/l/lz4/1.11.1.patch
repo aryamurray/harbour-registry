@@ -1,0 +1,49 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..271367f
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,43 @@
++# lz4 1.11.1, built from lib/ only: the programs/, tests/ and examples/ trees are GPL-2.0-or-later
++# and are not part of the library (lib/LICENSE is BSD-2-Clause, and lib/ is all this builds).
++#
++# Source list: upstream's CMake build (build/cmake/CMakeLists.txt) globs lib/*.c, and so does the
++# Makefile (lib/Makefile: SRCFILES := $(sort $(wildcard *.c))). lib/ holds exactly these five:
++# the block codec, the high-compression codec, the frame format, the FILE* helpers on top of the
++# frame API, and a private copy of xxHash (the frame format's content checksum).
++[package]
++name = "lz4"
++version = "1.11.1"
++description = "Extremely fast lossless compression: LZ4 blocks, high-compression mode and the frame format"
++license = "BSD-2-Clause"
++homepage = "https://lz4.org"
++requires = "hosted"
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
++
++[targets.lz4]
++kind = "staticlib"
++lang = "c"
++sources = [
++  "lib/lz4.c",
++  "lib/lz4file.c",
++  "lib/lz4frame.c",
++  "lib/lz4hc.c",
++  "lib/xxhash.c",
++]
++public_headers = ["lib/lz4.h", "lib/lz4hc.h", "lib/lz4frame.h", "lib/lz4file.h"]
++
++# Consumers write `#include <lz4.h>`; the headers sit in lib/.
++[targets.lz4.public]
++include_dirs = ["lib"]
++
++# lib/Makefile: `MCM_CPPFLAGS += -DXXH_NAMESPACE=LZ4_`. lib/xxhash.c is a private copy of xxHash; the
++# namespace prefixes its symbols (LZ4_XXH32, ...) so that it cannot collide with the registry's
++# `xxhash` package, or another xxHash, in the same link. The CMake build does not set it (it builds
++# a shared library, where the copy's symbols are hidden), so for a static archive this is the
++# Makefile's, and the safer, choice. Private: only the translation units that include xxhash.h.
++#
++# LZ4F_MULTITHREAD is deliberately NOT defined: lib/Makefile's static library is built without it
++# ("programs linking liblz4.a don't need -pthread"; CMake: LZ4_STATIC_MULTITHREAD OFF), and
++# lz4frame.c then serves nbWorkers requests serially, with identical output.
++[targets.lz4.private]
++defines = ["XXH_NAMESPACE=LZ4_"]

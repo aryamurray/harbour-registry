@@ -1,0 +1,54 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..ab41758
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,48 @@
++# libdeflate 1.26 (the library only; programs/ is the libdeflate-gzip CLI and test programs).
++#
++# Source list: upstream's CMakeLists.txt builds LIB_SOURCES, and every .c file in it is compiled on
++# EVERY platform: lib/arm/cpu_features.c and lib/x86/cpu_features.c are both listed
++# unconditionally. Each is wrapped in its own `#ifdef ARM_CPU_FEATURES_KNOWN` /
++# `#ifdef X86_CPU_FEATURES_KNOWN`, so the one for the other architecture compiles to an empty
++# object. The remaining x86/ and arm/ files are headers (*_impl.h), included by the generic .c
++# files under the same guards, and the per-feature code uses function-level target attributes, so
++# no per-architecture compiler flag is needed. That is why there are no `when` blocks here: the
++# eleven files below are what CMake compiles on x86_64, aarch64 and everything else, and the
++# object count is 11 everywhere.
++#
++# Defines: none. CMake's LIB_COMPILE_DEFINITIONS is empty; FREESTANDING is an off-by-default
++# option and LIBDEFLATE_DLL is for the shared library. (CMake also probes whether an old binutils
++# can assemble AVX512-VNNI/VPCLMULQDQ/AVX-VNNI/dotprod/SHA3 and defines
++# LIBDEFLATE_ASSEMBLER_DOES_NOT_SUPPORT_* if not; that only matters for a gcc paired with a
++# binutils far older than itself and is not reproduced.)
++[package]
++name = "libdeflate"
++version = "1.26.0"
++description = "Fast whole-buffer DEFLATE, zlib and gzip compression and decompression"
++license = "MIT"
++homepage = "https://github.com/ebiggers/libdeflate"
++requires = "hosted"
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
++
++[targets.deflate]
++kind = "staticlib"
++lang = "c"
++sources = [
++  "lib/adler32.c",
++  "lib/arm/cpu_features.c",
++  "lib/crc32.c",
++  "lib/deflate_compress.c",
++  "lib/deflate_decompress.c",
++  "lib/gzip_compress.c",
++  "lib/gzip_decompress.c",
++  "lib/utils.c",
++  "lib/x86/cpu_features.c",
++  "lib/zlib_compress.c",
++  "lib/zlib_decompress.c",
++]
++public_headers = ["libdeflate.h"]
++
++# `#include <libdeflate.h>`; it sits at the package root, next to common_defs.h that the library
++# itself includes (CMake: target_include_directories(... PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})).
++[targets.deflate.public]
++include_dirs = ["."]

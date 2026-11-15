@@ -1,0 +1,15 @@
+[package]
+name = "xxhash"
+version = "0.8.4"
+
+[source.git]
+url = "https://github.com/Cyan4973/xxHash"
+rev = "c87183a77d67f7d37e3d2d1b7eaac5e7c695e4f0"
+
+[metadata]
+license = "BSD-2-Clause"
+upstream_url = "https://github.com/Cyan4973/xxHash"
+
+[[patches]]
+file = "0.8.4.patch"
+sha256 = "998c5890e055fb243c7a20ea5b0e1c6fe446a8bc9e8d250b4f732607a434e040"

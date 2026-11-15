@@ -1,0 +1,11 @@
+# Consumer test for libdeflate, through the registry (see ../../zlib/test/Harbour.toml).
+[package]
+name = "libdeflate-test"
+version = "0.1.0"
+
+[dependencies]
+libdeflate = "*"
+
+[targets.libdeflate-test]
+kind = "exe"
+sources = ["src/main.c"]

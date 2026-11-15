@@ -1,0 +1,78 @@
+# Brotli 1.2.1, as upstream ships it: three libraries (libbrotlicommon, libbrotlidec,
+# libbrotlienc), here three targets. The decoder and the encoder each need the common library
+# (dictionary, transforms, shared-dictionary support), which is declared as a `local = true` edge
+# so that a dependent selecting either one links it too.
+#
+# Source lists: upstream's CMakeLists.txt does
+#   file(GLOB_RECURSE BROTLI_COMMON_SOURCES c/common/*.c)  (likewise c/dec/*.c and c/enc/*.c)
+# and builds nothing else (c/tools/brotli.c is the CLI, c/fuzz/ the fuzzers). The globs below are
+# the same directories; none of them has a subdirectory. enc/static_init_lazy.cc is a C++ file for
+# BROTLI_STATIC_INIT=LAZY, which is not the default and is not built.
+#
+# `default_target` is the decoder: it is what most consumers (fonts, HTTP content-encoding) need,
+# and a dependent that wants the encoder too writes `targets = ["brotlienc", "brotlidec"]`.
+[package]
+name = "brotli"
+version = "1.2.1"
+description = "Brotli compression: the common, decoder and encoder libraries as three targets"
+license = "MIT"
+homepage = "https://github.com/google/brotli"
+requires = "hosted"
+default_target = "brotlidec"
+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
+
+# ---- libbrotlicommon: constants, dictionary, transforms, shared dictionaries -----------------
+[targets.brotlicommon]
+kind = "staticlib"
+lang = "c"
+sources = ["c/common/*.c"]
+public_headers = ["c/include/brotli/types.h", "c/include/brotli/port.h", "c/include/brotli/shared_dictionary.h"]
+
+# `#include <brotli/decode.h>`: the public headers sit in c/include/brotli/.
+[targets.brotlicommon.public]
+include_dirs = ["c/include"]
+
+# ---- libbrotlidec: the decoder ---------------------------------------------------------------
+[targets.brotlidec]
+kind = "staticlib"
+lang = "c"
+sources = ["c/dec/*.c"]
+public_headers = ["c/include/brotli/decode.h"]
+
+[targets.brotlidec.public]
+include_dirs = ["c/include"]
+
+[targets.brotlidec.deps]
+brotlicommon = { local = true }
+
+# ---- libbrotlienc: the encoder ---------------------------------------------------------------
+[targets.brotlienc]
+kind = "staticlib"
+lang = "c"
+sources = ["c/enc/*.c"]
+public_headers = ["c/include/brotli/encode.h"]
+
+# The encoder calls log2() (c/enc/fast_log.h includes <math.h>). CMakeLists.txt links libm into
+# every library (`target_link_libraries(${lib} ${LIBM_LIBRARY})`); a static archive does not
+# record that, so it is public on the one target that needs it. A bare `m` is right on every OS:
+# Harbour drops the Unix-only libraries under MSVC, where the CRT carries the math.
+[targets.brotlienc.public]
+include_dirs = ["c/include"]
+system_libs = ["m"]
+
+[targets.brotlienc.deps]
+brotlicommon = { local = true }
+
+# CMakeLists.txt, `if (MSVC) add_definitions(-D_CRT_SECURE_NO_WARNINGS)`, applied to everything.
+# (BROTLI_SHARED_COMPILATION, which CMake adds for shared libraries only, is not wanted here.)
+[[targets.brotlicommon.when]]
+compiler = "msvc"
+defines = ["_CRT_SECURE_NO_WARNINGS"]
+
+[[targets.brotlidec.when]]
+compiler = "msvc"
+defines = ["_CRT_SECURE_NO_WARNINGS"]
+
+[[targets.brotlienc.when]]
+compiler = "msvc"
+defines = ["_CRT_SECURE_NO_WARNINGS"]

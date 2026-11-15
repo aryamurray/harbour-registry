@@ -1,0 +1,43 @@
+# bzip2 1.0.8 (libbz2 only; bzip2.c and bzip2recover.c are the programs, and mk251.c, spewG.c,
+# unzcrash.c and dlltest.c are developer utilities).
+#
+# Source list: the `OBJS` of the Makefile's libbz2.a (and of makefile.msc, the MSVC build):
+#   blocksort huffman crctable randtable compress decompress bzlib
+#
+# Defines: `-D_FILE_OFFSET_BITS=64` is the Makefile's `BIGFILES` (and makefile.msc's CFLAGS); it
+# makes the library's stdio use 64-bit offsets on 32-bit Unix. makefile.msc also passes -DWIN32,
+# which no library source tests (they test the compiler's own _WIN32), so it is not carried over.
+#
+# Pinned to the commit of tag bzip2-1.0.8 ("Prepare for 1.0.8 release", 2019-07-13), which is
+# identical on the official git (sourceware.org/git/bzip2.git), its gitlab.com/bzip2/bzip2 mirror
+# and github.com/libarchive/bzip2; the gitlab host is the one used here because it is the one
+# reachable from a plain https clone everywhere.
+[package]
+name = "bzip2"
+version = "1.0.8"
+description = "High-quality block-sorting file compressor: the libbz2 library"
+license = "bzip2-1.0.6"
+homepage = "https://sourceware.org/bzip2/"
+requires = "hosted"
+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
+
+[targets.bz2]
+kind = "staticlib"
+lang = "c"
+sources = [
+  "blocksort.c",
+  "bzlib.c",
+  "compress.c",
+  "crctable.c",
+  "decompress.c",
+  "huffman.c",
+  "randtable.c",
+]
+public_headers = ["bzlib.h"]
+
+# Consumers write `#include <bzlib.h>`; it sits at the package root.
+[targets.bz2.public]
+include_dirs = ["."]
+
+[targets.bz2.private]
+defines = ["_FILE_OFFSET_BITS=64"]

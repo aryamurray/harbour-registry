@@ -1,0 +1,18 @@
+[package]
+name = "bzip2"
+description = "High-quality block-sorting file compressor: the libbz2 library"
+license = "bzip2-1.0.6"
+homepage = "https://sourceware.org/bzip2/"
+
+[upstream]
+git = "https://gitlab.com/bzip2/bzip2.git"
+tag = "bzip2-{version}"
+
+[[release]]
+version = "1.0.8"
+rev = "6a8690fc8d26c815e798c588f796eabe9d684cf0"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 7
+verify = true

@@ -1,0 +1,11 @@
+# Consumer test for xxhash, through the registry (see ../../zlib/test/Harbour.toml).
+[package]
+name = "xxhash-test"
+version = "0.1.0"
+
+[dependencies]
+xxhash = "*"
+
+[targets.xxhash-test]
+kind = "exe"
+sources = ["src/main.c"]

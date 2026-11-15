@@ -1,0 +1,15 @@
+[package]
+name = "bzip2"
+version = "1.0.8"
+
+[source.git]
+url = "https://gitlab.com/bzip2/bzip2.git"
+rev = "6a8690fc8d26c815e798c588f796eabe9d684cf0"
+
+[metadata]
+license = "bzip2-1.0.6"
+upstream_url = "https://gitlab.com/bzip2/bzip2.git"
+
+[[patches]]
+file = "1.0.8.patch"
+sha256 = "39b01e4af577f110d9de45c7ba15b2d55c83da0ed41fa07c19342f7cdb69cebf"

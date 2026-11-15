@@ -1,0 +1,15 @@
+[package]
+name = "brotli"
+version = "1.2.1"
+
+[source.git]
+url = "https://github.com/google/brotli"
+rev = "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d"
+
+[metadata]
+license = "MIT"
+upstream_url = "https://github.com/google/brotli"
+
+[[patches]]
+file = "1.2.1.patch"
+sha256 = "2e26c0b275fb2ef72ee2bd772bf21121353180793476fac481be8b1fb7509484"
