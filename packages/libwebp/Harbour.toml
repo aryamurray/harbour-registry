@@ -1,0 +1,234 @@
+# libwebp 1.6.0: upstream's libraries as targets: `sharpyuv` (libsharpyuv), `webp` (libwebp, the
+# default), `webpdemux` (libwebpdemux) and `webpmux` (libwebpmux, upstream's `libwebpmux` target).
+# The separate decode-only `webpdecoder` library, the command-line tools, the examples and the
+# animation utilities are not built.
+#
+# Source lists: the Makefile.am files in sharpyuv/ and src/{dec,demux,dsp,enc,mux,utils}/, which
+# is what upstream's CMakeLists.txt parses (parse_Makefile_am); `webp` is webpdecode + webpdsp +
+# webpencode + webputils, as CMake assembles it, and links `sharpyuv` (local sibling). Headers
+# listed in Makefile.am are not sources.
+#
+# SIMD: libwebp selects implementations at run time (CPUID, VP8GetCPUInfo), and each SIMD file is
+# guarded internally by WEBP_USE_<ISA>, which follows the compiler's own macros (__SSE4_1__,
+# __AVX2__, __ARM_NEON). Upstream's cmake/cpu.cmake gives each file its ISA flag as a per-file
+# COMPILE_FLAG; a manifest has no per-file flags, so the files that need a flag the baseline does
+# not have are separate local targets that carry it:
+#   webp_sse41  *_sse41.c   -msse4.1   (gcc, clang; x86-64)
+#   webp_avx2   *_avx2.c    -mavx2     (gcc, clang; x86-64)
+# SSE2 (x86-64 baseline) and NEON (64-bit Arm baseline) files are in `webp` and `sharpyuv` and
+# need no flag. MSVC needs none either (cpu.cmake: SIMD_ENABLE_FLAGS is empty from VS 2013). On
+# any other architecture those files compile to empty units and the C paths run. Not built, as
+# upstream's CMake does not build them where the ISA is absent: the MIPS32, MIPS DSP r2 and MSA
+# files, and 32-bit Arm NEON (it needs -mfpu=neon, which is not claimed).
+# config.h is in overlay/src/webp/.
+[package]
+name = "libwebp"
+version = "1.6.0"
+description = "WebP image codec: encoder, decoder, sharp YUV conversion, demux and mux libraries"
+license = "BSD-3-Clause"
+homepage = "https://developers.google.com/speed/webp"
+requires = "hosted"
+default_target = "webp"
+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
+
+# ---- libsharpyuv ----------------------------------------------------------------------------
+[targets.sharpyuv]
+kind = "staticlib"
+lang = "c"
+sources = [
+  "sharpyuv/sharpyuv.c", "sharpyuv/sharpyuv_cpu.c", "sharpyuv/sharpyuv_csp.c",
+  "sharpyuv/sharpyuv_dsp.c", "sharpyuv/sharpyuv_gamma.c", "sharpyuv/sharpyuv_neon.c",
+  "sharpyuv/sharpyuv_sse2.c",
+]
+public_headers = ["sharpyuv/sharpyuv.h", "sharpyuv/sharpyuv_csp.h"]
+
+# The headers are installed as <webp/sharpyuv/sharpyuv.h> but include each other, and are
+# included by the encoder, by their repository path `sharpyuv/sharpyuv.h`: the root is the
+# include directory. sharpyuv_gamma.c calls pow().
+[targets.sharpyuv.public]
+include_dirs = ["."]
+system_libs = ["m"]
+
+[targets.sharpyuv.private]
+include_dirs = [".", "src"]
+defines = ["HAVE_CONFIG_H"]
+
+# ---- libwebp --------------------------------------------------------------------------------
+[targets.webp]
+kind = "staticlib"
+lang = "c"
+sources = [
+  "src/dec/alpha_dec.c", "src/dec/buffer_dec.c", "src/dec/frame_dec.c", "src/dec/idec_dec.c",
+  "src/dec/io_dec.c", "src/dec/quant_dec.c", "src/dec/tree_dec.c", "src/dec/vp8_dec.c",
+  "src/dec/vp8l_dec.c", "src/dec/webp_dec.c", "src/dsp/alpha_processing.c",
+  "src/dsp/alpha_processing_neon.c", "src/dsp/alpha_processing_sse2.c", "src/dsp/cost.c",
+  "src/dsp/cost_neon.c", "src/dsp/cost_sse2.c", "src/dsp/cpu.c", "src/dsp/dec.c",
+  "src/dsp/dec_clip_tables.c", "src/dsp/dec_neon.c", "src/dsp/dec_sse2.c", "src/dsp/enc.c",
+  "src/dsp/enc_neon.c", "src/dsp/enc_sse2.c", "src/dsp/filters.c", "src/dsp/filters_neon.c",
+  "src/dsp/filters_sse2.c", "src/dsp/lossless.c", "src/dsp/lossless_enc.c",
+  "src/dsp/lossless_enc_neon.c", "src/dsp/lossless_enc_sse2.c", "src/dsp/lossless_neon.c",
+  "src/dsp/lossless_sse2.c", "src/dsp/rescaler.c", "src/dsp/rescaler_neon.c",
+  "src/dsp/rescaler_sse2.c", "src/dsp/ssim.c", "src/dsp/ssim_sse2.c", "src/dsp/upsampling.c",
+  "src/dsp/upsampling_neon.c", "src/dsp/upsampling_sse2.c", "src/dsp/yuv.c", "src/dsp/yuv_neon.c",
+  "src/dsp/yuv_sse2.c", "src/enc/alpha_enc.c", "src/enc/analysis_enc.c",
+  "src/enc/backward_references_cost_enc.c", "src/enc/backward_references_enc.c",
+  "src/enc/config_enc.c", "src/enc/cost_enc.c", "src/enc/filter_enc.c", "src/enc/frame_enc.c",
+  "src/enc/histogram_enc.c", "src/enc/iterator_enc.c", "src/enc/near_lossless_enc.c",
+  "src/enc/picture_csp_enc.c", "src/enc/picture_enc.c", "src/enc/picture_psnr_enc.c",
+  "src/enc/picture_rescale_enc.c", "src/enc/picture_tools_enc.c", "src/enc/predictor_enc.c",
+  "src/enc/quant_enc.c", "src/enc/syntax_enc.c", "src/enc/token_enc.c", "src/enc/tree_enc.c",
+  "src/enc/vp8l_enc.c", "src/enc/webp_enc.c", "src/utils/bit_reader_utils.c",
+  "src/utils/bit_writer_utils.c", "src/utils/color_cache_utils.c", "src/utils/filters_utils.c",
+  "src/utils/huffman_encode_utils.c", "src/utils/huffman_utils.c", "src/utils/palette.c",
+  "src/utils/quant_levels_dec_utils.c", "src/utils/quant_levels_utils.c",
+  "src/utils/random_utils.c", "src/utils/rescaler_utils.c", "src/utils/thread_utils.c",
+  "src/utils/utils.c",
+]
+public_headers = ["src/webp/decode.h", "src/webp/encode.h", "src/webp/types.h"]
+
+[targets.webp.public]
+include_dirs = ["src"]
+system_libs = ["m", "pthread"]
+
+[targets.webp.private]
+include_dirs = [".", "src"]
+defines = ["HAVE_CONFIG_H"]
+
+[targets.webp.deps]
+sharpyuv = { local = true }
+webp_sse41 = { local = true }
+webp_avx2 = { local = true }
+
+# ---- the ISA-specific files that need their own flag ------------------------------------------
+[targets.webp_sse41]
+kind = "staticlib"
+lang = "c"
+sources = [
+  "src/dsp/alpha_processing_sse41.c", "src/dsp/dec_sse41.c", "src/dsp/enc_sse41.c",
+  "src/dsp/lossless_enc_sse41.c", "src/dsp/lossless_sse41.c", "src/dsp/upsampling_sse41.c",
+  "src/dsp/yuv_sse41.c",
+]
+
+[targets.webp_sse41.private]
+include_dirs = [".", "src"]
+defines = ["HAVE_CONFIG_H"]
+
+[[targets.webp_sse41.when]]
+compiler = "gcc"
+arch = "x86_64"
+cflags = ["-msse4.1"]
+
+[[targets.webp_sse41.when]]
+compiler = "clang"
+arch = "x86_64"
+cflags = ["-msse4.1"]
+
+[targets.webp_avx2]
+kind = "staticlib"
+lang = "c"
+sources = [
+  "src/dsp/lossless_avx2.c", "src/dsp/lossless_enc_avx2.c",
+]
+
+[targets.webp_avx2.private]
+include_dirs = [".", "src"]
+defines = ["HAVE_CONFIG_H"]
+
+[[targets.webp_avx2.when]]
+compiler = "gcc"
+arch = "x86_64"
+cflags = ["-mavx2"]
+
+[[targets.webp_avx2.when]]
+compiler = "clang"
+arch = "x86_64"
+cflags = ["-mavx2"]
+
+# ---- libwebpdemux ---------------------------------------------------------------------------
+[targets.webpdemux]
+kind = "staticlib"
+lang = "c"
+sources = [
+  "src/demux/anim_decode.c", "src/demux/demux.c",
+]
+public_headers = ["src/webp/demux.h", "src/webp/mux_types.h"]
+
+[targets.webpdemux.public]
+include_dirs = ["src"]
+
+[targets.webpdemux.private]
+include_dirs = [".", "src"]
+defines = ["HAVE_CONFIG_H"]
+
+[targets.webpdemux.deps]
+webp = { local = true }
+
+# ---- libwebpmux -----------------------------------------------------------------------------
+[targets.webpmux]
+kind = "staticlib"
+lang = "c"
+sources = [
+  "src/mux/anim_encode.c", "src/mux/muxedit.c", "src/mux/muxinternal.c", "src/mux/muxread.c",
+]
+public_headers = ["src/webp/mux.h", "src/webp/mux_types.h"]
+
+[targets.webpmux.public]
+include_dirs = ["src"]
+
+[targets.webpmux.private]
+include_dirs = [".", "src"]
+defines = ["HAVE_CONFIG_H"]
+
+[targets.webpmux.deps]
+webp = { local = true }
+
+# CMakeLists.txt: `if(MSVC) add_definitions(-D_CRT_SECURE_NO_WARNINGS)`, and on WIN32
+# (WEBP_UNICODE=ON) `add_definitions(-DUNICODE -D_UNICODE)`, for everything.
+
+[[targets.sharpyuv.when]]
+compiler = "msvc"
+defines = ["_CRT_SECURE_NO_WARNINGS"]
+
+[[targets.sharpyuv.when]]
+os = "windows"
+defines = ["UNICODE", "_UNICODE"]
+
+[[targets.webp.when]]
+compiler = "msvc"
+defines = ["_CRT_SECURE_NO_WARNINGS"]
+
+[[targets.webp.when]]
+os = "windows"
+defines = ["UNICODE", "_UNICODE"]
+
+[[targets.webp_sse41.when]]
+compiler = "msvc"
+defines = ["_CRT_SECURE_NO_WARNINGS"]
+
+[[targets.webp_sse41.when]]
+os = "windows"
+defines = ["UNICODE", "_UNICODE"]
+
+[[targets.webp_avx2.when]]
+compiler = "msvc"
+defines = ["_CRT_SECURE_NO_WARNINGS"]
+
+[[targets.webp_avx2.when]]
+os = "windows"
+defines = ["UNICODE", "_UNICODE"]
+
+[[targets.webpdemux.when]]
+compiler = "msvc"
+defines = ["_CRT_SECURE_NO_WARNINGS"]
+
+[[targets.webpdemux.when]]
+os = "windows"
+defines = ["UNICODE", "_UNICODE"]
+
+[[targets.webpmux.when]]
+compiler = "msvc"
+defines = ["_CRT_SECURE_NO_WARNINGS"]
+
+[[targets.webpmux.when]]
+os = "windows"
+defines = ["UNICODE", "_UNICODE"]

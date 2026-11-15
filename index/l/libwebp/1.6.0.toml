@@ -1,0 +1,15 @@
+[package]
+name = "libwebp"
+version = "1.6.0"
+
+[source.tarball]
+url = "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz"
+sha256 = "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564"
+strip_prefix = "libwebp-1.6.0"
+
+[metadata]
+license = "BSD-3-Clause"
+
+[[patches]]
+file = "1.6.0.patch"
+sha256 = "f35a05f7997ec067a324bfaa16e43ae2376bc88af40dfec139b010e22603b1c9"
