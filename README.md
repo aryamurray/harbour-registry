@@ -103,7 +103,8 @@ index is **append-only for older versions**:
 * `render.py --check --base <ref>` (what the PR workflow runs) additionally fails if any shim or patch that
   exists at `<ref>` differs now: a published version is immutable, because users' lockfiles pin the patch's
   sha256. Rewriting one on purpose (say, to fix a manifest) is a human decision recorded as
-  `republish = "<reason>"` on that `[[release]]`, which stays visible in review; the automated-PR guard
+  `republish = "<reason>"` on that `[[release]]`, which stays visible in review and counts only in
+  the pull request that adds or changes it (afterwards it is a record, not a standing exemption); the automated-PR guard
   refuses it for bots outright.
 
 ### Versions that are not semver

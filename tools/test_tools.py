@@ -383,6 +383,33 @@ class OnACopy(unittest.TestCase):
                 self.lint_fails(mutate, needle)
 
 
+class Republish(unittest.TestCase):
+    """`republish` exempts exactly one version, in exactly the PR that adds the marker."""
+
+    def test_a_file_belongs_to_the_longest_exactly_matching_version(self):
+        import render
+        versions = ["1.7.1", "1.7.18", "1.7.1-rc.1"]
+        self.assertEqual(render.owning_version("1.7.18.patch", versions), "1.7.18")
+        self.assertEqual(render.owning_version("1.7.18.toml", versions), "1.7.18")
+        self.assertEqual(render.owning_version("1.7.1.patch", versions), "1.7.1")
+        self.assertEqual(render.owning_version("1.7.1-fix.patch", versions), "1.7.1")
+        self.assertEqual(render.owning_version("1.7.1-rc.1.toml", versions), "1.7.1-rc.1")
+        self.assertIsNone(render.owning_version("2.0.0.toml", versions))
+
+    def test_a_marker_exempts_only_where_it_is_new_or_changed(self):
+        import render
+        from types import SimpleNamespace as NS
+        pkg = NS(releases=[NS(version="1.0.0", republish="fix link"), NS(version="0.9.0", republish=None)])
+        base_without = b'[[release]]\nversion = "1.0.0"\nsha256 = "x"\n'
+        base_same = b'[[release]]\nversion = "1.0.0"\nsha256 = "x"\nrepublish = "fix link"\n'
+        base_other = b'[[release]]\nversion = "1.0.0"\nsha256 = "x"\nrepublish = "older reason"\n'
+        self.assertEqual(render.newly_republished(pkg, None), {"1.0.0"})          # package new in this PR
+        self.assertEqual(render.newly_republished(pkg, base_without), {"1.0.0"})  # marker added here
+        self.assertEqual(render.newly_republished(pkg, base_other), {"1.0.0"})    # a second, acknowledged rewrite
+        self.assertEqual(render.newly_republished(pkg, base_same), set())         # already spent
+        self.assertEqual(render.newly_republished(pkg, b"not toml ["), {"1.0.0"})
+
+
 class Env(unittest.TestCase):
     def test_python_is_new_enough(self):
         self.assertGreaterEqual(sys.version_info[:2], (3, 11))
