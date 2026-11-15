@@ -16,6 +16,7 @@ watch = false
 [[release]]
 version = "2.1.1792588164"
 rev = "a4c064539ea931274d407e1249b4bb575424a0f4"
+republish = "2.1.1792588164 build unchanged (same 69 C files plus the generated lj_vm.S, same generators, flags and defines); the library source list is now expressed as the patterns src/lj_*.c and src/lib_*.c instead of 69 file names"
 
 [test]
 platforms = ["linux", "macos", "windows"]

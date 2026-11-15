@@ -1,0 +1,20 @@
+[package]
+name = "libjpeg-turbo"
+description = "JPEG image codec: the libjpeg and TurboJPEG APIs, built without SIMD"
+license = "IJG AND BSD-3-Clause AND Zlib"
+homepage = "https://libjpeg-turbo.org"
+
+[upstream]
+git = "https://github.com/libjpeg-turbo/libjpeg-turbo"
+tag = "{version}"
+url = "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/{tag}/libjpeg-turbo-{version}.tar.gz"
+strip_prefix = "libjpeg-turbo-{version}"
+
+[[release]]
+version = "3.2.1"
+sha256 = "c27ad72a68da151177929aa969ae773a2da5ac2af9ce946079314fdac8cece7f"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 129
+verify = true

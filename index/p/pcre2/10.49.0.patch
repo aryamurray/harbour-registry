@@ -1,0 +1,180 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..efc487e
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,81 @@
++# PCRE2 10.49, the 8-bit library (upstream's `pcre2-8` static library).
++#
++# Source list: PCRE2_SOURCES in upstream's CMakeLists.txt, all 30 .c files, with
++# pcre2_chartables.c taken from overlay/harbour/ (CMake copies src/pcre2_chartables.c.dist to
++# <build>/src/pcre2_chartables.c; the overlay file #includes the .dist file). pcre2_jit_compile.c
++# is compiled (CMake does) and, with SUPPORT_JIT undefined, is the stub that makes
++# pcre2_jit_compile() return PCRE2_ERROR_JIT_BADOPTION. pcre2_dftables.c, the test programs, pcre2grep and
++# pcre2posix.c (the separate `pcre2-posix` library) are not built.
++#
++# Configuration is upstream's CMake defaults for a one-width build: Unicode and UTF support ON,
++# JIT OFF (it needs the sljit sources, per-architecture, and a probe for executable memory),
++# LF newlines, link size 2, match limit 10000000, heap limit 20000000, parentheses nest limit 250.
++# config.h, pcre2.h (pcre2.h.generic is what CMake's pcre2.h.in yields at these defaults) and the
++# character tables are in overlay/harbour/. PCRE2_STATIC is public, as CMake makes it for a static
++# library, so that pcre2.h does not mark the API dllimport on Windows.
++[package]
++name = "pcre2"
++version = "10.49.0"
++description = "Perl-compatible regular expressions, the 8-bit library (UTF-8 and Unicode properties, no JIT)"
++license = "BSD-3-Clause"
++homepage = "https://github.com/PCRE2Project/pcre2"
++requires = "hosted"
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
++
++[targets.pcre2-8]
++kind = "staticlib"
++lang = "c"
++sources = [
++  "src/pcre2_auto_possess.c",
++  "harbour/pcre2_chartables.c",
++  "src/pcre2_chkdint.c",
++  "src/pcre2_compile.c",
++  "src/pcre2_compile_cgroup.c",
++  "src/pcre2_compile_class.c",
++  "src/pcre2_config.c",
++  "src/pcre2_context.c",
++  "src/pcre2_convert.c",
++  "src/pcre2_dfa_match.c",
++  "src/pcre2_error.c",
++  "src/pcre2_extuni.c",
++  "src/pcre2_find_bracket.c",
++  "src/pcre2_jit_compile.c",
++  "src/pcre2_maketables.c",
++  "src/pcre2_match.c",
++  "src/pcre2_match_data.c",
++  "src/pcre2_match_next.c",
++  "src/pcre2_newline.c",
++  "src/pcre2_ord2utf.c",
++  "src/pcre2_pattern_info.c",
++  "src/pcre2_script_run.c",
++  "src/pcre2_serialize.c",
++  "src/pcre2_string_utils.c",
++  "src/pcre2_study.c",
++  "src/pcre2_substitute.c",
++  "src/pcre2_substring.c",
++  "src/pcre2_tables.c",
++  "src/pcre2_ucd.c",
++  "src/pcre2_valid_utf.c",
++  "src/pcre2_xclass.c",
++]
++public_headers = ["harbour/pcre2.h"]
++
++# The library is compiled with PCRE2_CODE_UNIT_WIDTH=8 (a target property in CMake) and
++# HAVE_CONFIG_H (add_compile_definitions). `src` is private: pcre2_internal.h and friends.
++# (PCRE2_CODE_UNIT_WIDTH is also public, below.)
++[targets.pcre2-8.private]
++include_dirs = ["harbour", "src"]
++defines = ["HAVE_CONFIG_H"]
++
++# pcre2.h is an #error until PCRE2_CODE_UNIT_WIDTH is defined, which upstream leaves to every
++# consumer. This package ships only the 8-bit library, so the width is public here: `#include
++# <pcre2.h>` works as it stands, and a consumer's own `#define PCRE2_CODE_UNIT_WIDTH 8` is the
++# same definition (no redefinition warning).
++[targets.pcre2-8.public]
++include_dirs = ["harbour"]
++defines = ["PCRE2_STATIC", "PCRE2_CODE_UNIT_WIDTH=8"]
++
++# CMakeLists.txt: `if(MSVC) add_compile_definitions(_CRT_SECURE_NO_DEPRECATE _CRT_SECURE_NO_WARNINGS)`.
++[[targets.pcre2-8.when]]
++compiler = "msvc"
++defines = ["_CRT_SECURE_NO_DEPRECATE", "_CRT_SECURE_NO_WARNINGS"]
+diff --git a/harbour/config.h b/harbour/config.h
+new file mode 100644
+index 0000000..571e75e
+--- /dev/null
++++ b/harbour/config.h
+@@ -0,0 +1,66 @@
++/* config.h for Harbour: what upstream's CMake writes from src/config-cmake.h.in for its
++ * default options plus PCRE2_BUILD_PCRE2_8=ON only (PCRE2_SUPPORT_UNICODE=ON,
++ * PCRE2_SUPPORT_JIT=OFF, PCRE2_NEWLINE=LF, PCRE2_LINK_SIZE=2, no readline/libz/libbz2).
++ * The check_c_source_compiles answers are `#if`s on the compiler. */
++
++#if defined(__has_include)
++#if __has_include(<assert.h>)
++#define HAVE_ASSERT_H 1
++#endif
++#else
++#define HAVE_ASSERT_H 1
++#endif
++
++#ifdef _MSC_VER
++/* __assume(1) compiles only on MSVC */
++#define HAVE_BUILTIN_ASSUME 1
++#else
++#define HAVE_BUILTIN_MUL_OVERFLOW 1
++#define HAVE_BUILTIN_UNREACHABLE 1
++#endif
++
++#if defined(__has_attribute)
++#if __has_attribute(uninitialized)
++#define HAVE_ATTRIBUTE_UNINITIALIZED 1
++#endif
++#endif
++
++/* HAVE_DIRENT_H, HAVE_SYS_STAT_H, HAVE_SYS_TYPES_H, HAVE_UNISTD_H, HAVE_WINDOWS_H,
++   HAVE_MEMFD_CREATE, HAVE_SECURE_GETENV and HAVE_SETRLIMIT are read only by pcre2test,
++   pcre2grep and the JIT (pcre2_jit_*.c, which this configuration compiles as stubs). */
++
++#define SUPPORT_PCRE2_8 1
++/* #undef SUPPORT_PCRE2_16 */
++/* #undef SUPPORT_PCRE2_32 */
++/* #undef DISABLE_PERCENT_ZT */
++
++/* #undef SUPPORT_JIT */
++/* #undef SLJIT_PROT_EXECUTABLE_ALLOCATOR */
++#define SUPPORT_UNICODE 1
++/* #undef SUPPORT_VALGRIND */
++
++/* #undef BSR_ANYCRLF */
++/* #undef EBCDIC */
++/* #undef EBCDIC_NL25 */
++/* #undef EBCDIC_IGNORING_COMPILER */
++/* #undef NEVER_BACKSLASH_C */
++
++#ifdef _MSC_VER
++#define PCRE2_EXPORT
++#else
++#define PCRE2_EXPORT            __attribute__ ((visibility ("default")))
++#endif
++#define LINK_SIZE               2
++#define HEAP_LIMIT              20000000
++#define MATCH_LIMIT             10000000
++#define MATCH_LIMIT_DEPTH       MATCH_LIMIT
++#define MAX_VARLOOKBEHIND       255
++#define NEWLINE_DEFAULT         2
++#define PARENS_NEST_LIMIT       250
++#define PCRE2GREP_BUFSIZE       20480
++#define PCRE2GREP_MAX_BUFSIZE   1048576
++
++#define MAX_NAME_SIZE           128
++#define MAX_NAME_COUNT          10000
++
++/* end config.h for CMake builds */
+diff --git a/harbour/pcre2.h b/harbour/pcre2.h
+new file mode 100644
+index 0000000..88b51f4
+--- /dev/null
++++ b/harbour/pcre2.h
+@@ -0,0 +1,5 @@
++/* pcre2.h: upstream's CMake writes this by configuring src/pcre2.h.in; with the default
++ * options the result is src/pcre2.h.generic (the same file the maintainers ship for builds
++ * without configure). Included rather than copied, so the version and every constant are
++ * upstream's own bytes. */
++#include "../src/pcre2.h.generic"
+diff --git a/harbour/pcre2_chartables.c b/harbour/pcre2_chartables.c
+new file mode 100644
+index 0000000..0a7c199
+--- /dev/null
++++ b/harbour/pcre2_chartables.c
+@@ -0,0 +1,4 @@
++/* pcre2_chartables.c: upstream's CMake copies src/pcre2_chartables.c.dist to
++ * <build>/src/pcre2_chartables.c (PCRE2_REBUILD_CHARTABLES=OFF, ASCII). Included rather than
++ * copied, so the tables are upstream's own bytes. */
++#include "../src/pcre2_chartables.c.dist"

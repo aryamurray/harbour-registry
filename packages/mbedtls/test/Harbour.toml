@@ -1,0 +1,17 @@
+# Consumer test for mbedtls, through the registry (see ../../zlib/test/Harbour.toml).
+# Selects all three libraries with `targets = [...]`: the test references a symbol of each
+# (SHA-256/GCM from libmbedcrypto, the X.509 parser from libmbedx509, mbedtls_ssl_* from
+# libmbedtls), so a missing library fails to link.
+[package]
+name = "mbedtls-test"
+version = "0.1.0"
+
+[dependencies]
+mbedtls = "*"
+
+[targets.mbedtls-test]
+kind = "exe"
+sources = ["src/main.c"]
+
+[targets.mbedtls-test.deps]
+mbedtls = { targets = ["mbedtls", "mbedx509", "mbedcrypto"] }

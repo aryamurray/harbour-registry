@@ -10,6 +10,7 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | --- | --- | --- | --- | --- |
 | [brotli](packages/brotli) | 1.2.1 | `MIT` | linux, macos, windows | Brotli compression: the common, decoder and encoder libraries as three targets |
 | [bzip2](packages/bzip2) | 1.0.8 | `bzip2-1.0.6` | linux, macos, windows | High-quality block-sorting file compressor: the libbz2 library |
+| [c-ares](packages/c-ares) | 1.34.9 | `MIT` | linux, macos, windows | Asynchronous DNS resolver library, configured by Harbour probes |
 | [cjson](packages/cjson) | 1.7.18 | `MIT` | linux, macos, windows | Ultralightweight JSON parser in ANSI C |
 | [cpython](packages/cpython) | 3.14.9 | `PSF-2.0` | linux, macos | The Python interpreter, built from its generated sources |
 | [crc32c](packages/crc32c) | 1.1.0 | `BSD-3-Clause` | linux, macos | CRC32C implementation with support for CPU-specific acceleration instructions |
@@ -21,12 +22,17 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [harfbuzz](packages/harfbuzz) | 15.0.0 | `MIT` | linux, macos | OpenType text shaping engine |
 | [jsoncpp](packages/jsoncpp) | 1.9.8 | `MIT` | linux, macos | C++ library for reading, writing and manipulating JSON |
 | [libdeflate](packages/libdeflate) | 1.26.0 | `MIT` | linux, macos, windows | Fast whole-buffer DEFLATE, zlib and gzip compression and decompression |
+| [libjpeg-turbo](packages/libjpeg-turbo) | 3.2.1 | `IJG AND BSD-3-Clause AND Zlib` | linux, macos, windows | JPEG image codec: the libjpeg and TurboJPEG APIs, built without SIMD |
 | [libpng](packages/libpng) | 1.6.50 | `libpng-2.0` | linux, macos | Reference implementation of the PNG image format |
 | [libuv](packages/libuv) | 1.51.0 | `MIT` | linux, macos, windows | Cross-platform asynchronous I/O |
+| [libwebp](packages/libwebp) | 1.6.0 | `BSD-3-Clause` | linux, macos, windows | WebP image codec: encoder, decoder, sharp YUV conversion, demux and mux libraries |
 | [luajit](packages/luajit) | 2.1.1792588164 | `MIT` | linux, macos, windows | Just-in-time compiler and interpreter for the Lua language |
 | [lz4](packages/lz4) | 1.11.1 | `BSD-2-Clause` | linux, macos, windows | Extremely fast lossless compression: LZ4 blocks, high-compression mode and the frame format |
+| [mbedtls](packages/mbedtls) | 3.6.7 | `Apache-2.0 OR GPL-2.0-or-later` | linux, macos, windows | Mbed TLS (3.6 LTS): the crypto, X.509 and TLS libraries as three targets |
+| [nghttp2](packages/nghttp2) | 1.71.0 | `MIT` | linux, macos, windows | HTTP/2 C library: frames, sessions, streams and HPACK (libnghttp2 only) |
 | [nlohmann-json](packages/nlohmann-json) | 3.12.0 | `MIT` | linux, macos | JSON for Modern C++: a header-only JSON library with an STL-like interface |
 | [openssl](packages/openssl) | 3.5.4 | `Apache-2.0` | linux, macos | OpenSSL SHA-2 and AES primitives (a slice of libcrypto, generated sources) |
+| [pcre2](packages/pcre2) | 10.49.0 | `BSD-3-Clause` | linux, macos, windows | Perl-compatible regular expressions, the 8-bit library (UTF-8 and Unicode properties, no JIT) |
 | [pugixml](packages/pugixml) | 1.16.0 | `MIT` | linux, macos, windows | Light-weight, fast C++ XML parser with a DOM-like interface and XPath 1.0 |
 | [redis](packages/redis) | 7.2.16 | `BSD-3-Clause` | linux, macos | In-memory data structure store |
 | [snappy](packages/snappy) | 1.2.1 | `BSD-3-Clause` | linux, macos | A fast compressor/decompressor |

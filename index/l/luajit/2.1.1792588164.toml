@@ -12,4 +12,4 @@ upstream_url = "https://github.com/LuaJIT/LuaJIT"
 
 [[patches]]
 file = "2.1.1792588164.patch"
-sha256 = "51b25cf9276b0a5b4aaddac11735597405ca5d0edc3f1929f73933c61ec023cf"
+sha256 = "aa12ac5e52aa4edc1343e65739c34b6d0806fca478f835d543dcbc8f4a4bb0cf"

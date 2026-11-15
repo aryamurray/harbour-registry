@@ -1,0 +1,121 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..9e725ea
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,115 @@
++# nghttp2 1.71.0: the library only (lib/), the way upstream's CMake builds libnghttp2 with
++# -DENABLE_LIB_ONLY=ON: no nghttp, nghttpd, nghttpx, h2load, no third-party/ and no examples.
++#
++# Source list: NGHTTP2_SOURCES of lib/CMakeLists.txt, verbatim (the same files lib/Makefile.am and
++# lib/Makefile.msvc list; sfparse.c is the structured-field parser added in 1.6x).
++#
++# nghttp2ver.h: lib/includes/nghttp2/nghttp2ver.h ships in the release tarball, already expanded from
++# nghttp2ver.h.in (NGHTTP2_VERSION "1.71.0", NGHTTP2_VERSION_NUM 0x014700), because release tarballs
++# are `make dist` output. It is used as shipped, so there is nothing to generate and it cannot drift
++# from the pinned version. (Harbour cannot expand an .in file without a generator, which this
++# registry reserves for packages that need one.)
++#
++# config.h: written by the probes below. CMake compiles with -DHAVE_CONFIG_H and configures
++# cmakeconfig.h.in into config.h; lib/ reads only six names from it: HAVE_ARPA_INET_H and
++# HAVE_NETINET_IN_H (nghttp2_net.h, for htonl and friends), HAVE_CLOCK_GETTIME and
++# HAVE_DECL_CLOCK_MONOTONIC (nghttp2_time.c), HAVE_GETTICKCOUNT64 and HAVE_WINDOWS_H (likewise, on
++# Windows). The first four are probed here, as CMake's check_include_file / check_function_exists /
++# check_symbol_exists do; the Windows pair is asserted below, on Windows only, because every Windows
++# the manifest supports has both. DEBUGBUILD (ENABLE_DEBUG) stays off.
++# HAVE_DECL_CLOCK_MONOTONIC is `cmakedefine01` upstream; nghttp2_time.c only uses it in `#if`, where an
++# undefined name is 0, so the probe's `#undef` is the same answer.
++#
++# Shared-library visibility and BUILDING_NGHTTP2: upstream adds -DBUILDING_NGHTTP2 to everything
++# (it selects dllexport/visibility("default") and re-enables the deprecated ssize_t callbacks the
++# library itself still compiles). It is private. NGHTTP2_STATICLIB is what CMake puts on the static
++# library's PUBLIC surface; here it is public everywhere.
++#
++# Windows (MSVC): lib/Makefile.msvc is upstream's own non-CMake build: `-Dssize_t=long`
++# (CMake: `#define ssize_t int` in config.h when the type is missing; the CMake spelling is used here),
++# -DBUILDING_NGHTTP2, no system libraries (nghttp2_net.h replaces htonl and friends with
++# _byteswap_*, so not even ws2_32). MSVC has no ssize_t, and the deprecated callback typedefs of the
++# public header use it, so consumers get NGHTTP2_NO_SSIZE_T, the header's own switch for hiding
++# them (the nghttp2_ssize APIs are unaffected).
++#
++# macOS: CMake adds -D__APPLE_USE_RFC_3542 for Apple.
++[package]
++name = "nghttp2"
++version = "1.71.0"
++description = "HTTP/2 C library: frames, sessions, streams and HPACK (libnghttp2 only)"
++license = "MIT"
++homepage = "https://nghttp2.org"
++requires = "hosted"
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
++
++[targets.nghttp2]
++kind = "staticlib"
++lang = "c"
++sources = [
++  "lib/nghttp2_pq.c",
++  "lib/nghttp2_map.c",
++  "lib/nghttp2_queue.c",
++  "lib/nghttp2_frame.c",
++  "lib/nghttp2_buf.c",
++  "lib/nghttp2_stream.c",
++  "lib/nghttp2_outbound_item.c",
++  "lib/nghttp2_session.c",
++  "lib/nghttp2_submit.c",
++  "lib/nghttp2_helper.c",
++  "lib/nghttp2_alpn.c",
++  "lib/nghttp2_hd.c",
++  "lib/nghttp2_hd_huffman.c",
++  "lib/nghttp2_hd_huffman_data.c",
++  "lib/nghttp2_version.c",
++  "lib/nghttp2_priority_spec.c",
++  "lib/nghttp2_option.c",
++  "lib/nghttp2_callbacks.c",
++  "lib/nghttp2_mem.c",
++  "lib/nghttp2_http.c",
++  "lib/nghttp2_rcbuf.c",
++  "lib/nghttp2_extpri.c",
++  "lib/nghttp2_ratelim.c",
++  "lib/nghttp2_time.c",
++  "lib/nghttp2_debug.c",
++  "lib/sfparse.c",
++]
++public_headers = ["lib/includes/nghttp2/nghttp2.h", "lib/includes/nghttp2/nghttp2ver.h"]
++
++# `#include <nghttp2/nghttp2.h>`
++[targets.nghttp2.public]
++include_dirs = ["lib/includes"]
++defines = ["NGHTTP2_STATICLIB"]
++
++[targets.nghttp2.private]
++include_dirs = ["lib"]
++defines = ["HAVE_CONFIG_H", "BUILDING_NGHTTP2"]
++
++[targets.nghttp2.probes]
++emit = { header = "config.h" }
++
++[targets.nghttp2.probes.named.HAVE_ARPA_INET_H]
++header = "arpa/inet.h"
++
++[targets.nghttp2.probes.named.HAVE_NETINET_IN_H]
++header = "netinet/in.h"
++
++[targets.nghttp2.probes.named.HAVE_CLOCK_GETTIME]
++symbol = "clock_gettime"
++prelude = ["time.h"]
++
++[targets.nghttp2.probes.named.HAVE_DECL_CLOCK_MONOTONIC]
++constant = "CLOCK_MONOTONIC"
++prelude = ["time.h"]
++
++[[targets.nghttp2.when]]
++os = "macos"
++defines = ["__APPLE_USE_RFC_3542"]
++
++[[targets.nghttp2.when]]
++os = "windows"
++defines = ["HAVE_WINDOWS_H=1", "HAVE_GETTICKCOUNT64=1", "ssize_t=int"]
++
++[[targets.nghttp2.surface.when]]
++os = "windows"
++[targets.nghttp2.surface.when."compile.public"]
++defines = ["NGHTTP2_NO_SSIZE_T"]
