@@ -13,7 +13,9 @@ strip_prefix = "zstd-{version}"
 [[release]]
 version = "1.5.7"
 sha256 = "eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3"
+republish = "1.5.7 gains Windows (MSVC) support: the x86_64 .S Huffman decoder is excluded and ZSTD_DISABLE_ASM defined under cl"
 
 [test]
-platforms = ["linux", "macos"]
-objects = { default = 37, "linux-x86_64" = 38 }
+platforms = ["linux", "macos", "windows"]
+objects = { default = 37, "linux-x86_64" = 38, windows = 37 }   # windows: the x86_64 .S is excluded under cl
+verify = true

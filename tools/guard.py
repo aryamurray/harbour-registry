@@ -20,8 +20,9 @@ test. That is the core safety property of the autonomous loop: **the judge canno
 by the judged.** A bot that could edit test/ could make a broken bump pass by weakening the
 assertion; a bot that could edit tools/ or the workflows could make the gate approve anything.
 
-Inside package.toml a bot may change `[upstream]`, `[[release]]`, `description` and `homepage`
-only. `[test]` (platforms, the exact object count) and `[review]` (the generators flag) are part of
+Inside package.toml a bot may change `[[release]]`, `description` and `homepage` only. `[upstream]`
+(where the source comes from, and the tag and URL templates) is a human's: a bump adds a release, it
+never repoints a package at another host. `[test]` (platforms, the exact object count) and `[review]` (the generators flag) are part of
 what judges a package, and `[package] name`/`license` are decisions a human makes, so a bot PR that
 changes any of them is refused, and a bot cannot add a package.toml (a new package is a human's).
 The same goes for the watcher's policy (`[upstream] watch`, `max_bump`, `prereleases`: what the bot
@@ -133,6 +134,13 @@ def package_toml_violations(base: str, head: str, path: str) -> list[str]:
     for key in WATCH_POLICY_KEYS:
         if a.get("upstream", {}).get(key) != b.get("upstream", {}).get(key):
             bad.append(f"{path}: [upstream] {key} changed; the watcher's policy (what it may bump) is a human's decision")
+    # The rest of `[upstream]` too: where a package's source comes from. A bump only ever adds
+    # a `[[release]]`; a bot PR that repoints `url` or `git` at another host would otherwise
+    # pass as long as the consumer test did, and the checksum it records is simply whatever
+    # that host served.
+    for key in sorted((set(a.get("upstream", {})) | set(b.get("upstream", {}))) - set(WATCH_POLICY_KEYS)):
+        if a.get("upstream", {}).get(key) != b.get("upstream", {}).get(key):
+            bad.append(f"{path}: [upstream] {key} changed; where a package's source comes from is a human's decision")
     old_re = {r.get("version"): r.get("republish") for r in a.get("release", []) if isinstance(r, dict)}
     for r in b.get("release", []):
         if isinstance(r, dict) and r.get("republish") != old_re.get(r.get("version")):

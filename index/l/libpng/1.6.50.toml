@@ -12,4 +12,4 @@ upstream_url = "https://github.com/pnggroup/libpng.git"
 
 [[patches]]
 file = "1.6.50.patch"
-sha256 = "d24c8776897938418a3b586990dbb945b14542b255828b7adadbec7ba9f53a78"
+sha256 = "5ee5e66bb1f0a723a5dd9a80076766cdd9ed527f56859ee74962cc90bdb88e3e"

@@ -36,7 +36,7 @@ UPSTREAM_KEYS = {"git", "tag", "url", "strip_prefix", "scheme", "watch", "max_bu
 WATCH_POLICY_KEYS = ("watch", "max_bump", "prereleases")
 MAX_BUMP_VALUES = ("patch", "minor", "major")
 RELEASE_KEYS = {"version", "upstream_version", "sha256", "rev", "url", "strip_prefix", "republish"}
-TEST_KEYS = {"platforms", "objects", "needs", "timeout"}
+TEST_KEYS = {"platforms", "objects", "needs", "timeout", "verify"}
 REVIEW_KEYS = {"generators"}
 TOP_KEYS = {"package", "upstream", "release", "test", "review"}
 

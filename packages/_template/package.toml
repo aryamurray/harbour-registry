@@ -20,7 +20,7 @@ strip_prefix = "example-{version}"     # the tarball's single top-level director
 # `strip_prefix` to build the next tarball's URL and check its layout. Its policy is human-owned: a bot PR
 # that changes any of these three is refused by tools/guard.py. See README "Keeping packages current".
 # watch = false                        # opt this package out of automatic bumps
-# max_bump = "minor"                   # "patch" | "minor" | "major" (default): the biggest jump it may follow
+# max_bump = "major"                   # "patch" | "minor" (default) | "major": the biggest jump it may follow
 # prereleases = true                   # also follow rc/alpha/beta tags (default: stable releases only)
 
 # One entry per release. The newest (highest semver) is the one rendered from Harbour.toml and
@@ -39,6 +39,7 @@ objects = 1                            # EXACT translation units the library com
                                        #   objects = { default = 37, linux = 35, "linux-x86_64" = 38 }
 # needs = ["perl"]                     # executables that must be on PATH
 # timeout = 1800                       # seconds
+# verify = true                        # also run `harbour verify` (every public header compiles, a harness links); see README
 
 # [review]
 # generators = true                    # REQUIRED if Harbour.toml runs code during the build (prebuild, host

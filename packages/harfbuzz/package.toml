@@ -15,3 +15,6 @@ rev = "35f656a1a2bab548ea7f54a6dd3fba2b09680d14"
 [test]
 platforms = ["linux", "macos"]
 objects = 1
+# `verify` is off: its release-profile rebuild takes ~64 s on top of the ~37 s test, and its harness is C++
+# (the library's language), so it cannot see that a C consumer does not link (see test/Harbour.toml).
+# verify = true

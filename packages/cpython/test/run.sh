@@ -27,7 +27,7 @@ cp -R "$test_dir/consumer" "$work/consumer"
 cd "$work/consumer"
 
 build() {
-  if ! build_log="$("$HARBOUR" build 2>&1)"; then
+  if ! build_log="$("$HARBOUR" build --strict-sources 2>&1)"; then
     echo "$build_log" | grep -v INFO | tail -40 >&2
     fail "harbour build failed"
   fi
@@ -136,7 +136,7 @@ esac
 
 echo "== rebuilding cpython (nothing changed)"
 t0=$(date +%s)
-log="$("$HARBOUR" build 2>&1)"
+log="$("$HARBOUR" build --strict-sources 2>&1)"
 echo "== no-op build: $(( $(date +%s) - t0 ))s"
 skipped="$(count_lines "Skipping pre-build step" "$log")"
 if echo "$log" | grep -q "Running pre-build step" || [ "$skipped" -lt 3 ]; then

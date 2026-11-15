@@ -20,8 +20,13 @@ POLICY (human-owned keys of `[upstream]`; tools/guard.py refuses a bot PR that c
 
     watch = false            opt the package out entirely
     max_bump = "patch"       follow only patch releases of the current minor;
-              "minor"        follow minor and patch releases of the current major;
-              "major"        (the default) follow any newer stable version
+              "minor"        (the default) follow minor and patch releases of the current major;
+              "major"        follow any newer stable version
+
+A major release is held back by default because it is where the things the gate cannot see change:
+the license (redis 7 -> 8), the API a dependent package was written against, the supported
+platforms. The bot cannot edit `license`, so it would carry the old one forward unchanged.
+A package versioned by date follows every release by default: its "major" is only the year.
     prereleases = true       also follow rc/alpha/beta tags
 
 A version held back by `max_bump` is reported, never bumped. One bump = one package = one version: the
@@ -208,13 +213,28 @@ def classify_tag(tag: str, pattern: re.Pattern, template: str, scheme: str) -> t
 @dataclass
 class Policy:
     watch: bool = True
-    max_bump: str = "major"
+    max_bump: str = "minor"
     prereleases: bool = False
+
+
+_DATE_VERSION = re.compile(r"\d{4}[-.]\d{1,2}[-.]\d{1,2}")
+
+
+def default_max_bump(pkg: rt.Package) -> str:
+    """"minor", except for a package versioned by date.
+
+    A date `2024-12-28` is normalised to `2024.12.28`, so its "major" is the year. Holding
+    majors back there would stop the package every January for no reason: a new year says
+    nothing about compatibility.
+    """
+    newest = pkg.releases[0] if pkg.releases else None
+    spelled = (newest.upstream_version or newest.version) if newest else ""
+    return "major" if _DATE_VERSION.fullmatch(spelled or "") else "minor"
 
 
 def policy_of(pkg: rt.Package) -> Policy:
     up = pkg.upstream
-    watch, pre, mb = up.get("watch", True), up.get("prereleases", False), up.get("max_bump", "major")
+    watch, pre, mb = up.get("watch", True), up.get("prereleases", False), up.get("max_bump", default_max_bump(pkg))
     if not isinstance(watch, bool) or not isinstance(pre, bool):
         raise WatchError(f"{pkg.name}: [upstream] watch and prereleases must be true or false")
     if mb not in rt.MAX_BUMP_VALUES:

@@ -357,6 +357,8 @@ class Linter:
         timeout = test.get("timeout", 1800)
         if isinstance(timeout, bool) or not isinstance(timeout, int) or not 60 <= timeout <= 5400:
             self.err(name, "[test] timeout must be 60..5400 seconds", ptoml)
+        if not isinstance(test.get("verify", False), bool):
+            self.err(name, "[test] verify must be true or false", ptoml)
 
     # -- overlay / patches / secrets --------------------------------------
     def lint_files(self, pkg: rt.Package) -> None:
