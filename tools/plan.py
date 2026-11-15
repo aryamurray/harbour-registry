@@ -9,10 +9,20 @@ The affected set is:
   * every package whose `packages/<name>/` or `index/**/<name>*` files changed, plus
   * every package that depends on one of those, directly or transitively (read from
     the rendered .idx files: a change to zlib must re-test libpng, freetype, cpython), plus
-  * EVERYTHING if the change touches anything that decides how packages are judged:
-    tools/, .github/, .harbour-version, CODEOWNERS, .gitattributes, config.toml.
+  * EVERYTHING if the change touches something that decides how a package is BUILT AND TESTED:
+    tools/test.py, tools/regtools.py, tools/plan.py, .github/workflows/pr.yml, .github/actions/,
+    .harbour-version, .gitattributes, config.toml.
 
-The matrix has one entry per (package, platform in that package's `[test] platforms`).
+    Not the rest of tools/ or .github/: the watcher, the repair step, triage, the guard, lint, render
+    and their unit tests do not change what a consumer test does, and each has its own check in the
+    PR workflow (the tooling tests in `plan`, `guard`, `index`). Re-running every package for a
+    change to one of them bought nothing; the nightly run tests everything regardless.
+
+The matrix has one entry per (package, platform in that package's `[test] platforms`). When
+EVERYTHING is tested on a pull request the packages of each platform are packed into a few shards
+instead: `tools/test.py` takes several packages, runs them all and names the ones that failed, so a
+full run is about a dozen jobs rather than one per package and platform (each of which paid for a
+checkout, a Python and a Harbour download to run a test that often takes seconds).
 Output is JSON on stdout; under GitHub Actions it is also written to $GITHUB_OUTPUT as
 `matrix`, `runners`, `packages`, `count` and `all`.
 """
@@ -33,9 +43,15 @@ import regtools as rt
 # this file (CODEOWNERS).
 RUNNERS = {"linux": "ubuntu-24.04", "macos": "macos-26", "windows": "windows-2022"}
 
-# Paths whose change can alter how every package is judged.
-JUDGE_PREFIXES = ("tools/", ".github/")
-JUDGE_FILES = {".harbour-version", "CODEOWNERS", ".gitattributes", "config.toml"}
+# Paths whose change can alter how every package is built and tested.
+JUDGE_PREFIXES = (".github/actions/",)
+JUDGE_FILES = {"tools/test.py", "tools/regtools.py", "tools/plan.py", ".github/workflows/pr.yml",
+               ".harbour-version", ".gitattributes", "config.toml"}
+
+# A full run on a pull request: at most this many jobs per platform, and about this many packages
+# in each before another shard is opened.
+MAX_SHARDS = 4
+SHARD_SIZE = 6
 
 
 def changed_files(base: str, head: str) -> list[str]:
@@ -68,7 +84,7 @@ def affected(changed: list[str]) -> tuple[set[str], bool, str]:
     names = set(rt.package_names())
     judge = [p for p in changed if p.startswith(JUDGE_PREFIXES) or p in JUDGE_FILES]
     if judge:
-        return names, True, f"{judge[0]} changed (anything that decides how packages are judged re-tests everything)"
+        return names, True, f"{judge[0]} changed (anything that decides how packages are built and tested re-tests everything)"
     direct = {package_of(p) for p in changed} - {None}
     direct &= names
     rev = dependents(names)
@@ -82,10 +98,31 @@ def affected(changed: list[str]) -> tuple[set[str], bool, str]:
 
 
 def build(pkgs: set[str]) -> list[dict]:
+    """One row per (package, platform). `packages` is what the job passes to tools/test.py."""
     rows = []
     for name in sorted(pkgs):
         for plat in rt.load_package(name).platforms():
-            rows.append({"package": name, "os": plat, "runner": RUNNERS[plat]})
+            rows.append({"package": name, "packages": name, "os": plat, "runner": RUNNERS[plat]})
+    return rows
+
+
+def build_shards(pkgs: set[str]) -> list[dict]:
+    """A few rows per platform, each testing several packages in one job.
+
+    Packages are dealt round-robin in name order, so the split is stable from run to run and a
+    shard's name says nothing a reader has to decode: the job log lists what it tested.
+    """
+    by_plat: dict[str, list[str]] = {}
+    for name in sorted(pkgs):
+        for plat in rt.load_package(name).platforms():
+            by_plat.setdefault(plat, []).append(name)
+    rows = []
+    for plat in sorted(by_plat):
+        names = by_plat[plat]
+        n = max(1, min(MAX_SHARDS, -(-len(names) // SHARD_SIZE)))
+        for i in range(n):
+            rows.append({"package": f"shard {i + 1} of {n}", "packages": " ".join(names[i::n]),
+                         "os": plat, "runner": RUNNERS[plat]})
     return rows
 
 
@@ -101,7 +138,9 @@ def main() -> int:
         pkgs, everything, why = affected(changed_files(args.base, args.head))
     else:
         ap.error("pass --base REF or --all")
-    rows = build(pkgs)
+    # Shards only for a full run on a pull request. `--all` (nightly) keeps one job per package:
+    # its failure artifacts and rot issues are per package and platform.
+    rows = build_shards(pkgs) if everything and args.base else build(pkgs)
     runners = sorted({r["runner"] for r in rows})
     result = {"all": everything, "reason": why, "packages": sorted(pkgs), "runners": runners,
               "matrix": {"include": rows}}
