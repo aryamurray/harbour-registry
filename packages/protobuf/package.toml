@@ -1,0 +1,20 @@
+[package]
+name = "protobuf"
+description = "Protocol Buffers C++ runtime (lite and full libraries); no protoc"
+license = "BSD-3-Clause AND MIT"
+homepage = "https://protobuf.dev"
+
+[upstream]
+git = "https://github.com/protocolbuffers/protobuf.git"
+tag = "v{version}"
+url = "https://github.com/protocolbuffers/protobuf/releases/download/{tag}/protobuf-{version}.tar.gz"
+strip_prefix = "protobuf-{version}"
+
+[[release]]
+version = "36.2.0"
+upstream_version = "36.2"
+sha256 = "3d9642a662d10e68ebae5e53f14dcce5105684212d5078f8e0d47d1ab3ae6b64"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 116
