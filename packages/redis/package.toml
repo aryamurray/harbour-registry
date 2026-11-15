@@ -9,6 +9,10 @@ git = "https://github.com/redis/redis"
 tag = "{version}"
 url = "https://download.redis.io/releases/redis-{version}.tar.gz"
 strip_prefix = "redis-{version}"
+# Patch releases only. Redis changed its license at 7.4 (BSD-3-Clause up to 7.2; RSALv2/SSPLv1
+# from 7.4), and the gate cannot see a license: an automated bump would carry `license` forward
+# unchanged. Moving past 7.2 is a human decision that includes updating `license`.
+max_bump = "patch"
 
 [[release]]
 version = "7.2.16"

@@ -30,7 +30,11 @@ NON_PACKAGES = {"_template"}
 # The only package.toml keys we know. Anything else is an error: a typo in a
 # key that a tool silently ignores is how a gate stops gating.
 PACKAGE_KEYS = {"name", "description", "license", "homepage"}
-UPSTREAM_KEYS = {"git", "tag", "url", "strip_prefix", "scheme"}
+UPSTREAM_KEYS = {"git", "tag", "url", "strip_prefix", "scheme", "watch", "max_bump", "prereleases"}
+# The watcher's policy knobs (tools/watch.py). Human-owned: tools/guard.py refuses an automated PR
+# that changes any of them, so a bot cannot widen what it is allowed to bump.
+WATCH_POLICY_KEYS = ("watch", "max_bump", "prereleases")
+MAX_BUMP_VALUES = ("patch", "minor", "major")
 RELEASE_KEYS = {"version", "upstream_version", "sha256", "rev", "url", "strip_prefix", "republish"}
 TEST_KEYS = {"platforms", "objects", "needs", "timeout", "verify"}
 REVIEW_KEYS = {"generators"}

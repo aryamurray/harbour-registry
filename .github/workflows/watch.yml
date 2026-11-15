@@ -1,0 +1,395 @@
+name: Watch
+
+# The closed loop that keeps packages current:
+#
+#   detect   every 6 hours: is any package's newest [[release]] older than upstream's newest stable tag?
+#   bump     one PR per (package, newest version): a new [[release]] with the hash, Harbour.toml's
+#            `version`, the re-rendered index/. The manifest, overlay/ and patches/ are carried
+#            forward UNCHANGED.
+#   (gate)   pr.yml judges that PR exactly as it judges any other. Nothing here can change what it
+#            checks: an automated PR may not touch tests, tools or workflows (tools/guard.py).
+#   triage   when the gate finishes on a bump PR: label it, post ONE failure summary, and decide whether
+#            the repair step gets another attempt or a human is needed.
+#   repair   the seam for an LLM that proposes a rewritten manifest. NOT BUILT: see tools/repair.py.
+#
+# MERGING IS NOT DONE HERE. Branch protection (require `PR result`, require Code Owners review where a
+# human is wanted) plus GitHub auto-merge merge a green bump; this workflow only turns auto-merge on, and
+# only when the repository variable REGISTRY_AUTO_MERGE is `true` (default: off).
+#
+# ---------------------------------------------------------------------------------------------------
+# WHAT THE OWNER MUST CREATE (README "Keeping packages current" has the same list, with steps)
+#
+#   secret    REGISTRY_BOT_TOKEN   a fine-grained PAT (or a GitHub App installation token) for THIS
+#                                  repository only, with Contents: read and write, Pull requests: read
+#                                  and write, Issues: read and write (labels). Required, see below.
+#   variable  REGISTRY_AUTO_MERGE  `true` to enable auto-merge on bump PRs. Default off.
+#   variable  REGISTRY_REPAIR_ENABLED   `true` once tools/repair.py has a model behind it. Default off:
+#                                  a failed bump then goes straight to `needs-human`.
+#   variable  REGISTRY_REPAIR_ATTEMPTS  repair attempts per bump PR before `needs-human`. Default 2.
+#   labels    bot, bump, needs-repair, needs-human (and repair-attempt-N): created by this workflow
+#             when missing (`tools/bump_triage.py ensure-labels`), nothing to do by hand.
+#   settings  Actions > General > "Allow GitHub Actions to create and approve pull requests" is NOT
+#             needed (the PAT opens the PRs); "Allow auto-merge" is, if REGISTRY_AUTO_MERGE is used.
+#
+# THE TOKEN PROBLEM, AND WHAT WAS DECIDED. A push or a PR made with the default GITHUB_TOKEN does not
+# trigger other workflows (GitHub's guard against loops), so a PR opened that way would never be run
+# through pr.yml: the gate would simply not happen. Two ways around it were considered:
+#
+#   1. (BUILT) open the PR with REGISTRY_BOT_TOKEN. Its events do trigger pr.yml, the `PR result` check
+#      appears on the PR, and branch protection / auto-merge work as they do for any PR.
+#   2. (NOT BUILT) open it with GITHUB_TOKEN and `workflow_dispatch` pr.yml on the branch. That would
+#      need pr.yml to compute its inputs without a `pull_request` event: who the author is, which labels
+#      the PR has, what the base commit is. Those are exactly the inputs the guard judges with, and on a
+#      dispatch they would come from whoever dispatches, so the guard could be told that the PR is not a
+#      bot's. The results would also appear as runs on the branch, not as PR checks, so required-check
+#      branch protection could not enforce them and auto-merge could not wait on them. That is a weaker,
+#      more complicated pr.yml for a gate whose whole value is that it cannot be talked out of a verdict.
+#
+# So without the secret the `bump` job FAILS LOUDLY, before it does anything, and says what to create.
+# (`detect` and `dry-run` need no secret.)
+# ---------------------------------------------------------------------------------------------------
+on:
+  schedule:
+    # Every 6 hours at minute 17: an odd minute, because scheduled runs on the hour are the ones
+    # GitHub delays or drops under load.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Only this package (default: all)"
+        type: string
+        required: false
+        default: ""
+      dry-run:
+        description: "Detect and write the candidate, but push nothing and open no PR"
+        type: boolean
+        required: false
+        default: false
+  # Runs from the DEFAULT BRANCH's copy of this file, in the base repository's context, with write
+  # permissions: see the `triage` job for what that means for what it may do.
+  workflow_run:
+    workflows: ["PR"]
+    types: [completed]
+
+# Read-only unless a job asks for more. No top-level `concurrency`: it would apply to the
+# `workflow_run` runs too, and a queue that keeps only one pending run would DROP gate results.
+permissions:
+  contents: read
+
+env:
+  # Never leave bytecode in the checkout: `watch.py bump` insists on a clean tree.
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  # Which packages have a newer upstream release, and no PR or needs-human issue in the way?
+  # Needs no secret and writes nothing: `git ls-remote` for the tags (no API, no rate limit) and two
+  # read-only `gh` queries.
+  detect:
+    name: Detect
+    if: github.event_name != 'workflow_run'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    concurrency:
+      group: watch-detect
+      cancel-in-progress: false
+    outputs:
+      matrix: ${{ steps.report.outputs.matrix }}
+      count: ${{ steps.report.outputs.count }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Always the default branch, even when this run was dispatched from another one: the candidate
+      # is a diff against `main` and must be made with main's tools.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Find newer upstream releases
+        id: report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          # By environment, never interpolated into the script; watch.py rejects an unknown name.
+          PKG: ${{ github.event_name == 'workflow_dispatch' && inputs.package || '' }}
+        run: |
+          if [ -n "$PKG" ]; then
+            python tools/watch.py report --skip-open "$PKG" > report.json
+          else
+            python tools/watch.py report --skip-open > report.json
+          fi
+          # `report` appended `matrix` and `count` to $GITHUB_OUTPUT; the rest is for people.
+          {
+            echo "### Upstream releases"
+            echo
+            echo "| package | registry | newest upstream stable | bump |"
+            echo "| --- | --- | --- | --- |"
+            jq -r '.packages[] | "| \(.package) | \(.current) | \(.upstream_newest // "-") | \(if .target then "-> " + .target.version elif .status != "ok" then .status + ": " + (.reason // "") else "none" end) |"' report.json
+            echo
+            jq -r '.skipped[] | "* skipped \(.package) \(.version): \(.skipped)"' report.json
+            jq -r '.packages[] | .package as $p | .notes[] | "* \($p): \(.)"' report.json
+          } >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.errors[] | "::warning title=Could not list upstream tags::\(.package): \(.reason)"' report.json
+
+  # One matrix leg per package with something to bump: one PR = one package = one (the newest) version.
+  bump:
+    name: Bump ${{ matrix.package }} ${{ matrix.version }}
+    needs: detect
+    if: github.event_name != 'workflow_run' && needs.detect.outputs.count != '0'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # The GITHUB_TOKEN of this job can only READ. Every write (the push, the labels, the PR, the
+    # auto-merge) uses REGISTRY_BOT_TOKEN, in the steps that need it and nowhere else, so that the
+    # PR's events trigger pr.yml (see the token problem above) and so that a mistake in a step that
+    # downloads and hashes a third-party tarball cannot write with a token of its own.
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run && 'true' || 'false' }}
+      PKG: ${{ matrix.package }}
+      VERSION: ${{ matrix.version }}
+      BRANCH: ${{ matrix.branch }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Require REGISTRY_BOT_TOKEN
+        if: env.DRY_RUN != 'true'
+        env:
+          TOKEN: ${{ secrets.REGISTRY_BOT_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error title=REGISTRY_BOT_TOKEN is not set::A bump PR opened with the default GITHUB_TOKEN would not trigger the PR workflow, so the gate would never judge it. Create a fine-grained PAT (or GitHub App token) for this repository with Contents, Pull requests and Issues read+write, store it as the Actions secret REGISTRY_BOT_TOKEN, and re-run. README, 'Keeping packages current'. (A dry run needs no token.)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # A branch left behind by a closed PR means a human already looked at this version.
+      - name: Is there already a branch for this bump?
+        id: exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh api "repos/$GH_REPO/git/ref/heads/$BRANCH" > /dev/null 2>&1; then
+            echo "::notice title=Skipped::$BRANCH already exists"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Download the tarball (https only, size-capped, hashed as it streams, only LISTED, never
+      # extracted), check its top-level directory against `strip_prefix`, write the new [[release]],
+      # bump Harbour.toml's version, render. Exits non-zero, with what the archive really contains,
+      # if anything is off. `--to` pins the exact version `detect` chose.
+      - name: Write the candidate
+        if: steps.exists.outputs.skip != 'true'
+        run: |
+          python tools/watch.py bump "$PKG" --to "$VERSION" \
+            --json-out "$RUNNER_TEMP/bump.json" --pr-body "$RUNNER_TEMP/pr-body.md"
+
+      # The fast local checks; the PR will run them again, plus the consumer tests. Failing here
+      # means the candidate is not even well formed, and no PR is worth opening.
+      - name: Fast local checks
+        if: steps.exists.outputs.skip != 'true'
+        run: |
+          python tools/lint.py "$PKG"
+          python tools/render.py --check --base HEAD
+
+      - name: Commit and run the guard on the result
+        if: steps.exists.outputs.skip != 'true'
+        run: |
+          base="$(git rev-parse HEAD)"
+          git config user.name "harbour-registry-watch"
+          git config user.email "harbour-registry-watch@users.noreply.github.com"
+          git checkout -q -b "$BRANCH"
+          git add -A
+          old="$(jq -r .old_version "$RUNNER_TEMP/bump.json")"
+          git commit -q -m "Bump $PKG $old -> $VERSION" \
+            -m "Written by tools/watch.py bump. The manifest, overlay/ and patches/ are carried forward unchanged; the PR gate decides whether that still builds."
+          # The guard as the PR workflow will run it: the bot's own diff against the base it came from.
+          python tools/guard.py --base "$base" --head HEAD --author "$GITHUB_ACTOR" --labels bot --head-ref "$BRANCH"
+          git diff --stat "$base" HEAD
+          {
+            echo "### $PKG $old -> $VERSION"
+            echo
+            cat "$RUNNER_TEMP/pr-body.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The token goes into the header of this one command (as actions/checkout would store it) and is
+      # masked; it is not written to .git/config and not present in any other step's environment.
+      - name: Push the branch
+        if: steps.exists.outputs.skip != 'true' && env.DRY_RUN != 'true'
+        env:
+          TOKEN: ${{ secrets.REGISTRY_BOT_TOKEN }}
+        run: |
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')"
+          echo "::add-mask::$auth"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push origin "HEAD:refs/heads/$BRANCH"
+
+      # `bot` is what the guard keys on besides the branch name; `bump` is for people filtering the PR
+      # list. A PR made with a PAT triggers pr.yml: the gate runs and `PR result` appears on the PR.
+      - name: Open the pull request
+        id: pr
+        if: steps.exists.outputs.skip != 'true' && env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.REGISTRY_BOT_TOKEN }}
+          BASE_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          python tools/bump_triage.py ensure-labels --repo "$GH_REPO"
+          old="$(jq -r .old_version "$RUNNER_TEMP/bump.json")"
+          url="$(gh pr create --base "$BASE_BRANCH" --head "$BRANCH" \
+            --title "Bump $PKG $old -> $VERSION" --body-file "$RUNNER_TEMP/pr-body.md" \
+            --label bot --label bump)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Opened $url"
+
+      # Off unless the owner flips REGISTRY_AUTO_MERGE to `true`. This only ASKS GitHub to merge once
+      # the required checks pass and the branch rules are met; if the repository has no such rules,
+      # or auto-merge is not enabled in its settings, this is a warning and the PR waits for a human.
+      - name: Enable auto-merge
+        if: steps.pr.outputs.url != '' && vars.REGISTRY_AUTO_MERGE == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.REGISTRY_BOT_TOKEN }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+        run: |
+          gh pr merge --auto --squash "$PR_URL" \
+            || echo "::warning title=Auto-merge not enabled::gh pr merge --auto failed (is 'Allow auto-merge' on, and is a required check configured?). The PR needs a human."
+
+  # The gate finished on something. If it was a bump PR, say so and decide what happens next.
+  #
+  # SECURITY OF THIS JOB. `workflow_run` runs the DEFAULT BRANCH's copy of this file, in the base
+  # repository, with the permissions below (write on issues and pull requests, and the repository's
+  # secrets available). The workflow it reacts to ran PR-controlled code (third-party sources, manifests,
+  # generator scripts, consumer tests). Rules, each enforced here:
+  #   * It checks out the default branch ONLY, never `workflow_run.head_sha` or the PR's ref, and
+  #     executes nothing but tools/ from that checkout. No PR file is read from disk: the only things
+  #     taken from the PR are strings, below.
+  #   * Strings from the PR (branch name, job and step names, log text) reach the script through
+  #     environment variables, never `${{ }}` inside a `run:` (a branch name can contain `$(...)`), and
+  #     are validated (the branch against a strict regex; names reduced to a safe alphabet) or quoted
+  #     in a code fence the text cannot close.
+  #   * Same-repository runs of `pull_request` events only: a fork's PR from a branch it named
+  #     `bot/bump-...` is ignored, as is any other event type.
+  #   * The token is the job's GITHUB_TOKEN: it can write labels, comments and issues, not contents.
+  #     The only secret-bearing variable is the token itself; no model key is present.
+  #   * It never approves or merges anything.
+  triage:
+    name: Triage the gate
+    if: >-
+      github.event_name == 'workflow_run'
+      && github.event.workflow_run.event == 'pull_request'
+      && github.event.workflow_run.head_repository.full_name == github.repository
+      && startsWith(github.event.workflow_run.head_branch, 'bot/bump-')
+      && contains(fromJSON('["success", "failure", "timed_out"]'), github.event.workflow_run.conclusion)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read          # list the run's jobs and read their logs
+      contents: read
+      pull-requests: write   # labels and the one comment
+      issues: write          # the needs-human issue
+    # One at a time per branch, queued rather than cancelled: each result is a verdict that counts
+    # towards the repair budget.
+    concurrency:
+      group: watch-triage-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: false
+    outputs:
+      repair: ${{ steps.triage.outputs.repair }}
+      pr: ${{ steps.triage.outputs.pr }}
+      package: ${{ steps.triage.outputs.package }}
+      version: ${{ steps.triage.outputs.version }}
+      attempt: ${{ steps.triage.outputs.attempt }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Label, summarise, and decide
+        id: triage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          BUDGET: ${{ vars.REGISTRY_REPAIR_ATTEMPTS || '2' }}
+          ENABLED: ${{ vars.REGISTRY_REPAIR_ENABLED || 'false' }}
+        run: |
+          python tools/bump_triage.py triage --repo "$GH_REPO" --run-id "$RUN_ID" \
+            --head-branch "$HEAD_BRANCH" --head-sha "$HEAD_SHA" --conclusion "$CONCLUSION" \
+            --budget "$BUDGET" --repair-enabled "$ENABLED" --out-dir "$RUNNER_TEMP/repair-input"
+      # Only when an attempt was granted: the repair job's whole input is this directory.
+      - name: Keep the repair input
+        if: steps.triage.outputs.repair == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: repair-input
+          path: ${{ runner.temp }}/repair-input
+          retention-days: 3
+
+  # THE SEAM FOR THE LLM STEP. Not built: tools/repair.py is a stub that exits "not configured" (so
+  # with REGISTRY_REPAIR_ENABLED=true and no model wired in, this job fails loudly, and the attempt label
+  # the triage job added has already been spent). The contract (input, allowed output paths, budget, how
+  # the model must treat untrusted text) is the docstring of tools/repair.py and the README.
+  #
+  # When it is built, this job must keep the shape of `triage`: default branch checked out, the PR's
+  # files fetched as DATA into a separate directory and never executed, no secret in the model process
+  # except its own scoped key. The one write it makes is a commit to the SAME bump branch, touching only
+  # packages/<pkg>/Harbour.toml, overlay/ and patches/ (tools/repair.py validate_output), pushed with
+  # REGISTRY_BOT_TOKEN so that pr.yml judges it again, unchanged.
+  repair:
+    name: Repair ${{ needs.triage.outputs.package }} ${{ needs.triage.outputs.version }} (attempt ${{ needs.triage.outputs.attempt }})
+    needs: triage
+    if: needs.triage.outputs.repair == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: repair-input
+          path: ${{ runner.temp }}/repair-input
+      - name: Propose a repaired manifest
+        env:
+          PKG: ${{ needs.triage.outputs.package }}
+          ATTEMPT: ${{ needs.triage.outputs.attempt }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          python tools/repair.py --package "$PKG" --attempt "$ATTEMPT" \
+            --input-dir "$RUNNER_TEMP/repair-input" --out-dir "$RUNNER_TEMP/out"

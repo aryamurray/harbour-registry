@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Refuse an automated pull request that touches anything it is judged by.
 
-    guard.py --base REF --head REF --author LOGIN [--labels a,b] [--event-user-type Bot]
+    guard.py --base REF --head REF --author LOGIN [--labels a,b] [--event-user-type Bot] [--head-ref BRANCH]
 
 An automated PR is one whose author login ends in `[bot]` (or whose type is Bot), or that
 carries the `bot` label. It may change ONLY:
@@ -20,10 +20,19 @@ test. That is the core safety property of the autonomous loop: **the judge canno
 by the judged.** A bot that could edit test/ could make a broken bump pass by weakening the
 assertion; a bot that could edit tools/ or the workflows could make the gate approve anything.
 
-Inside package.toml a bot may change `[upstream]`, `[[release]]`, `description` and `homepage`
-only. `[test]` (platforms, the exact object count) and `[review]` (the generators flag) are part of
+Inside package.toml a bot may change `[[release]]`, `description` and `homepage` only. `[upstream]`
+(where the source comes from, and the tag and URL templates) is a human's: a bump adds a release, it
+never repoints a package at another host. `[test]` (platforms, the exact object count) and `[review]` (the generators flag) are part of
 what judges a package, and `[package] name`/`license` are decisions a human makes, so a bot PR that
 changes any of them is refused, and a bot cannot add a package.toml (a new package is a human's).
+The same goes for the watcher's policy (`[upstream] watch`, `max_bump`, `prereleases`: what the bot
+is allowed to bump is not the bot's decision) and for `republish` on a `[[release]]` (rewriting a
+published version is a human's decision).
+
+A PR is also treated as automated when its head branch starts with `bot/` (the watcher's
+`bot/bump-<package>-<version>`). The `bot` label alone is not enough to rely on: `pull_request`
+payloads carry the labels as they were when the event fired, and a PR opened through the API and
+labelled a moment later is seen by the first run as unlabelled.
 
 Under index/ a bot may add new files (a new version's shim and patches) and change .idx files,
 but may not modify or delete an existing version's shim or patch: those are pinned by users'
@@ -60,11 +69,18 @@ ALLOWED = [re.compile(p) for p in (
     r"^packages/(?!_template/)[^/]+/patches/.+$",
     r"^index/.+$",
 )]
+# Keys of package.toml `[upstream]` that steer the watcher; only a human changes them.
+WATCH_POLICY_KEYS = ("watch", "max_bump", "prereleases")
 README_BEGIN = "<!-- packages:begin"
 README_END = "<!-- packages:end -->"
 
 
-def is_bot(author: str, labels: list[str], user_type: str) -> tuple[bool, str]:
+BOT_BRANCH_PREFIX = "bot/"
+
+
+def is_bot(author: str, labels: list[str], user_type: str, head_ref: str = "") -> tuple[bool, str]:
+    if head_ref.startswith(BOT_BRANCH_PREFIX):
+        return True, f"the head branch `{head_ref}` is in the `{BOT_BRANCH_PREFIX}` namespace"
     if author.lower().endswith("[bot]"):
         return True, f"author `{author}` is a bot account"
     if user_type.lower() == "bot":
@@ -115,6 +131,20 @@ def package_toml_violations(base: str, head: str, path: str) -> list[str]:
     for key in ("name", "license"):
         if a.get("package", {}).get(key) != b.get("package", {}).get(key):
             bad.append(f"{path}: [package] {key} changed; only a human may change it")
+    for key in WATCH_POLICY_KEYS:
+        if a.get("upstream", {}).get(key) != b.get("upstream", {}).get(key):
+            bad.append(f"{path}: [upstream] {key} changed; the watcher's policy (what it may bump) is a human's decision")
+    # The rest of `[upstream]` too: where a package's source comes from. A bump only ever adds
+    # a `[[release]]`; a bot PR that repoints `url` or `git` at another host would otherwise
+    # pass as long as the consumer test did, and the checksum it records is simply whatever
+    # that host served.
+    for key in sorted((set(a.get("upstream", {})) | set(b.get("upstream", {}))) - set(WATCH_POLICY_KEYS)):
+        if a.get("upstream", {}).get(key) != b.get("upstream", {}).get(key):
+            bad.append(f"{path}: [upstream] {key} changed; where a package's source comes from is a human's decision")
+    old_re = {r.get("version"): r.get("republish") for r in a.get("release", []) if isinstance(r, dict)}
+    for r in b.get("release", []):
+        if isinstance(r, dict) and r.get("republish") != old_re.get(r.get("version")):
+            bad.append(f"{path}: release {r.get('version')} `republish` changed; rewriting a published version is a human's decision")
     return bad
 
 
@@ -146,8 +176,10 @@ def main() -> int:
     ap.add_argument("--author", required=True)
     ap.add_argument("--labels", default="")
     ap.add_argument("--event-user-type", default="")
+    ap.add_argument("--head-ref", default=os.environ.get("GUARD_HEAD_REF", ""),
+                    help="the PR's head branch name (default: $GUARD_HEAD_REF); a `bot/` branch is automated")
     args = ap.parse_args()
-    bot, why = is_bot(args.author, args.labels.split(","), args.event_user_type)
+    bot, why = is_bot(args.author, args.labels.split(","), args.event_user_type, args.head_ref)
     if not bot:
         print(f"guard: {why}; no path restriction applies (CODEOWNERS review does)")
         return 0

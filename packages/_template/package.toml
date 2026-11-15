@@ -16,6 +16,12 @@ tag = "v{version}"
 url = "https://github.com/example/example/releases/download/{tag}/example-{version}.tar.gz"
 strip_prefix = "example-{version}"     # the tarball's single top-level directory, dropped on extraction
 # scheme = "four-part"                 # only for upstreams with 1.2.3.4 versions: see README "Versions that are not semver"
+# The release watcher (tools/watch.py) reads `git` and `tag` to find newer upstream versions, and `url` and
+# `strip_prefix` to build the next tarball's URL and check its layout. Its policy is human-owned: a bot PR
+# that changes any of these three is refused by tools/guard.py. See README "Keeping packages current".
+# watch = false                        # opt this package out of automatic bumps
+# max_bump = "major"                   # "patch" | "minor" (default) | "major": the biggest jump it may follow
+# prereleases = true                   # also follow rc/alpha/beta tags (default: stable releases only)
 
 # One entry per release. The newest (highest semver) is the one rendered from Harbour.toml and
 # overlay/; older entries are only checked, never rewritten (see README "Several versions").

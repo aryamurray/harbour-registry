@@ -217,6 +217,15 @@ class Linter:
         for key in ("git", "tag", "url", "strip_prefix"):
             if key in up and not isinstance(up[key], str):
                 self.err(name, f"[upstream] {key} must be a string", ptoml)
+        for key in ("watch", "prereleases"):
+            if key in up and not isinstance(up[key], bool):
+                self.err(name, f"[upstream] {key} must be true or false", ptoml)
+        if "max_bump" in up and up["max_bump"] not in rt.MAX_BUMP_VALUES:
+            self.err(name, f"[upstream] max_bump must be one of {list(rt.MAX_BUMP_VALUES)} (got `{up['max_bump']}`)", ptoml)
+        if isinstance(up.get("tag"), str) and not rt.placeholders(up["tag"]) & {"version", "major", "minor", "patch"}:
+            self.err(name, "[upstream] tag needs at least one of {version} {major} {minor} {patch}", ptoml)
+        if "{tag}" in up.get("tag", ""):
+            self.err(name, "[upstream] tag cannot use {tag} (it is the tag)", ptoml)
 
         # Releases.
         for r in pkg.releases:
