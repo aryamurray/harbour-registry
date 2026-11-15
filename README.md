@@ -204,7 +204,7 @@ All are Python 3.11+, standard library only, and run on Linux, macOS and Windows
 | `tools/render.py [pkg...]` | render `packages/` into `index/` and the README table. `--check` fails (with a diff) if stale; `--check --base REF` also enforces append-only; `--harbour BIN` lets `harbour registry index` produce/verify the `.idx` files (downloads every package's source) |
 | `tools/lint.py [pkg...]` | static checks, no network |
 | `tools/test.py pkg... \| --all` | the consumer test, through the registry (below) |
-| `tools/plan.py --base REF \| --all` | affected packages (changed + reverse dependencies from the `.idx` files; everything if `tools/`, `.github/`, `.harbour-version` etc. changed) and the CI matrix |
+| `tools/plan.py --base REF \| --all` | affected packages (changed + reverse dependencies from the `.idx` files; everything, in shards, if `tools/test.py`, `tools/regtools.py`, `tools/plan.py`, `pr.yml`, `.github/actions/`, `.harbour-version`, `.gitattributes` or `config.toml` changed) and the CI matrix |
 | `tools/guard.py` | the automated-PR guard |
 | `tools/rot_issues.py` | the nightly workflow's issue bookkeeping |
 | `tools/watch.py list\|report\|bump` | the release watcher: find newer upstream versions, write the candidate bump |
@@ -260,7 +260,8 @@ The runner then applies the same last-line and object-count checks.
 * **`pr.yml`** (`pull_request` only, read-only token, never `pull_request_target`): `guard` (automated PRs),
   `plan` (tool self-tests, lint, `render.py --check --base`, affected set and matrix), `harbour` (build and cache
   Harbour per runner image), `index` (the authoritative `harbour registry index` check), `test` (one leg per
-  affected package and platform), and **`PR result`**, the one check to require in branch protection.
+  affected package and platform; a change to what builds and tests packages re-tests everything, packed into a few
+  shards per platform), and **`PR result`**, the one check to require in branch protection.
 * **`watch.yml`** (every 6 hours, manual, and `workflow_run` of `PR`): the release watcher and what follows a
   failed bump PR; see [Keeping packages current](#keeping-packages-current).
 * **`nightly.yml`** (weekly and manual): every package on every platform; a failure opens or comments on ONE
