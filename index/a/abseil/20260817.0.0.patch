@@ -1,9 +1,9 @@
 diff --git a/Harbour.toml b/Harbour.toml
 new file mode 100644
-index 0000000..ac28a49
+index 0000000..26eb8f7
 --- /dev/null
 +++ b/Harbour.toml
-@@ -0,0 +1,138 @@
+@@ -0,0 +1,141 @@
 +# Abseil C++ 20260817.0 (LTS), as two coarse targets instead of upstream's ~250 `absl_cc_library` ones.
 +#
 +# WHAT IS IN `absl`. Every non-test translation unit under absl/. The list was derived from upstream's own
@@ -63,6 +63,9 @@ index 0000000..ac28a49
 +homepage = "https://abseil.io"
 +requires = "hosted"
 +supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
++# Two library targets, so name the one a consumer gets by default: `absl_randen_hwaes` is a private piece
++# that `absl` pulls in itself (local edge), not something to pick.
++default_target = "absl"
 +
 +[targets.absl]
 +kind = "staticlib"

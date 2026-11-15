@@ -12,4 +12,4 @@ upstream_url = "https://github.com/abseil/abseil-cpp.git"
 
 [[patches]]
 file = "20260817.0.0.patch"
-sha256 = "ab0f754d6f531efeb73fcd17c12dd28edea4d05466547921e69cbf72ca69a405"
+sha256 = "4ce1d1de2b8756074ad651ffcbcaa492e21853761b0c32e821caa41014f10bc5"

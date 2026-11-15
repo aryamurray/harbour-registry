@@ -57,6 +57,9 @@ license = "Apache-2.0"
 homepage = "https://abseil.io"
 requires = "hosted"
 supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
+# Two library targets, so name the one a consumer gets by default: `absl_randen_hwaes` is a private piece
+# that `absl` pulls in itself (local edge), not something to pick.
+default_target = "absl"
 
 [targets.absl]
 kind = "staticlib"
