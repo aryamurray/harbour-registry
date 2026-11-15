@@ -10,10 +10,3 @@ freetype = "*"
 [targets.freetype-test]
 kind = "exe"
 sources = ["src/main.c"]
-
-# libm, for the same reason as ../../libpng/test/Harbour.toml: freetype links
-# libpng, whose published manifest does not put libm on its public link surface.
-# A known defect of the published libpng entry, worked around here only; delete
-# the table when libpng is republished with the fix.
-[targets.freetype-test.private]
-system_libs = ["m"]

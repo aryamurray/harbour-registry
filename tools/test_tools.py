@@ -364,7 +364,8 @@ class OnACopy(unittest.TestCase):
             "bad license": (lambda: self.edit(pt, lambda s: s.replace('license = "Zlib"', 'license = "Proprietary"')), "allowlist"),
             "unknown key": (lambda: self.edit(pt, lambda s: s + "\n[test.extra]\nx = 1\n"), "unknown"),
             "no objects": (lambda: self.edit(pt, lambda s: s.replace("objects = 15\n", "")), "objects"),
-            "windows without support": (lambda: self.edit("packages/cjson/package.toml", lambda s: s.replace('["linux", "macos"]', '["linux", "macos", "windows"]')), "supports"),
+            "windows without support": (lambda: self.edit("packages/redis/package.toml", lambda s: s.replace('["linux", "macos"]', '["linux", "macos", "windows"]')), "supports"),
+            "verify is a boolean": (lambda: self.edit(pt, lambda s: s.replace("verify = true", 'verify = "yes"')), "verify must be true or false"),
             "version mismatch": (lambda: self.edit(pt, lambda s: s.replace('version = "1.3.1"', 'version = "1.3.2"', 1)), "must move together"),
             "secret": (lambda: (self.root / "packages/zlib/overlay").mkdir() or (self.root / "packages/zlib/overlay/k.txt").write_text(
                 "-----BEGIN RSA PRIVATE KEY-----\n"), "private key"),

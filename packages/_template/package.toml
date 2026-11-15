@@ -33,6 +33,7 @@ objects = 1                            # EXACT translation units the library com
                                        #   objects = { default = 37, linux = 35, "linux-x86_64" = 38 }
 # needs = ["perl"]                     # executables that must be on PATH
 # timeout = 1800                       # seconds
+# verify = true                        # also run `harbour verify` (every public header compiles, a harness links); see README
 
 # [review]
 # generators = true                    # REQUIRED if Harbour.toml runs code during the build (prebuild, host

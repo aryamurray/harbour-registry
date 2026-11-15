@@ -12,4 +12,4 @@ license = "MIT"
 
 [[patches]]
 file = "1.7.18.patch"
-sha256 = "f68b8ef5de62b8805aae87a3556ba5b44a6cb4076f20fc3385ed9c8d52add20f"
+sha256 = "307e3846c4055964fdb6ece93821d25837c9a10b0b95216a12884282a6fa2cd7"

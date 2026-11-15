@@ -1,9 +1,9 @@
 diff --git a/Harbour.toml b/Harbour.toml
 new file mode 100644
-index 0000000..476ef82
+index 0000000..c073c52
 --- /dev/null
 +++ b/Harbour.toml
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,29 @@
 +[package]
 +name = "libpng"
 +version = "1.6.50"
@@ -24,6 +24,15 @@ index 0000000..476ef82
 +[targets.png.surface.compile.public]
 +include_dirs = ["."]
 +defines = ["PNG_ARM_NEON_OPT=0", "PNG_INTEL_SSE_OPT=0", "PNG_MIPS_MSA_OPT=0", "PNG_POWERPC_VSX_OPT=0", "PNG_LOONGARCH_LSX_OPT=0"]
++
++# png.c calls pow() and floor() (gamma tables, chromaticity maths), and a static
++# archive does not record that, so a consumer that does not link libm fails with
++# "undefined reference to `pow'" in a file it never wrote. Public for that reason.
++# Written as a bare `m` for every OS on purpose: Harbour drops the Unix-only
++# libraries (`m`, `dl`, `pthread`, `rt`) under MSVC, where the CRT carries the math,
++# exactly as it does for cjson's `m`.
++[targets.png.surface.link.public]
++libs = ["m"]
 diff --git a/pnglibconf.h b/pnglibconf.h
 new file mode 100644
 index 0000000..f15fc16

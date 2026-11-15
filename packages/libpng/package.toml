@@ -11,7 +11,9 @@ tag = "v{version}"
 [[release]]
 version = "1.6.50"
 rev = "2b978915d82377df13fcbb1fb56660195ded868a"
+republish = "1.6.50 shipped without libm on its public link surface, so no consumer linked on Linux (undefined reference to pow/floor); the manifest now declares it"
 
 [test]
 platforms = ["linux", "macos"]
 objects = 15
+verify = true

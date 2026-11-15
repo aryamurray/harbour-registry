@@ -15,3 +15,4 @@ rev = "0a0221a1347e2f1e07c395263540026e9a0aa7c7"
 [test]
 platforms = ["linux", "macos"]
 objects = 41
+verify = true

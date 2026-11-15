@@ -32,7 +32,7 @@ NON_PACKAGES = {"_template"}
 PACKAGE_KEYS = {"name", "description", "license", "homepage"}
 UPSTREAM_KEYS = {"git", "tag", "url", "strip_prefix", "scheme"}
 RELEASE_KEYS = {"version", "upstream_version", "sha256", "rev", "url", "strip_prefix", "republish"}
-TEST_KEYS = {"platforms", "objects", "needs", "timeout"}
+TEST_KEYS = {"platforms", "objects", "needs", "timeout", "verify"}
 REVIEW_KEYS = {"generators"}
 TOP_KEYS = {"package", "upstream", "release", "test", "review"}
 

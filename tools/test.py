@@ -23,7 +23,16 @@ For each package the runner:
   5. counts the translation units compiled for the *dependency* (objects under
      `.harbour/target/<profile>/deps/<name>-<version>/`, excluding probes and host tools)
      and requires exactly `[test] objects` for this platform. A source list that silently
-     shrinks still links and still passes; this is what notices.
+     shrinks still links and still passes; this is what notices;
+  6. if the package sets `[test] verify = true`, runs `harbour verify <pkg> --registry-path
+     <snapshot> --format json` as an independent second signal (every public header that can
+     compile on its own does, and a harness links against the library and runs) and requires
+     it to pass, printing which harness level ran. Opt-in because it costs a second
+     release-profile build of the package: cheap for most, about a minute for harfbuzz.
+
+Every `harbour build` here passes `--strict-sources`: each pattern in `sources` and in each active
+`when` block must match a file, so a pattern that matches nothing is an error and not a library
+that quietly got smaller.
 
 Packages whose test is not a library consumer (a server, an interpreter) ship `test/run.sh`
 instead of a consumer. The contract for run.sh, run with bash, cwd = a scratch directory:
@@ -56,6 +65,7 @@ HARBOUR_TEST_REGISTRY_URL override instead (same effect: it replaces the registr
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import re
@@ -163,12 +173,14 @@ class Runner:
         (self.home / ".harbour" / "config.toml").write_text(
             f'[[registries]]\nname = "checkout"\nurl = "{url}"\npriority = 0\n', encoding="utf-8")
         env["HOME"] = str(self.home)
-        # Not on Windows. With USERPROFILE redirected, the first Windows run had Harbour using a
-        # RELATIVE `.harbour` cache (its last-resort fallback when it cannot find the profile's
-        # folders) and handing `git apply` a relative patch path from another working directory:
-        # "can't open patch ... Filename too long". Redirecting it buys nothing there anyway --
-        # Harbour asks the OS, not the environment, for the home directory -- and the registry is
-        # selected by HARBOUR_TEST_REGISTRY_URL below instead.
+        # Not on Windows, because redirecting USERPROFILE isolates nothing there: Harbour asks the OS
+        # (`directories`, i.e. the known-folder API), not the environment, for the home directory, so
+        # the registry is selected by HARBOUR_TEST_REGISTRY_URL below instead. It also used to break
+        # the run: with USERPROFILE redirected the first Windows run had Harbour fall back to a
+        # RELATIVE `.harbour` cache and hand `git apply` a relative patch path from another working
+        # directory ("can't open patch ... Filename too long"). Harbour fixed that (relative
+        # cache/patch paths on Windows, in the commit pinned by .harbour-version), so the redirect
+        # would no longer fail; it is still left out because it would still not isolate anything.
         if current_platform() != "windows":
             env["USERPROFILE"] = str(self.home)
         env["XDG_CACHE_HOME"] = str(self.home / ".cache")
@@ -250,11 +262,47 @@ class Runner:
                     f"compiled {got} translation units, expected {want_objects} ([test] objects for "
                     f"{self.plat}-{self.arch}). A source list that silently shrinks still links and still "
                     "passes its test; that is why this is asserted separately.")
+            extra = ""
+            if pkg.test.get("verify"):
+                extra = ", " + self.verify(pkg, env, left, log)
         except Failure as err:
             return False, f"{err}\n\n" + "\n".join(log)
         except (RegistryError, OSError, subprocess.SubprocessError) as err:
             return False, f"{type(err).__name__}: {err}\n\n" + "\n".join(log)
-        return True, f"{time.time() - start:.1f}s, {got} objects"
+        return True, f"{time.time() - start:.1f}s, {got} objects{extra}"
+
+    def verify(self, pkg: rt.Package, env, left, log) -> str:
+        """`harbour verify`: a second, independent signal, for packages that opt in with `[test] verify = true`.
+
+        The consumer test proves the behaviour the test author thought of. `verify` builds the
+        newest release through the ordinary path and then does what no hand-written test does:
+        compiles every public header on its own and links a harness that references a symbol of the
+        library, so a header that cannot be included, or a public link surface that is missing a
+        system library (libpng's `pow`), fails here even when the consumer happens not to touch it.
+        It resolves against the same snapshot as the test (`--registry-path`), with the same isolated
+        HOME, so it cannot pass by fetching the package from somewhere else.
+        """
+        newest = pkg.newest
+        cmd = [self.harbour, "verify", pkg.name, "--version", newest.version,
+               "--registry-path", str(self.snapshot), "--format", "json", "--strict-sources"]
+        began = time.time()
+        proc = self.run("harbour verify", cmd, self.tmp, env, left(), log)
+        took = time.time() - began
+        try:
+            report = json.loads(proc.stdout)
+        except ValueError:
+            raise Failure(f"`harbour verify` exited {proc.returncode} and printed no JSON report") from None
+        harness = report.get("harness") or {}
+        step = next((s.get("message", "") for s in report.get("steps", []) if s.get("name") == "Harness"), "")
+        if proc.returncode or not report.get("passed"):
+            fail = report.get("failure") or {}
+            raise Failure(f"`harbour verify` failed at stage {fail.get('stage', '?')}: "
+                          f"{str(fail.get('reason', 'no reason reported')).strip()}")
+        if harness.get("level") in (None, "none") or not harness.get("executed"):
+            raise Failure(f"`harbour verify` passed without running a harness (level {harness.get('level')!r}): "
+                          "a verify that checked nothing is not a signal")
+        log.append(f"== verify passed in {took:.1f}s: {step}")
+        return f"verify {took:.1f}s, {step}"
 
     def consumer(self, pkg, work: Path, test_dir: Path, env, left, log) -> str:
         proj = work / "consumer"
@@ -263,10 +311,10 @@ class Runner:
         exes = [n for n, t in (manifest.get("targets") or {}).items() if isinstance(t, dict) and t.get("kind") == "exe"]
         if len(exes) != 1:
             raise Failure(f"the consumer's Harbour.toml must declare exactly one `kind = \"exe\"` target (found {exes})")
-        first = self.run("harbour build", [self.harbour, "build"], proj, env, left(), log)
+        first = self.run("harbour build", [self.harbour, "build", "--strict-sources"], proj, env, left(), log)
         if first.returncode:
             raise Failure(f"`harbour build` exited {first.returncode}")
-        second = self.run("harbour build (again)", [self.harbour, "build"], proj, env, left(), log)
+        second = self.run("harbour build (again)", [self.harbour, "build", "--strict-sources"], proj, env, left(), log)
         if second.returncode:
             raise Failure(f"the second `harbour build` exited {second.returncode}")
         if "Compiling" in second.stdout + second.stderr:
