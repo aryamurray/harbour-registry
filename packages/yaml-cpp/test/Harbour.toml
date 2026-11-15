@@ -1,0 +1,17 @@
+# Consumer test for yaml-cpp, through the registry (see ../../zlib/test/Harbour.toml).
+# The consumer asks for C++20 while yaml-cpp declares an 11 minimum, so the whole graph (yaml-cpp
+# included) is compiled at 20: standard unification across a static C++ library.
+[package]
+name = "yaml-cpp-test"
+version = "0.1.0"
+
+[build]
+cpp_std = "20"
+
+[dependencies]
+yaml-cpp = "*"
+
+[targets.yaml-cpp-test]
+kind = "exe"
+lang = "c++"
+sources = ["src/main.cpp"]

@@ -1,0 +1,26 @@
+[package]
+name = "jsoncpp"
+version = "1.9.8"
+license = "MIT"
+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
+
+# Read from upstream 1.9.8's src/lib_json/CMakeLists.txt:
+#   JSONCPP_SOURCES = json_tool.h json_reader.cpp json_valueiterator.inl json_value.cpp json_writer.cpp
+#       -> three translation units; the .inl is #included by json_value.cpp and json_tool.h is a header;
+#   JSONCPP_INCLUDE_DIR = ../../include, PUBLIC              -> include_dirs = ["include"];
+#   REQUIRED_FEATURES starts with cxx_std_11, PUBLIC         -> cpp_std = "11" (meson.build: cpp_std=c++11).
+# Defines: none. JSONCPP_NO_LOCALE_SUPPORT is added by upstream's CMake only when a configure-time
+# check finds no <clocale>/lconv::decimal_point, which every glibc/musl/macOS system has; JSON_DLL_BUILD
+# is for a shared library; JSON_USE_EXCEPTION already defaults to 1 in include/json/config.h.
+# Not carried over: -Werror=strict-aliasing (GCC only, a warning policy).
+# License: LICENSE says the user may take it as Public Domain or under the MIT license (text follows).
+# Public Domain has no SPDX identifier, so the MIT choice is recorded.
+[targets.jsoncpp]
+kind = "staticlib"
+lang = "c++"
+cpp_std = "11"
+sources = ["src/lib_json/json_reader.cpp", "src/lib_json/json_value.cpp", "src/lib_json/json_writer.cpp"]
+public_headers = ["include/json/*.h"]
+
+[targets.jsoncpp.public]
+include_dirs = ["include"]

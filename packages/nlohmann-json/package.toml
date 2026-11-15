@@ -1,0 +1,18 @@
+[package]
+name = "nlohmann-json"
+description = "JSON for Modern C++: a header-only JSON library with an STL-like interface"
+license = "MIT"
+homepage = "https://json.nlohmann.me"
+
+[upstream]
+git = "https://github.com/nlohmann/json.git"
+tag = "v{version}"
+
+[[release]]
+version = "3.12.0"
+rev = "55f93686c01528224f448c19128836e7df245f72"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 0
+verify = true

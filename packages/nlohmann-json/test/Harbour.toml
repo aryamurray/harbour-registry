@@ -1,0 +1,19 @@
+# Consumer test for nlohmann-json, through the registry (see ../../zlib/test/Harbour.toml).
+# nlohmann-json is header-only, so nothing is compiled for it: its headers are compiled INTO this
+# program, at the standard the graph settled on. The consumer asks for C++17 while the library
+# declares an 11 minimum; the header-only target's minimum takes part in the maximum like any other
+# (the library's C++17 code paths, std::string_view and std::optional, are then reachable below).
+[package]
+name = "nlohmann-json-test"
+version = "0.1.0"
+
+[build]
+cpp_std = "17"
+
+[dependencies]
+nlohmann-json = "*"
+
+[targets.nlohmann-json-test]
+kind = "exe"
+lang = "c++"
+sources = ["src/main.cpp"]

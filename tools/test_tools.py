@@ -8,6 +8,7 @@ Standard library only; needs git.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import io
 import json
 import tarfile
@@ -31,6 +32,11 @@ import repair  # noqa: E402
 import watch  # noqa: E402
 
 REPO = HERE.parent
+
+# tools/test.py shares its name with the standard library's `test` package, so it is loaded by path.
+_spec = importlib.util.spec_from_file_location("registry_test_runner", HERE / "test.py")
+runner = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(runner)
 GIT = ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "core.autocrlf=false",
        "-c", "commit.gpgsign=false"]
 
@@ -81,6 +87,64 @@ class PatchRendering(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             for path, data in files.items():
                 self.assertEqual((tree / path).read_bytes(), data)
+
+
+class DependencyObjects(unittest.TestCase):
+    """tools/test.py: the object count for a compiled library and for a header-only one (`objects = 0`)."""
+
+    def make(self, tmp, objects=0, lock=None):
+        work = Path(tmp)
+        if objects is not None:
+            d = work / "consumer/.harbour/target/debug/deps/lib-1.0.0/obj"
+            d.mkdir(parents=True)
+            for i in range(objects):
+                (d / f"a{i}.o").write_bytes(b"")
+            (d / "probe").mkdir()
+            (d / "probe" / "x.o").write_bytes(b"")  # a probe is not a translation unit of the library
+        if lock is not None:
+            (work / "consumer").mkdir(parents=True, exist_ok=True)
+            (work / "consumer/Harbour.lock").write_text(lock)
+        return work
+
+    LOCK = 'version = 1\n\n[[package]]\nname = "lib"\nversion = "1.0.0"\nsource = "registry+file:///x"\n'
+
+    def test_compiled_library_is_counted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(runner.dependency_objects(self.make(tmp, 3), "lib", "1.0.0", 3, []), 3)
+
+    def test_compiled_library_needs_its_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(runner.Failure):
+                runner.dependency_objects(self.make(tmp, None, self.LOCK), "lib", "1.0.0", 1, [])
+
+    def test_header_only_has_no_directory_but_must_be_in_the_lock_from_the_registry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = self.make(tmp, None, self.LOCK)
+            self.assertEqual(runner.dependency_objects(work, "lib", "1.0.0", 0, []), 0)
+        with tempfile.TemporaryDirectory() as tmp:  # not resolved at all
+            with self.assertRaises(runner.Failure) as cm:
+                runner.dependency_objects(self.make(tmp, None, 'version = 1\n'), "lib", "1.0.0", 0, [])
+            self.assertIn("registry", str(cm.exception))
+        with tempfile.TemporaryDirectory() as tmp:  # resolved by path: not through the registry
+            lock = self.LOCK.replace("registry+file:///x", "path+file:///x")
+            with self.assertRaises(runner.Failure):
+                runner.dependency_objects(self.make(tmp, None, lock), "lib", "1.0.0", 0, [])
+        with tempfile.TemporaryDirectory() as tmp:  # a different version
+            lock = self.LOCK.replace("1.0.0", "0.9.0")
+            with self.assertRaises(runner.Failure):
+                runner.dependency_objects(self.make(tmp, None, lock), "lib", "1.0.0", 0, [])
+
+    def test_header_only_that_compiles_something_reports_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = self.make(tmp, 2, self.LOCK)
+            self.assertEqual(runner.dependency_objects(work, "lib", "1.0.0", 0, []), 2)  # caller compares to want
+
+    def test_is_header_only(self):
+        ho = {"targets": {"a": {"kind": "header-only"}}}
+        self.assertTrue(rt.is_header_only(ho))
+        self.assertFalse(rt.is_header_only({"targets": {"a": {"kind": "header-only"}, "b": {"kind": "staticlib"}}}))
+        self.assertFalse(rt.is_header_only({"targets": {}}))
+        self.assertFalse(rt.is_header_only({}))
 
 
 class Versions(unittest.TestCase):
@@ -369,6 +433,8 @@ class OnACopy(unittest.TestCase):
             "bad license": (lambda: self.edit(pt, lambda s: s.replace('license = "Zlib"', 'license = "Proprietary"')), "allowlist"),
             "unknown key": (lambda: self.edit(pt, lambda s: s + "\n[test.extra]\nx = 1\n"), "unknown"),
             "no objects": (lambda: self.edit(pt, lambda s: s.replace("objects = 15\n", "")), "objects"),
+            "header-only needs objects = 0": (lambda: self.edit("packages/zlib/Harbour.toml", lambda s: s.replace('kind = "staticlib"', 'kind = "header-only"')), "objects must be 0"),
+            "zero objects for a compiled library": (lambda: self.edit(pt, lambda s: s.replace("objects = 15", "objects = 0")), "at least 1"),
             "windows without support": (lambda: self.edit("packages/redis/package.toml", lambda s: s.replace('["linux", "macos"]', '["linux", "macos", "windows"]')), "supports"),
             "verify is a boolean": (lambda: self.edit(pt, lambda s: s.replace("verify = true", 'verify = "yes"')), "verify must be true or false"),
             "version mismatch": (lambda: self.edit(pt, lambda s: s.replace('version = "1.3.1"', 'version = "1.3.2"', 1)), "must move together"),

@@ -1,0 +1,18 @@
+# Consumer test for pugixml, through the registry (see ../../zlib/test/Harbour.toml).
+# It asks for C++17 while pugixml declares a C++11 minimum: the graph has one C++ standard (the
+# maximum requested), so this also exercises standard unification, and pugixml itself is compiled
+# at 17 (which is what turns on its string_view overloads, used below).
+[package]
+name = "pugixml-test"
+version = "0.1.0"
+
+[build]
+cpp_std = "17"
+
+[dependencies]
+pugixml = "*"
+
+[targets.pugixml-test]
+kind = "exe"
+lang = "c++"
+sources = ["src/main.cpp"]

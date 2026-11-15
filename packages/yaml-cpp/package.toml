@@ -1,0 +1,18 @@
+[package]
+name = "yaml-cpp"
+description = "YAML 1.2 parser and emitter in C++"
+license = "MIT"
+homepage = "https://github.com/jbeder/yaml-cpp"
+
+[upstream]
+git = "https://github.com/jbeder/yaml-cpp.git"
+tag = "yaml-cpp-{version}"
+
+[[release]]
+version = "0.9.0"
+rev = "56e3bb550c91fd7005566f19c079cb7a503223cf"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 32
+verify = true
