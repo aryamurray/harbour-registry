@@ -12,7 +12,7 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [cpython](packages/cpython) | 3.14.9 | `PSF-2.0` | linux, macos | The Python interpreter, built from its generated sources |
 | [crc32c](packages/crc32c) | 1.1.0 | `BSD-3-Clause` | linux, macos | CRC32C implementation with support for CPU-specific acceleration instructions |
 | [curl](packages/curl) | 8.22.0 | `curl` | linux, macos | Command-line tool and library for transferring data with URLs, configured by Harbour probes |
-| [fmt](packages/fmt) | 11.0.2 | `MIT` | linux, macos | A modern formatting library |
+| [fmt](packages/fmt) | 11.2.0 | `MIT` | linux, macos | A modern formatting library |
 | [freetype](packages/freetype) | 2.14.3 | `FTL OR GPL-2.0-or-later` | linux, macos | Font rasterisation library (TrueType, OpenType, Type 1, bitmap fonts) |
 | [harfbuzz](packages/harfbuzz) | 15.0.0 | `MIT` | linux, macos | OpenType text shaping engine |
 | [libpng](packages/libpng) | 1.6.50 | `libpng-2.0` | linux, macos | Reference implementation of the PNG image format |

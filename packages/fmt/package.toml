@@ -12,8 +12,8 @@ tag = "{version}"
 # release is pinned by the git commit its tag points at.
 
 [[release]]
-version = "11.0.2"
-rev = "0c9fce2ffefecfdce794e1859584e25877b7b592"
+version = "11.2.0"
+rev = "40626af88bd7df9a5fb80be7b25ac85b122d6c21"
 
 [test]
 platforms = ["linux", "macos"]

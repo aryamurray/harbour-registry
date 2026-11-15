@@ -1,4 +1,4 @@
-# {fmt} 11.0.2, shimmed for Harbour.
+# {fmt} 11.2.0, shimmed for Harbour.
 #
 # Compiled mode: two translation units, `src/format.cc` (the formatting engine and its tables) and
 # `src/os.cc` (the POSIX file and error wrappers), against headers under `include/`. Nothing is
@@ -10,7 +10,7 @@
 
 [package]
 name = "fmt"
-version = "11.0.2"
+version = "11.2.0"
 description = "A modern formatting library"
 license = "MIT"
 homepage = "https://fmt.dev"

@@ -31,7 +31,7 @@ std::string show(const T& v) {
 
 // tools/test.py exports the upstream version that package.toml declares. The library under test
 // must report exactly that: it is what catches a version bump whose tag or rev points at the wrong
-// source. FMT_VERSION is MMmmpp (11.0.2 -> 110002).
+// source. FMT_VERSION is MMmmpp (11.2.0 -> 110200).
 static bool version_is_declared() {
   const char* want = std::getenv("REGISTRY_TEST_UPSTREAM_VERSION");
   if (want == nullptr || *want == '\0') {
