@@ -1,0 +1,18 @@
+[package]
+name = "jsoncpp"
+description = "C++ library for reading, writing and manipulating JSON"
+license = "MIT"
+homepage = "https://github.com/open-source-parsers/jsoncpp"
+
+[upstream]
+git = "https://github.com/open-source-parsers/jsoncpp.git"
+tag = "{version}"
+
+[[release]]
+version = "1.9.8"
+rev = "8519b8381f3c741ad1421f88237b1deda0b11412"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 3
+verify = true

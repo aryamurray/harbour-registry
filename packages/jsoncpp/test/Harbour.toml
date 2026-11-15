@@ -1,0 +1,14 @@
+# Consumer test for jsoncpp, through the registry (see ../../zlib/test/Harbour.toml).
+# It sets no [build] cpp_std on purpose: the graph's standard is then whatever the library's own
+# minimum (11) and Harbour's default give, which is the plainest possible consumer.
+[package]
+name = "jsoncpp-test"
+version = "0.1.0"
+
+[dependencies]
+jsoncpp = "*"
+
+[targets.jsoncpp-test]
+kind = "exe"
+lang = "c++"
+sources = ["src/main.cpp"]

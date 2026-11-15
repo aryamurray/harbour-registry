@@ -1,0 +1,15 @@
+[package]
+name = "nlohmann-json"
+version = "3.12.0"
+
+[source.git]
+url = "https://github.com/nlohmann/json.git"
+rev = "55f93686c01528224f448c19128836e7df245f72"
+
+[metadata]
+license = "MIT"
+upstream_url = "https://github.com/nlohmann/json.git"
+
+[[patches]]
+file = "3.12.0.patch"
+sha256 = "0ee4258fa55b3405a5b5b6dcc7404a48e26b2f9d169c93e005ebf6c94c70e992"

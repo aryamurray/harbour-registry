@@ -1,0 +1,18 @@
+# Consumer test for googletest, through the registry (see ../../zlib/test/Harbour.toml).
+# The consumer names only `gmock_main`: the manifest's `local = true` edges (gmock_main -> gmock ->
+# gtest) must bring gmock and gtest onto the link line and their include directories and pthread onto
+# the compile and link surface. It sets no cpp_std: googletest's own 17 minimum decides the graph's.
+[package]
+name = "googletest-test"
+version = "0.1.0"
+
+[dependencies]
+googletest = "*"
+
+[targets.googletest-test]
+kind = "exe"
+lang = "c++"
+sources = ["src/main.cpp"]
+
+[targets.googletest-test.deps]
+googletest = { target = "gmock_main" }

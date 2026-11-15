@@ -1,0 +1,71 @@
+[package]
+name = "googletest"
+version = "1.18.0"
+license = "BSD-3-Clause"
+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
+default_target = "gtest"
+
+# Four libraries, one translation unit each, as upstream's googletest/CMakeLists.txt and
+# googlemock/CMakeLists.txt define them (cxx_library(gtest ... src/gtest-all.cc), gtest_main,
+# gmock ... src/gmock-all.cc, gmock_main). gtest-all.cc and gmock-all.cc are upstream's own
+# single-translation-unit builds: they #include every other .cc of the library, relative to
+# googletest/ and googlemock/, which is why those two directories are private include directories
+# (the CMake `include_directories(${gtest_build_include_dirs})`). Consumers get only `include/`.
+#   * cxx_std_17 is PUBLIC on every one (target_compile_features in cmake/internal_utils.cmake):
+#     cpp_std = "17", the minimum since googletest 1.17.
+#   * Threads::Threads is PUBLIC on every one when pthreads exist (always on Linux/macOS): system
+#     library `pthread`, and -DGTEST_HAS_PTHREAD=1. Upstream passes that as a PRIVATE compile flag;
+#     gtest-port.h reads it, so Harbour's ABI lint asks for it to be public, and it is (on gtest only: the
+#     others reach it through their `local` edges). It is the value the header would pick by itself here.
+#   * gtest_main PUBLIC-links gtest, gmock PUBLIC-links gtest, gmock_main PUBLIC-links gmock:
+#     `local = true` edges, so a consumer naming only gmock still links gtest.
+# Not carried over: the Windows/MinGW/HP/QNX branches, the shared-library defines
+# (GTEST_CREATE_SHARED_LIBRARY, GTEST_LINKED_AS_SHARED_LIBRARY), GTEST_HAS_ABSL (off by default).
+[targets.gtest]
+kind = "staticlib"
+lang = "c++"
+cpp_std = "17"
+sources = ["googletest/src/gtest-all.cc"]
+public_headers = ["googletest/include/gtest/**/*.h"]
+
+[targets.gtest.public]
+include_dirs = ["googletest/include"]
+defines = ["GTEST_HAS_PTHREAD=1"]
+system_libs = ["pthread"]
+
+[targets.gtest.private]
+include_dirs = ["googletest"]
+
+[targets.gtest_main]
+kind = "staticlib"
+lang = "c++"
+cpp_std = "17"
+sources = ["googletest/src/gtest_main.cc"]
+
+[targets.gtest_main.deps]
+gtest = { local = true }
+
+[targets.gmock]
+kind = "staticlib"
+lang = "c++"
+cpp_std = "17"
+sources = ["googlemock/src/gmock-all.cc"]
+public_headers = ["googlemock/include/gmock/**/*.h"]
+
+[targets.gmock.public]
+include_dirs = ["googlemock/include"]
+
+[targets.gmock.private]
+include_dirs = ["googlemock"]
+
+[targets.gmock.deps]
+gtest = { local = true }
+
+[targets.gmock_main]
+kind = "staticlib"
+lang = "c++"
+cpp_std = "17"
+sources = ["googlemock/src/gmock_main.cc"]
+
+[targets.gmock_main.deps]
+gmock = { local = true }

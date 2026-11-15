@@ -1,0 +1,36 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..56a0d05
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,30 @@
++[package]
++name = "yaml-cpp"
++version = "0.9.0"
++license = "MIT"
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
++
++# Read from upstream 0.9.0's CMakeLists.txt, which this mirrors:
++#   file(GLOB src/*.cpp) + file(GLOB src/contrib/*.cpp)      -> the two source patterns below: 30 + 2 = 32
++#       translation units. The contrib ones (graphbuilder*.cpp) are in the library because
++#       YAML_CPP_BUILD_CONTRIB defaults to ON (the YAML_CPP_NO_CONTRIB define is added only when it is OFF);
++#   target_include_directories PUBLIC include, PRIVATE src   -> include_dirs below;
++#   PUBLIC YAML_CPP_STATIC_DEFINE (when not a shared build)   -> empties include/yaml-cpp/dll.h's
++#       YAML_CPP_API, i.e. no dllexport/dllimport: it must be public so consumers see the same;
++#   CXX_STANDARD 11, CXX_STANDARD_REQUIRED ON                 -> cpp_std = "11" (a minimum).
++# Not carried over: the -Wall/-pedantic options (only set when yaml-cpp is the main project), the MSVC
++# warning suppressions, and the YAML_CPP_DLL define of a Windows shared build. Windows is not claimed.
++# yaml-cpp throws (YAML::Exception) and does not build with -fno-exceptions.
++[targets.yaml-cpp]
++kind = "staticlib"
++lang = "c++"
++cpp_std = "11"
++sources = ["src/*.cpp", "src/contrib/*.cpp"]
++public_headers = ["include/yaml-cpp/**/*.h"]
++
++[targets.yaml-cpp.public]
++include_dirs = ["include"]
++defines = ["YAML_CPP_STATIC_DEFINE"]
++
++[targets.yaml-cpp.private]
++include_dirs = ["src"]
