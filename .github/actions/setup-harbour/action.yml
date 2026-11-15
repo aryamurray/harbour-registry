@@ -76,5 +76,14 @@ runs:
     - name: Put harbour on PATH
       shell: bash
       run: |
-        echo "$HOME/harbour-bin" >> "$GITHUB_PATH"
+        # GITHUB_PATH entries are read by native programs too. Under Git Bash
+        # `$HOME` is `/c/Users/...`, which bash understands and a native
+        # Windows process (the Python that runs tools/test.py) does not: the
+        # first Windows run found no `harbour` although this step had just
+        # printed its version. Write the native spelling there.
+        bin="$HOME/harbour-bin"
+        if command -v cygpath >/dev/null 2>&1; then
+          bin="$(cygpath -w "$bin")"
+        fi
+        echo "$bin" >> "$GITHUB_PATH"
         "$HOME/harbour-bin/harbour" --version
