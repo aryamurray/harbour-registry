@@ -1,0 +1,144 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..ac28a49
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,138 @@
++# Abseil C++ 20260817.0 (LTS), as two coarse targets instead of upstream's ~250 `absl_cc_library` ones.
++#
++# WHAT IS IN `absl`. Every non-test translation unit under absl/. The list was derived from upstream's own
++# build files at this tag, not written by hand: every `absl_cc_library(... SRCS ...)` in absl/**/CMakeLists.txt
++# that is not `TESTONLY` (158 .cc files in SRCS, plus strings/internal/escaping.cc, which upstream lists under
++# HDRS but CMake compiles all the same, since add_library gets SRCS and HDRS together: 159), compared with
++# the file list CMake/AbseilDll.cmake gives the `abseil_dll` target (the one place upstream itself says "these are all the sources"), and with the BUILD.bazel
++# files. They agree, except for the differences below. The glob + `exclude` form is the same set:
++#   * `absl/**/*.cc` minus tests and benchmarks (`*_test.cc`, `*_benchmark.cc`, `*_benchmarks.cc`), which
++#     no non-test library names in SRCS;
++#   * test support that CMake marks TESTONLY, so is not part of any library: atomic_hook_test_helper,
++#     exception_safety_testing, spinlock_test_common, hash_generator_testing, test_instance_tracker,
++#     stack_consumption, flag_test_defs, any_invocable_test_inst1..4, print_hash_of, log/internal/test_*,
++#     scoped_mock_log, status_matchers, pow10_helper, time/internal/test_util, simulated_clock,
++#     test_time_zone_names;
++#   * test support CMake does NOT mark TESTONLY but only tests depend on: random/internal/chi_square.cc and
++#     distribution_test_util.cc (absl::random_internal_distribution_test_util has no non-test dependent);
++#   * programs with a main(): random/internal/gaussian_distribution_gentables.cc (a table generator),
++#     random/benchmarks.cc, nanobenchmark.cc, randen_benchmarks.cc;
++#   * random/internal/randen_hwaes.cc, which is its own target below;
++#   * time/internal/cctz/src/time_zone_name_win.cc, which upstream adds for Windows only.
++# The result is 156 files here plus 1 in `absl_randen_hwaes` = 157 translation units, which is what
++# `[test] objects` pins: a new upstream .cc that none of these excludes names raises the count and fails the gate
++# for a human to classify.
++# What is NOT dropped: flags (absl/flags, log/flags.cc) are in. Upstream's DLL build omits them only under
++# MSVC; the normal CMake and Bazel static builds have them, and Windows is not claimed here anyway.
++#
++# One archive is honest about dependencies because upstream's own are a single strongly connected web
++# (status -> strings -> cord -> crc -> ... -> base, log -> flags -> ..., time -> strings): depending on
++# `absl` means all of it, and the linker still only takes the members a program references.
++#
++# THE SIMD FILE. `ABSL_RANDOM_RANDEN_COPTS` (absl/random/internal/BUILD.bazel; CMake's version is
++# AbseilConfigureCopts.cmake) is applied to exactly one source, random/internal/randen_hwaes.cc
++# (`random_internal_randen_hwaes_impl`): x86_64 `-maes -msse4.1`, aarch64 `-march=armv8-a+crypto`. (CMake also
++# gives it to randen_detect.cc; Bazel does not, and it is not needed there: randen_detect.cc only decides
++# at run time, with cpuid / getauxval / sysctl, whether to call the AES path.) Harbour has no per-source
++# flags, so the file is its own staticlib and `absl` links it with a `local` edge, as the crc32c package does
++# for `-msse4.2`. On any other architecture the flag-less file compiles to an empty unit: its body is under
++# `#if ABSL_HAVE_ACCELERATED_AES`, which only the flags (or -march) turn on, and randen.cc then uses
++# RandenSlow. The runtime check in randen.cc keeps the fallback honest.
++#
++# PLATFORMS. Linux and macOS are claimed. Windows is not: upstream needs `-DNOMINMAX -DWIN32_LEAN_AND_MEAN
++# -D_CRT_SECURE_NO_WARNINGS`, `bcrypt`, `dbghelp` and `advapi32` system libs (MinGW rows in the CMakeLists,
++# `-DEFAULTLIB:` rows in BUILD.bazel for MSVC) and time_zone_name_win.cc, but none of that is verified here.
++#   * Linux: `pthread` (Threads::Threads, the Mutex/waiter and thread-identity code) and `rt`
++#     (`find_library(LIBRT rt)` in base/CMakeLists.txt; clock_gettime on old glibc). `execinfo` is looked
++#     up for musl in debugging/CMakeLists.txt; glibc has backtrace() in libc, and the registry's musl
++#     triples are not exercised.
++#   * macOS: `-Wl,-framework,CoreFoundation` (time/CMakeLists.txt, absl::time_zone; cctz reads the system zone).
++# C++17 is the minimum (base/policy_checks.h). Nothing here is compiled with upstream's warning flags
++# (ABSL_DEFAULT_COPTS is all -W..., plus -DNOMINMAX which is inert off Windows).
++[package]
++name = "abseil"
++version = "20260817.0.0"
++description = "Abseil C++ common libraries (LTS): strings, containers, time, status, synchronization, hashing, random, logging, flags"
++license = "Apache-2.0"
++homepage = "https://abseil.io"
++requires = "hosted"
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
++
++[targets.absl]
++kind = "staticlib"
++lang = "c++"
++cpp_std = "17"
++sources = ["absl/**/*.cc"]
++exclude = [
++  # tests and benchmarks
++  "absl/**/*_test.cc",
++  "absl/**/*_benchmark.cc",
++  "absl/**/*_benchmarks.cc",
++  "absl/random/benchmarks.cc",
++  "absl/random/internal/nanobenchmark.cc",
++  # programs with a main()
++  "absl/random/internal/gaussian_distribution_gentables.cc",
++  # test support, TESTONLY upstream
++  "absl/base/internal/atomic_hook_test_helper.cc",
++  "absl/base/internal/exception_safety_testing.cc",
++  "absl/base/spinlock_test_common.cc",
++  "absl/container/internal/hash_generator_testing.cc",
++  "absl/container/internal/test_instance_tracker.cc",
++  "absl/debugging/internal/stack_consumption.cc",
++  "absl/flags/flag_test_defs.cc",
++  "absl/functional/any_invocable_test_inst*.cc",
++  "absl/hash/internal/print_hash_of.cc",
++  "absl/log/internal/test_actions.cc",
++  "absl/log/internal/test_helpers.cc",
++  "absl/log/internal/test_matchers.cc",
++  "absl/log/scoped_mock_log.cc",
++  "absl/status/internal/status_matchers.cc",
++  "absl/strings/internal/pow10_helper.cc",
++  "absl/time/internal/test_util.cc",
++  "absl/time/simulated_clock.cc",
++  "absl/time/internal/cctz/src/test_time_zone_names.cc",
++  # test support, not TESTONLY but with no non-test dependent
++  "absl/random/internal/chi_square.cc",
++  "absl/random/internal/distribution_test_util.cc",
++  # its own target, with the ISA flags
++  "absl/random/internal/randen_hwaes.cc",
++  # Windows only
++  "absl/time/internal/cctz/src/time_zone_name_win.cc",
++]
++public_headers = ["absl/**/*.h", "absl/**/*.inc"]
++
++[targets.absl.deps]
++absl_randen_hwaes = { local = true }
++
++[targets.absl.public]
++include_dirs = ["."]
++system_libs = ["pthread"]
++
++[[targets.absl.surface.when]]
++os = "linux"
++[targets.absl.surface.when."link.public"]
++libs = ["rt"]
++
++[[targets.absl.surface.when]]
++os = "macos"
++[targets.absl.surface.when."link.public"]
++frameworks = ["CoreFoundation"]
++
++# --- the one file that needs ISA flags: only place they may appear -----------
++
++[targets.absl_randen_hwaes]
++kind = "staticlib"
++lang = "c++"
++cpp_std = "17"
++sources = ["absl/random/internal/randen_hwaes.cc"]
++
++[targets.absl_randen_hwaes.private]
++include_dirs = ["."]
++
++[[targets.absl_randen_hwaes.when]]
++arch = "x86_64"
++cflags = ["-maes", "-msse4.1"]
++
++[[targets.absl_randen_hwaes.when]]
++arch = "aarch64"
++cflags = ["-march=armv8-a+crypto"]
