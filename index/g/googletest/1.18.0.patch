@@ -1,9 +1,9 @@
 diff --git a/Harbour.toml b/Harbour.toml
 new file mode 100644
-index 0000000..62760bc
+index 0000000..fce7f53
 --- /dev/null
 +++ b/Harbour.toml
-@@ -0,0 +1,109 @@
+@@ -0,0 +1,124 @@
 +[package]
 +name = "googletest"
 +version = "1.18.0"
@@ -32,6 +32,11 @@ index 0000000..62760bc
 +#     Upstream's cxx_base_flags for MSVC (config_compiler_and_linker) are applied to every library:
 +#     -utf-8 and -DWIN32 -D_UNICODE -DUNICODE -DSTRICT -DWIN32_LEAN_AND_MEAN, in the msvc `when` blocks
 +#     (-EHsc is cl's exception model here, -GS is cl's default, -W4/-wd* are warning policy).
++#   * gtest_main and gmock_main hold `main`, and cl's linker only looks for an entry point in the
++#     objects named on its command line, never in a library member (LNK1561 otherwise). CMake always
++#     passes /SUBSYSTEM:CONSOLE for an executable, which makes it use mainCRTStartup and so pull `main`
++#     out of the archive; Harbour passes no /SUBSYSTEM, so the two *_main targets carry it publicly
++#     (surface.when below).
 +# Not carried over: the MinGW/HP/QNX branches, the shared-library defines
 +# (GTEST_CREATE_SHARED_LIBRARY, GTEST_LINKED_AS_SHARED_LIBRARY), GTEST_HAS_ABSL (off by default).
 +[targets.gtest]
@@ -113,3 +118,13 @@ index 0000000..62760bc
 +compiler = "msvc"
 +cflags = ["/utf-8"]
 +defines = ["WIN32", "_UNICODE", "UNICODE", "STRICT", "WIN32_LEAN_AND_MEAN"]
++
++[[targets.gtest_main.surface.when]]
++compiler = "msvc"
++[targets.gtest_main.surface.when."link.public"]
++ldflags = ["/SUBSYSTEM:CONSOLE"]
++
++[[targets.gmock_main.surface.when]]
++compiler = "msvc"
++[targets.gmock_main.surface.when."link.public"]
++ldflags = ["/SUBSYSTEM:CONSOLE"]

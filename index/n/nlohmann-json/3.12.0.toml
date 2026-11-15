@@ -12,4 +12,4 @@ upstream_url = "https://github.com/nlohmann/json.git"
 
 [[patches]]
 file = "3.12.0.patch"
-sha256 = "d75ed1b8238fc197be9c9523931e2e32450ab81a318b44bba6985a9ce4750baa"
+sha256 = "0ee4258fa55b3405a5b5b6dcc7404a48e26b2f9d169c93e005ebf6c94c70e992"

@@ -1,6 +1,6 @@
 diff --git a/Harbour.toml b/Harbour.toml
 new file mode 100644
-index 0000000..2fdb6d1
+index 0000000..3163829
 --- /dev/null
 +++ b/Harbour.toml
 @@ -0,0 +1,28 @@
@@ -8,7 +8,7 @@ index 0000000..2fdb6d1
 +name = "nlohmann-json"
 +version = "3.12.0"
 +license = "MIT"
-+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
 +
 +# A header-only target: nothing is compiled or linked, and a consumer gets the include directory
 +# (and the C++ standard below as a minimum) and nothing else.
