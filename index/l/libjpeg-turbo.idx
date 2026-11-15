@@ -1,0 +1,1 @@
+{"format_version":1,"name":"libjpeg-turbo","version":"3.2.1","yanked":false,"deps":[],"checksum":"c27ad72a68da151177929aa969ae773a2da5ac2af9ce946079314fdac8cece7f","license":"IJG AND BSD-3-Clause AND Zlib","shim":"l/libjpeg-turbo/3.2.1.toml"}
