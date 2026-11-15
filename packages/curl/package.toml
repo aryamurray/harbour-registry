@@ -13,9 +13,9 @@ strip_prefix = "curl-{version}"
 [[release]]
 version = "8.22.0"
 sha256 = "d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1"
-republish = "8.22.0 build unchanged (same 196 translation units, flags, defines and probes); the source list is now expressed as the pattern `lib/**/*.c` with one exclude instead of 196 file names"
+republish = "8.22.0 build unchanged (same 196 translation units, flags, defines and probes); the source list is now expressed as the pattern `lib/**/*.c` with one exclude instead of 196 file names. Also gains Windows (MSVC) support (same 196 translation units, no TLS, as on Linux and macOS); Linux and macOS build unchanged (the Unix-only config answers moved from the shared list into per-OS blocks; the preprocessed output of every translation unit is identical)"
 
 [test]
-platforms = ["linux", "macos"]
+platforms = ["linux", "macos", "windows"]
 objects = 196
 verify = true

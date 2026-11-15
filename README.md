@@ -15,10 +15,10 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [cjson](packages/cjson) | 1.7.18 | `MIT` | linux, macos, windows | Ultralightweight JSON parser in ANSI C |
 | [cpython](packages/cpython) | 3.14.9 | `PSF-2.0` | linux, macos | The Python interpreter, built from its generated sources |
 | [crc32c](packages/crc32c) | 1.1.0 | `BSD-3-Clause` | linux, macos, windows | CRC32C implementation with support for CPU-specific acceleration instructions |
-| [curl](packages/curl) | 8.22.0 | `curl` | linux, macos | Command-line tool and library for transferring data with URLs, configured by Harbour probes |
+| [curl](packages/curl) | 8.22.0 | `curl` | linux, macos, windows | Command-line tool and library for transferring data with URLs, configured by Harbour probes |
 | [expat](packages/expat) | 2.10.0 | `MIT` | linux, macos, windows | Stream-oriented XML parser library, configured by Harbour probes |
 | [fmt](packages/fmt) | 11.2.0 | `MIT` | linux, macos, windows | A modern formatting library |
-| [freetype](packages/freetype) | 2.14.3 | `FTL OR GPL-2.0-or-later` | linux, macos | Font rasterisation library (TrueType, OpenType, Type 1, bitmap fonts) |
+| [freetype](packages/freetype) | 2.14.3 | `FTL OR GPL-2.0-or-later` | linux, macos, windows | Font rasterisation library (TrueType, OpenType, Type 1, bitmap fonts) |
 | [googletest](packages/googletest) | 1.18.0 | `BSD-3-Clause` | linux, macos, windows | Google's C++ testing (gtest) and mocking (gmock) framework |
 | [harfbuzz](packages/harfbuzz) | 15.0.0 | `MIT` | linux, macos | OpenType text shaping engine |
 | [jsoncpp](packages/jsoncpp) | 1.9.8 | `MIT` | linux, macos, windows | C++ library for reading, writing and manipulating JSON |
@@ -32,7 +32,7 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [mbedtls](packages/mbedtls) | 3.6.7 | `Apache-2.0 OR GPL-2.0-or-later` | linux, macos, windows | Mbed TLS (3.6 LTS): the crypto, X.509 and TLS libraries as three targets |
 | [nghttp2](packages/nghttp2) | 1.71.0 | `MIT` | linux, macos, windows | HTTP/2 C library: frames, sessions, streams and HPACK (libnghttp2 only) |
 | [nlohmann-json](packages/nlohmann-json) | 3.12.0 | `MIT` | linux, macos | JSON for Modern C++: a header-only JSON library with an STL-like interface |
-| [openssl](packages/openssl) | 3.5.4 | `Apache-2.0` | linux, macos | OpenSSL SHA-2 and AES primitives (a slice of libcrypto, generated sources) |
+| [openssl](packages/openssl) | 3.5.4 | `Apache-2.0` | linux, macos, windows | OpenSSL SHA-2 and AES primitives (a slice of libcrypto, generated sources) |
 | [pcre2](packages/pcre2) | 10.49.0 | `BSD-3-Clause` | linux, macos, windows | Perl-compatible regular expressions, the 8-bit library (UTF-8 and Unicode properties, no JIT) |
 | [protobuf](packages/protobuf) | 36.2.0 | `BSD-3-Clause AND MIT` | linux, macos | Protocol Buffers C++ runtime (lite and full libraries); no protoc |
 | [pugixml](packages/pugixml) | 1.16.0 | `MIT` | linux, macos, windows | Light-weight, fast C++ XML parser with a DOM-like interface and XPath 1.0 |
