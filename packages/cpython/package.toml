@@ -13,6 +13,7 @@ strip_prefix = "Python-{version}"
 [[release]]
 version = "3.14.9"
 sha256 = "8b47e85ee67e93945e93620a051a8f44bfc1e9735ed67075d166f4a74b7a060b"
+republish = "3.14.9 build unchanged (same source files, flags, defines and generators); the regular core directories (Parser, Objects, Python, Modules/_io) are now expressed as patterns with a short exclude list instead of ~185 file names"
 
 [test]
 platforms = ["linux", "macos"]
