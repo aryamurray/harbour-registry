@@ -1,0 +1,25 @@
+[package]
+name = "fmt"
+description = "A modern formatting library"
+license = "MIT"
+homepage = "https://fmt.dev"
+
+[upstream]
+git = "https://github.com/fmtlib/fmt"
+tag = "{version}"
+# No `url`/`strip_prefix`: fmt's only release asset is a .zip, which Harbour's registry tarball source
+# does not extract (.tar.gz/.tgz only), and GitHub's auto-generated archives are not byte-stable. The
+# release is pinned by the git commit its tag points at.
+
+[[release]]
+version = "11.2.0"
+rev = "40626af88bd7df9a5fb80be7b25ac85b122d6c21"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 2
+# verify stays off: `harbour verify` includes every header matched by `public_headers = ["include/fmt/*.h"]`
+# on its own, including `format-inl.h`, which is fmt's implementation header (it defines the compiled-mode
+# symbols, as in header-only use), so linking the harness against libfmt.a fails with multiple definitions
+# of fmt::v11::vformat and friends. Fixing it means narrowing `public_headers` in Harbour.toml, which the
+# canary does not do; left as is rather than changed here.

@@ -1,0 +1,16 @@
+# Consumer for crc32c: depends on it THROUGH THE REGISTRY (tools/test.py points Harbour at this
+# checkout), never by path. "*" means "whatever the registry's newest version is".
+[package]
+name = "crc32c-test"
+version = "0.1.0"
+
+[dependencies]
+crc32c = "*"
+
+[targets.crc32c-test]
+kind = "exe"
+lang = "c++"
+sources = ["src/main.cc"]
+
+[targets.crc32c-test.deps]
+crc32c = { target = "crc32c" }
