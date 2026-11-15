@@ -12,4 +12,4 @@ upstream_url = "https://gitlab.freedesktop.org/freetype/freetype.git"
 
 [[patches]]
 file = "2.14.3.patch"
-sha256 = "1c4797fe3caa53ea5908a56c6e01947d8d29d58d64cc7da45a0c4d3d9f396bd4"
+sha256 = "efe8de3cc83fc4594a58c371d42989daf49b1766db5fff79768f44405043af0e"

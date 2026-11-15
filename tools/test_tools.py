@@ -196,10 +196,34 @@ class Plan(unittest.TestCase):
         self.assertEqual(pkgs, {"libpng", "freetype", "harfbuzz"})
 
     def test_judge_changes_retest_everything(self):
-        for path in ("tools/test.py", ".github/workflows/pr.yml", ".harbour-version", "CODEOWNERS", ".gitattributes"):
+        for path in ("tools/test.py", "tools/regtools.py", "tools/plan.py", ".github/workflows/pr.yml",
+                     ".github/actions/setup-harbour/action.yml", ".harbour-version", ".gitattributes", "config.toml"):
             pkgs, everything, _ = plan.affected([path])
             self.assertTrue(everything, path)
             self.assertEqual(pkgs, set(rt.package_names()))
+
+    def test_tooling_that_does_not_build_packages_retests_nothing(self):
+        # Each of these has its own check in the PR workflow; none changes what a consumer test does.
+        for path in ("tools/watch.py", "tools/repair.py", "tools/bump_triage.py", "tools/guard.py", "tools/lint.py",
+                     "tools/render.py", "tools/test_tools.py", ".github/workflows/watch.yml",
+                     ".github/workflows/nightly.yml", "CODEOWNERS", "README.md"):
+            pkgs, everything, _ = plan.affected([path])
+            self.assertFalse(everything, path)
+            self.assertEqual(pkgs, set(), path)
+
+    def test_a_full_run_is_a_few_shards_that_cover_every_package_once(self):
+        names = set(rt.package_names())
+        rows = plan.build_shards(names)
+        per_plat = {}
+        for r in rows:
+            self.assertEqual(r["runner"], plan.RUNNERS[r["os"]])
+            self.assertRegex(r["packages"], r"^[a-z0-9_-]+( [a-z0-9_-]+)*$")
+            per_plat.setdefault(r["os"], []).extend(r["packages"].split())
+        self.assertLessEqual(len(rows), plan.MAX_SHARDS * len(plan.RUNNERS))
+        for plat, tested in per_plat.items():
+            want = sorted(n for n in names if plat in rt.load_package(n).platforms())
+            self.assertEqual(sorted(tested), want, plat)       # every package, exactly once
+        self.assertEqual({r["packages"] for r in plan.build({"zlib"})}, {"zlib"})
 
     def test_matrix_respects_platforms(self):
         rows = plan.build({"zlib", "redis"})

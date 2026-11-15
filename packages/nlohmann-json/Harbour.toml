@@ -2,7 +2,7 @@
 name = "nlohmann-json"
 version = "3.12.0"
 license = "MIT"
-supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
 
 # A header-only target: nothing is compiled or linked, and a consumer gets the include directory
 # (and the C++ standard below as a minimum) and nothing else.

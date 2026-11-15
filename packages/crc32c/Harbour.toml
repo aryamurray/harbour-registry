@@ -33,9 +33,15 @@
 #                                 lists only little-endian triples).
 #   HAVE_BUILTIN_PREFETCH      -> literal under `compiler = gcc|clang`
 #                                 (a compile-snippet question; no probe kind).
-#   HAVE_MM_PREFETCH           -> 0 (the builtin wins on both compilers).
-#   HAVE_SSE42                 -> 1 on x86_64, together with `-msse4.2`.
-#   HAVE_ARM64_CRC32C          -> 1 on aarch64, together with the -march flag.
+#   HAVE_MM_PREFETCH           -> 0 (the builtin wins on both compilers); 1 under cl, where the
+#                                 CMake snippet (`_mm_prefetch` via <intrin.h>) compiles and
+#                                 __builtin_prefetch does not.
+#   HAVE_SSE42                 -> 1 on x86_64, together with `-msse4.2` (gcc, clang) or `/arch:AVX`
+#                                 (cl: CMakeLists.txt's MSVC branch of the SSE4.2 check and of
+#                                 target_compile_options(crc32c_sse42)).
+#   HAVE_ARM64_CRC32C          -> 1 on aarch64, together with the -march flag. cl has no such flag
+#                                 upstream ("TODO: insert correct flag when VS gets ARM64 CRC32C
+#                                 support"), so only x86_64 Windows is supported.
 #   HAVE_STRONG_GETAUXVAL      -> `probes.named`, measured. This is the one
 #                                 answer that really differs per OS: Linux has
 #                                 <sys/auxv.h>, macOS does not.
@@ -51,7 +57,7 @@ description = "CRC32C implementation with support for CPU-specific acceleration 
 license = "BSD-3-Clause"
 homepage = "https://github.com/google/crc32c"
 requires = "hosted"
-supports = ["x86_64-*-linux-gnu", "x86_64-apple-darwin", "aarch64-*-linux-gnu", "aarch64-apple-darwin", "arm64-apple-darwin"]
+supports = ["x86_64-*-linux-gnu", "x86_64-apple-darwin", "aarch64-*-linux-gnu", "aarch64-apple-darwin", "arm64-apple-darwin", "x86_64-pc-windows-msvc"]
 
 # --- the portable group, and the dispatcher -------------------------------
 
@@ -85,6 +91,10 @@ compiler = "gcc"
 defines = ["HAVE_BUILTIN_PREFETCH=1"]
 
 [[targets.crc32c.when]]
+compiler = "msvc"
+defines = ["HAVE_MM_PREFETCH=1"]
+
+[[targets.crc32c.when]]
 arch = "x86_64"
 defines = ["HAVE_SSE42=1"]
 
@@ -106,7 +116,21 @@ include_dirs = ["src", "include"]
 [[targets.crc32c_sse42.when]]
 arch = "x86_64"
 defines = ["HAVE_SSE42=1"]
+
+[[targets.crc32c_sse42.when]]
+arch = "x86_64"
+compiler = "gcc"
 cflags = ["-msse4.2"]
+
+[[targets.crc32c_sse42.when]]
+arch = "x86_64"
+compiler = "clang"
+cflags = ["-msse4.2"]
+
+[[targets.crc32c_sse42.when]]
+arch = "x86_64"
+compiler = "msvc"
+cflags = ["/arch:AVX"]
 
 # --- the ARMv8 CRC group: the only place the -march flag may appear -------
 

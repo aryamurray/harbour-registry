@@ -12,8 +12,9 @@ tag = "{version}"
 version = "1.9.8"
 rev = "8519b8381f3c741ad1421f88237b1deda0b11412"
 license_sha256 = "d02a8853389b2a6c2e60df7c45e72ef212d03fa39cc2afc7f16cc3d49bc6b327"
+republish = "gains Windows (MSVC) support; Linux and macOS build unchanged"
 
 [test]
-platforms = ["linux", "macos"]
+platforms = ["linux", "macos", "windows"]
 objects = 3
 verify = true

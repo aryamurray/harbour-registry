@@ -12,10 +12,10 @@ tag = "{version}"
 version = "15.0.0"
 rev = "35f656a1a2bab548ea7f54a6dd3fba2b09680d14"
 license_sha256 = "b35cd165b566417165547219fd6b7c351a74c27141950f1e40e507d3c1890908"
-republish = "15.0.0 shipped without libm on its public link surface; a C consumer links only because the C++ driver happens to add it. The manifest now declares it"
+republish = "15.0.0 shipped without libm on its public link surface; a C consumer links only because the C++ driver happens to add it. The manifest now declares it. Also gains Windows (MSVC) support; Linux and macOS build unchanged"
 
 [test]
-platforms = ["linux", "macos"]
+platforms = ["linux", "macos", "windows"]
 objects = 1
 # `verify` is off: its release-profile rebuild takes ~64 s on top of the ~37 s test, and its harness is C++
 # (the library's language). The consumer in test/ is a C program, which is what checks that a C user links.

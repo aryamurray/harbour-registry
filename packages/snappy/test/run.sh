@@ -34,34 +34,47 @@ PY
 )"
 [ -n "$cmd" ] || fail "no compile command recorded for snappy.cc"
 
-# Every fact the manifest asserts about the compiler and the platform must reach the compiler.
-for want in HAVE_BUILTIN_EXPECT=1 HAVE_BUILTIN_CTZ=1 HAVE_BUILTIN_PREFETCH=1 \
-  HAVE_ATTRIBUTE_ALWAYS_INLINE=1 HAVE_FUNC_MMAP=1 HAVE_FUNC_SYSCONF=1 \
-  HAVE_SYS_MMAN_H=1 HAVE_UNISTD_H=1; do
+if [ "${REGISTRY_TEST_PLATFORM:-}" = "windows" ]; then
+  # cl: none of the gcc/clang answers may leak in (HAVE_BUILTIN_* name builtins cl lacks), and none of the
+  # POSIX headers exist, so the probes must have answered no. No ISA extension is claimed either.
   case " $cmd " in
-    *" -D$want "*) echo "ok   snappy.cc is compiled with -D$want" ;;
-    *) fail "snappy.cc is not compiled with -D$want: the library still builds and round-trips, on the portable fallback for whatever this macro selects. command: $cmd" ;;
+    *HAVE_BUILTIN_EXPECT* | *HAVE_BUILTIN_CTZ* | *HAVE_BUILTIN_PREFETCH* | *HAVE_ATTRIBUTE_ALWAYS_INLINE* | \
+      *HAVE_SYS_MMAN_H=1* | *HAVE_UNISTD_H=1* | *HAVE_FUNC_MMAP=1* | *SNAPPY_HAVE_SSSE3* | *SNAPPY_HAVE_BMI2* | \
+      *SNAPPY_HAVE_X86_CRC32* | *SNAPPY_HAVE_NEON*)
+      fail "the windows build claims a gcc/clang or POSIX fact. command: $cmd" ;;
+    *) echo "ok   snappy.cc is compiled with no gcc/clang builtin or POSIX answer" ;;
   esac
-done
-
-# NEON is the aarch64 baseline; x86_64 must NOT claim an ISA the manifest passes no -m flag for, or the
-# binary would fault on an older CPU.
-case "$(uname -m)" in
-  arm64 | aarch64)
+else
+  # Every fact the manifest asserts about the compiler and the platform must reach the compiler.
+  for want in HAVE_BUILTIN_EXPECT=1 HAVE_BUILTIN_CTZ=1 HAVE_BUILTIN_PREFETCH=1 \
+    HAVE_ATTRIBUTE_ALWAYS_INLINE=1 HAVE_FUNC_MMAP=1 HAVE_FUNC_SYSCONF=1 \
+    HAVE_SYS_MMAN_H=1 HAVE_UNISTD_H=1; do
     case " $cmd " in
-      *" -DSNAPPY_HAVE_NEON=1 "*) echo "ok   snappy.cc is compiled with -DSNAPPY_HAVE_NEON=1" ;;
-      *) fail "aarch64 build lacks -DSNAPPY_HAVE_NEON=1. command: $cmd" ;;
+      *" -D$want "*) echo "ok   snappy.cc is compiled with -D$want" ;;
+      *) fail "snappy.cc is not compiled with -D$want: the library still builds and round-trips, on the portable fallback for whatever this macro selects. command: $cmd" ;;
     esac
-    ;;
-  *)
-    case " $cmd " in
-      *" -DSNAPPY_HAVE_SSSE3"* | *" -DSNAPPY_HAVE_BMI2"* | *" -DSNAPPY_HAVE_X86_CRC32"* | *" -DSNAPPY_HAVE_NEON"*)
-        fail "the build claims an ISA feature the manifest passes no flag for. command: $cmd" ;;
-      *) echo "ok   snappy.cc claims no ISA extension beyond the baseline" ;;
-    esac
-    ;;
-esac
+  done
 
-exe="$(find .harbour/target -path '*/bin/snappy-test' -print -quit)"
+  # NEON is the aarch64 baseline; x86_64 must NOT claim an ISA the manifest passes no -m flag for, or the
+  # binary would fault on an older CPU.
+  case "$(uname -m)" in
+    arm64 | aarch64)
+      case " $cmd " in
+        *" -DSNAPPY_HAVE_NEON=1 "*) echo "ok   snappy.cc is compiled with -DSNAPPY_HAVE_NEON=1" ;;
+        *) fail "aarch64 build lacks -DSNAPPY_HAVE_NEON=1. command: $cmd" ;;
+      esac
+      ;;
+    *)
+      case " $cmd " in
+        *" -DSNAPPY_HAVE_SSSE3"* | *" -DSNAPPY_HAVE_BMI2"* | *" -DSNAPPY_HAVE_X86_CRC32"* | *" -DSNAPPY_HAVE_NEON"*)
+          fail "the build claims an ISA feature the manifest passes no flag for. command: $cmd" ;;
+        *) echo "ok   snappy.cc claims no ISA extension beyond the baseline" ;;
+      esac
+      ;;
+  esac
+
+fi
+
+exe="$(find .harbour/target \( -path '*/bin/snappy-test' -o -path '*/bin/snappy-test.exe' \) -print -quit)"
 [ -x "$exe" ] || fail "the consumer executable was not built"
 "$exe"

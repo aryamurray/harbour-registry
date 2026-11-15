@@ -1,9 +1,9 @@
 diff --git a/Harbour.toml b/Harbour.toml
 new file mode 100644
-index 0000000..7b1a910
+index 0000000..8d53557
 --- /dev/null
 +++ b/Harbour.toml
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,37 @@
 +# {fmt} 11.2.0, shimmed for Harbour.
 +#
 +# Compiled mode: two translation units, `src/format.cc` (the formatting engine and its tables) and
@@ -12,7 +12,10 @@ index 0000000..7b1a910
 +#
 +# `cpp_std = "17"` is a MINIMUM, not a need: fmt 11 builds as C++11. 17 is declared so that
 +# a consumer asking for more (the registry test asks for 20) raises the whole graph, fmt included.
-+# POSIX only: `supports` lists no MSVC triple, and `os.cc` wraps POSIX file calls.
++# Windows (MSVC): os.cc has its own _WIN32 branches (file, buffered_file and the error wrappers), so
++# the same two files are compiled. Upstream's CMakeLists.txt adds /utf-8 as a PUBLIC compile option
++# of the library for C++ on MSVC (FMT_UNICODE defaults ON; without it fmt's Unicode support is
++# off), so it is on the public surface below and the consumer gets it too.
 +
 +[package]
 +name = "fmt"
@@ -21,7 +24,7 @@ index 0000000..7b1a910
 +license = "MIT"
 +homepage = "https://fmt.dev"
 +requires = "hosted"
-+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
 +
 +[targets.fmt]
 +kind = "staticlib"
@@ -33,3 +36,8 @@ index 0000000..7b1a910
 +# Headers live under include/fmt/; consumers write `#include <fmt/format.h>`.
 +[targets.fmt.public]
 +include_dirs = ["include"]
++
++[[targets.fmt.surface.when]]
++compiler = "msvc"
++[targets.fmt.surface.when."compile.public"]
++cflags = ["/utf-8"]

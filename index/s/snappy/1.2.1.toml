@@ -12,4 +12,4 @@ upstream_url = "https://github.com/google/snappy"
 
 [[patches]]
 file = "1.2.1.patch"
-sha256 = "a7e0435f02b3b8a91d4f661a0e683b0a55054402757974af163dbe6e7b36da69"
+sha256 = "d0937388c5ef84c757df6af9fe061ba527919461b9cae0aecf8eee190d978c39"

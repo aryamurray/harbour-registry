@@ -182,7 +182,9 @@ jobs:
       - uses: ./.github/actions/setup-harbour
       - run: python tools/render.py --check --harbour "$HOME/harbour-bin/harbour"
 
-  # One leg per (affected package, platform it lists). `fail-fast: false`: which legs are
+  # One leg per (affected package, platform it lists); for a change that re-tests everything, a
+  # few shards per platform instead (tools/plan.py), each naming the packages that failed.
+  # `fail-fast: false`: which legs are
   # red is the diagnostic (everything red means Harbour; one package means that package; one
   # OS means that OS's block in the manifest).
   test:
@@ -212,8 +214,11 @@ jobs:
       - uses: ./.github/actions/setup-harbour
       - name: Consumer test
         env:
-          PKG: ${{ matrix.package }}
-        run: python tools/test.py "$PKG"
+          # One package, or the several of a shard (a full run; tools/plan.py). Names are
+          # [a-z0-9_-], written by plan.py from the checked-out tree's package
+          # directories, so word splitting is the intent here.
+          PKGS: ${{ matrix.packages }}
+        run: python tools/test.py $PKGS
 
   # The single check to require in branch protection. Requiring the expanded matrix names
   # directly deadlocks any PR where `plan` decided there is nothing to run: GitHub never
