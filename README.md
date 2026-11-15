@@ -12,16 +12,20 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [bzip2](packages/bzip2) | 1.0.8 | `bzip2-1.0.6` | linux, macos, windows | High-quality block-sorting file compressor: the libbz2 library |
 | [cjson](packages/cjson) | 1.7.18 | `MIT` | linux, macos, windows | Ultralightweight JSON parser in ANSI C |
 | [cpython](packages/cpython) | 3.14.9 | `PSF-2.0` | linux, macos | The Python interpreter, built from its generated sources |
+| [crc32c](packages/crc32c) | 1.1.0 | `BSD-3-Clause` | linux, macos | CRC32C implementation with support for CPU-specific acceleration instructions |
 | [curl](packages/curl) | 8.22.0 | `curl` | linux, macos | Command-line tool and library for transferring data with URLs, configured by Harbour probes |
 | [expat](packages/expat) | 2.10.0 | `MIT` | linux, macos | Stream-oriented XML parser library, configured by Harbour probes |
+| [fmt](packages/fmt) | 11.2.0 | `MIT` | linux, macos | A modern formatting library |
 | [freetype](packages/freetype) | 2.14.3 | `FTL OR GPL-2.0-or-later` | linux, macos | Font rasterisation library (TrueType, OpenType, Type 1, bitmap fonts) |
 | [harfbuzz](packages/harfbuzz) | 15.0.0 | `MIT` | linux, macos | OpenType text shaping engine |
 | [libdeflate](packages/libdeflate) | 1.26.0 | `MIT` | linux, macos, windows | Fast whole-buffer DEFLATE, zlib and gzip compression and decompression |
 | [libpng](packages/libpng) | 1.6.50 | `libpng-2.0` | linux, macos | Reference implementation of the PNG image format |
 | [libuv](packages/libuv) | 1.51.0 | `MIT` | linux, macos, windows | Cross-platform asynchronous I/O |
+| [luajit](packages/luajit) | 2.1.1792588164 | `MIT` | linux, macos, windows | Just-in-time compiler and interpreter for the Lua language |
 | [lz4](packages/lz4) | 1.11.1 | `BSD-2-Clause` | linux, macos, windows | Extremely fast lossless compression: LZ4 blocks, high-compression mode and the frame format |
 | [openssl](packages/openssl) | 3.5.4 | `Apache-2.0` | linux, macos | OpenSSL SHA-2 and AES primitives (a slice of libcrypto, generated sources) |
 | [redis](packages/redis) | 7.2.16 | `BSD-3-Clause` | linux, macos | In-memory data structure store |
+| [snappy](packages/snappy) | 1.2.1 | `BSD-3-Clause` | linux, macos | A fast compressor/decompressor |
 | [xxhash](packages/xxhash) | 0.8.4 | `BSD-2-Clause` | linux, macos, windows | Extremely fast non-cryptographic hash algorithm: XXH32, XXH64, XXH3 and XXH128 |
 | [zlib](packages/zlib) | 1.3.1 | `Zlib` | linux, macos, windows | General-purpose lossless compression library (deflate/inflate, gzip, crc32, adler32) |
 | [zstd](packages/zstd) | 1.5.7 | `BSD-3-Clause OR GPL-2.0-only` | linux, macos, windows | Zstandard, fast real-time compression |

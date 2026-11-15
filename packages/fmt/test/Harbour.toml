@@ -1,0 +1,36 @@
+# Consumer test for fmt: depends on it THROUGH THE REGISTRY (tools/test.py points Harbour at this
+# checkout), never by path. "*" means "whatever the registry's newest version is".
+#
+# The test is C++ (a C executable linking a C++ static library needs a Harbour newer than the one CI
+# pins) and mixes in a plain C library, so the link has to go through the C++ driver.
+[package]
+name = "fmt-test"
+version = "0.1.0"
+
+# The consumer asks for C++20 while fmt's own target declares a minimum of 17. The graph has one
+# C++ standard (the maximum of the requests), so fmt is compiled at 20 as well; main.cc asserts
+# its own `__cplusplus`.
+[build]
+cpp_std = "20"
+
+[dependencies]
+fmt = "*"
+
+# Plain C. It has to be its own target: language is chosen per target for `.c`, and a `.c` listed
+# in a `lang = "c++"` target is compiled as C++.
+[targets.legacy]
+kind = "staticlib"
+sources = ["src/legacy.c"]
+public_headers = ["src/legacy.h"]
+
+[targets.legacy.public]
+include_dirs = ["src"]
+
+[targets.fmt-test]
+kind = "exe"
+lang = "c++"
+sources = ["src/main.cc"]
+
+[targets.fmt-test.deps]
+fmt = "fmt"
+legacy = { local = true }

@@ -1,0 +1,15 @@
+[package]
+name = "luajit"
+version = "2.1.1792588164"
+
+[source.git]
+url = "https://github.com/LuaJIT/LuaJIT"
+rev = "a4c064539ea931274d407e1249b4bb575424a0f4"
+
+[metadata]
+license = "MIT"
+upstream_url = "https://github.com/LuaJIT/LuaJIT"
+
+[[patches]]
+file = "2.1.1792588164.patch"
+sha256 = "51b25cf9276b0a5b4aaddac11735597405ca5d0edc3f1929f73933c61ec023cf"

@@ -447,6 +447,12 @@ class WatchTags(unittest.TestCase):
             pkg = rt.load_package(name)
             up = pkg.upstream
             with self.subTest(name):
+                if up.get("watch") is False and not up.get("tag"):
+                    # A rolling release with no tags (luajit) has nothing to follow: it opts out
+                    # explicitly and has no template. Anything else must be followable.
+                    self.assertTrue(up.get("git"), f"{name} opts out of the watcher but names no git")
+                    self.assertIn("opted out", watch.not_watchable(pkg) or "")
+                    continue
                 self.assertTrue(up.get("git") and up.get("tag"), f"{name} lacks what the watcher needs")
                 tag = rt.release_tag(pkg, pkg.newest)
                 verdict, cand = watch.classify_tag(tag, watch.tag_pattern(up["tag"]), up["tag"], up.get("scheme", "semver"))
@@ -566,6 +572,7 @@ class WatchTags(unittest.TestCase):
                 ("no git", tag_, "no [upstream] git"),
                 ("no tag", git_, "no [upstream] tag"),
                 ("opted out", git_ + tag_ + "watch = false\n", "opted out"),
+                ("opted out, no tag (a rolling release)", git_ + "watch = false\n", "opted out"),
                 ("tarball without url", git_ + tag_, "no [upstream] url"),
                 ("bad max_bump", git_ + tag_ + 'max_bump = "huge"\n', "max_bump")):
             with self.subTest(label), tempfile.TemporaryDirectory() as tmp:

@@ -1,0 +1,20 @@
+[package]
+name = "snappy"
+description = "A fast compressor/decompressor"
+license = "BSD-3-Clause"
+homepage = "https://github.com/google/snappy"
+
+[upstream]
+git = "https://github.com/google/snappy"
+tag = "{version}"
+# No `url`/`strip_prefix`: snappy publishes no release asset, and GitHub's auto-generated tag archives
+# are not byte-stable. The release is pinned by the git commit its (lightweight) tag points at.
+
+[[release]]
+version = "1.2.1"
+rev = "2c94e11145f0b7b184b831577c93e5a41c4c0346"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 4
+verify = true

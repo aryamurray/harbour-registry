@@ -1,0 +1,15 @@
+[package]
+name = "snappy"
+version = "1.2.1"
+
+[source.git]
+url = "https://github.com/google/snappy"
+rev = "2c94e11145f0b7b184b831577c93e5a41c4c0346"
+
+[metadata]
+license = "BSD-3-Clause"
+upstream_url = "https://github.com/google/snappy"
+
+[[patches]]
+file = "1.2.1.patch"
+sha256 = "a7e0435f02b3b8a91d4f661a0e683b0a55054402757974af163dbe6e7b36da69"
