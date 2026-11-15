@@ -13,6 +13,7 @@ strip_prefix = "zstd-{version}"
 [[release]]
 version = "1.5.7"
 sha256 = "eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3"
+license_sha256 = "27cd53f007300dda5535ca6a8a5f75035e185160c3a79223c2148154541c3e51"
 republish = "1.5.7 gains Windows (MSVC) support: the x86_64 .S Huffman decoder is excluded and ZSTD_DISABLE_ASM defined under cl"
 
 [test]

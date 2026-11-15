@@ -13,6 +13,7 @@ strip_prefix = "openssl-{version}"
 [[release]]
 version = "3.5.4"
 sha256 = "967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99"
+license_sha256 = "9959b21fe1824c71cb523273330276f54c6a86a5da244657febf5d0e425e4eb0"
 
 [test]
 platforms = ["linux", "macos"]

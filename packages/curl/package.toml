@@ -13,6 +13,7 @@ strip_prefix = "curl-{version}"
 [[release]]
 version = "8.22.0"
 sha256 = "d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1"
+license_sha256 = "c95770a0fa5ea8bef64903f29fba39b511ccb5069f1474b9e816510da8302926"
 
 [test]
 platforms = ["linux", "macos"]

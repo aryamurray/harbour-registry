@@ -11,7 +11,9 @@ import hashlib
 import importlib.util
 import io
 import json
+import re
 import tarfile
+import zipfile
 import os
 import shutil
 import subprocess
@@ -206,6 +208,9 @@ class Plan(unittest.TestCase):
         self.assertTrue(all(r["runner"] == plan.RUNNERS[r["os"]] for r in rows))
 
 
+LIC_A, LIC_B = "a1" * 32, "b2" * 32     # two license_sha256 values
+
+
 class Guard(unittest.TestCase):
     """The guard against real (throw-away) git history."""
 
@@ -219,6 +224,7 @@ class Guard(unittest.TestCase):
         self.write("README.md", "intro\n<!-- packages:begin (x) -->\nTABLE\n<!-- packages:end -->\noutro\n")
         self.write("packages/foo/package.toml",
                    '[package]\nname = "foo"\nlicense = "MIT"\n[upstream]\ntag = "v{version}"\n[[release]]\nversion = "1.0.0"\n'
+                   f'license_sha256 = "{LIC_A}"\n'
                    '[test]\nplatforms = ["linux"]\nobjects = 3\n[review]\ngenerators = false\n')
         self.write("packages/foo/Harbour.toml", "x\n")
         self.write("packages/foo/test/src/main.c", "int main(void){return 0;}\n")
@@ -252,7 +258,8 @@ class Guard(unittest.TestCase):
     def test_a_version_bump_is_allowed(self):
         self.write("packages/foo/package.toml",
                    '[package]\nname = "foo"\nlicense = "MIT"\n[upstream]\ntag = "v{version}"\n[[release]]\nversion = "1.0.1"\n'
-                   '[[release]]\nversion = "1.0.0"\n[test]\nplatforms = ["linux"]\nobjects = 3\n[review]\ngenerators = false\n')
+                   f'license_sha256 = "{LIC_A}"\n'
+                   f'[[release]]\nversion = "1.0.0"\nlicense_sha256 = "{LIC_A}"\n[test]\nplatforms = ["linux"]\nobjects = 3\n[review]\ngenerators = false\n')
         self.write("packages/foo/Harbour.toml", "y\n")
         self.write("packages/foo/overlay/extra.h", "h\n")
         self.write("index/f/foo.idx", "a\nb\n")
@@ -374,7 +381,8 @@ class OnACopy(unittest.TestCase):
     def test_new_release_appends_and_keeps_old(self):
         self.edit("packages/zlib/Harbour.toml", lambda s: s.replace('version = "1.3.1"', 'version = "1.3.2"', 1))
         self.edit("packages/zlib/package.toml", lambda s: s.replace(
-            '[[release]]\nversion = "1.3.1"', '[[release]]\nversion = "1.3.2"\nsha256 = "' + "ab" * 32 + '"\n\n[[release]]\nversion = "1.3.1"'))
+            '[[release]]\nversion = "1.3.1"', '[[release]]\nversion = "1.3.2"\nsha256 = "' + "ab" * 32 + '"\nlicense_sha256 = "'
+            + "cd" * 32 + '"\n\n[[release]]\nversion = "1.3.1"'))
         r = self.py("render.py", "zlib")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertTrue((self.root / "index/z/zlib/1.3.2.toml").is_file())
@@ -825,10 +833,18 @@ class BumpOnACopy(unittest.TestCase):
                 shutil.copytree(src, self.root / item, ignore=shutil.ignore_patterns("__pycache__"))
             else:
                 shutil.copy(src, self.root / item)
+        # The copies' recorded license digests become the digest of the fake license below, so a
+        # bump that serves the same text is "unchanged" and one that serves another is "changed".
+        for name in ("zlib", "harfbuzz"):
+            self.edit(f"packages/{name}/package.toml", lambda s: re.sub(
+                r'license_sha256 = "[0-9a-f]{64}"', f'license_sha256 = "{watch.license_info(self.LICENSE).digest}"', s))
         run(GIT + ["init", "-q", "-b", "main"], self.root)
         run(GIT + ["add", "-A"], self.root)
         run(GIT + ["commit", "-q", "-m", "base"], self.root)
         self.logs: list[str] = []
+
+    LICENSE = {"LICENSE": b"Permission is hereby granted, free of charge...\nCopyright (c) 1995-2024 The Authors\n"}
+    NO_CHECK = {"status": "none", "sources": [], "notes": []}
 
     def py(self, script, *args):
         return run([sys.executable, str(self.root / "tools" / script), *args], self.root)
@@ -837,13 +853,15 @@ class BumpOnACopy(unittest.TestCase):
         p = self.root / rel
         p.write_text(fn(p.read_text()), newline="")
 
-    def do_bump(self, name, tags, entries=None, **kw):
+    def do_bump(self, name, tags, entries=None, *, texts=None, cross=None, **kw):
         fetched = []
+        texts = self.LICENSE if texts is None else texts
 
-        def fetch(url):
+        def fetch(url, strip_prefix=None):
             fetched.append(url)
-            return watch.ArchiveInfo("ab" * 32, 123, entries)
-        info = watch.bump(name, root=self.root, ls_remote=lambda u: tags, fetch=fetch, log=self.logs.append, **kw)
+            return watch.ArchiveInfo("ab" * 32, 123, entries, dict(texts))
+        info = watch.bump(name, root=self.root, ls_remote=lambda u: tags, fetch=fetch, log=self.logs.append,
+                          tree=lambda url, rev, tag=None: dict(texts), cross=cross or (lambda url, sha256: dict(self.NO_CHECK)), **kw)
         return info, fetched
 
     def status(self):
@@ -860,7 +878,11 @@ class BumpOnACopy(unittest.TestCase):
         for needle in ("zlib", "1.3.1", "1.3.2", "ab" * 32, "carried forward unchanged", "compare"):
             self.assertIn(needle, body)
         ptoml = (self.root / "packages/zlib/package.toml").read_text()
-        self.assertIn('[[release]]\nversion = "1.3.2"\nsha256 = "%s"\n\n[[release]]\nversion = "1.3.1"' % ("ab" * 32), ptoml)
+        self.assertIn('[[release]]\nversion = "1.3.2"\nsha256 = "%s"\nlicense_sha256 = "%s"\n\n[[release]]\nversion = "1.3.1"'
+                      % ("ab" * 32, watch.license_info(self.LICENSE).digest), ptoml)
+        self.assertEqual((info["license_changed"], info["auto_merge"], info["labels"]), (False, True, ["bot", "bump"]))
+        self.assertIn("license files: unchanged", body)
+        self.assertIn("not cross-checked", body)
         self.assertIn('version = "1.3.2"', (self.root / "packages/zlib/Harbour.toml").read_text())
         for line in run(["git", "status", "--porcelain", "-uall"], self.root).stdout.splitlines():
             path = line[3:]
@@ -900,7 +922,9 @@ class BumpOnACopy(unittest.TestCase):
         info, fetched = self.do_bump("harfbuzz", tags)
         self.assertEqual(fetched, [])
         self.assertEqual(info["rev"], sha(22))
-        self.assertIn(f'version = "15.1.0"\nrev = "{sha(22)}"\n', (self.root / "packages/harfbuzz/package.toml").read_text())
+        self.assertIn(f'version = "15.1.0"\nrev = "{sha(22)}"\nlicense_sha256 = "{watch.license_info(self.LICENSE).digest}"\n',
+                      (self.root / "packages/harfbuzz/package.toml").read_text())
+        self.assertFalse(info["license_changed"])
         self.assertEqual(self.py("lint.py", "harfbuzz").returncode, 0)
 
     def test_to_pins_a_version_and_never_downgrades(self):
@@ -998,9 +1022,102 @@ class GuardWatcherRules(unittest.TestCase):
         g.commit("human sets policy")
         g.base = g.rev()
         g.write("packages/foo/package.toml", (g.root / "packages/foo/package.toml").read_text().replace(
-            "[[release]]", '[[release]]\nversion = "1.0.1"\nsha256 = "0"\n\n[[release]]', 1))
+            "[[release]]", f'[[release]]\nversion = "1.0.1"\nsha256 = "0"\nlicense_sha256 = "{LIC_A}"\n\n[[release]]', 1))
         g.commit("bump")
         self.assertEqual(g.verdict(), [])
+
+    # -- license drift ------------------------------------------------------------------------
+    def bump_with(self, new_release: str, *, base_edit=None, rest_edit=None):
+        """Commit a bot bump whose new [[release]] block is `new_release`; the guard's verdict."""
+        g = self.g
+        run(["git", "checkout", "-q", g.base, "--", "."], g.root)
+        path = g.root / "packages/foo/package.toml"
+        if base_edit:
+            g.write("packages/foo/package.toml", base_edit(path.read_text()))
+            g.commit("human base")
+            g.base = g.rev()
+        text = path.read_text().replace("[[release]]", new_release + "[[release]]", 1)
+        g.write("packages/foo/package.toml", rest_edit(text) if rest_edit else text)
+        g.commit("bump")
+        return g.verdict()
+
+    def test_license_digest_same_as_previous_release_is_allowed(self):
+        self.assertEqual(self.bump_with(f'[[release]]\nversion = "1.0.1"\nlicense_sha256 = "{LIC_A}"\n'), [])
+
+    def test_license_drift_is_refused_and_says_so(self):
+        bad = self.bump_with(f'[[release]]\nversion = "1.0.1"\nlicense_sha256 = "{LIC_B}"\n')
+        self.assertEqual(len(bad), 1, bad)
+        self.assertIn(guard.LICENSE_DRIFT, bad[0])
+        self.assertIn(LIC_A, bad[0])
+        self.assertIn(LIC_B, bad[0])
+
+    def test_a_new_release_must_record_a_well_formed_digest(self):
+        for label, block in {
+            "missing": '[[release]]\nversion = "1.0.1"\n',
+            "short": '[[release]]\nversion = "1.0.1"\nlicense_sha256 = "abc"\n',
+            "upper": f'[[release]]\nversion = "1.0.1"\nlicense_sha256 = "{LIC_A.upper()}"\n',
+            "not a string": '[[release]]\nversion = "1.0.1"\nlicense_sha256 = 7\n',
+        }.items():
+            with self.subTest(label):
+                bad = self.bump_with(block)
+                self.assertTrue(any("must record `license_sha256`" in b for b in bad), bad)
+                self.assertFalse(any(guard.LICENSE_DRIFT in b for b in bad), bad)
+
+    def test_the_baseline_cannot_be_rewritten_by_the_bump(self):
+        # The hostile shape: record the NEW digest on the new release and quietly move the old
+        # release's digest to match, so the two agree.
+        swap = lambda s: s.replace(f'version = "1.0.0"\nlicense_sha256 = "{LIC_A}"', f'version = "1.0.0"\nlicense_sha256 = "{LIC_B}"')
+        bad = self.bump_with(f'[[release]]\nversion = "1.0.1"\nlicense_sha256 = "{LIC_B}"\n', rest_edit=swap)
+        self.assertTrue(any("release 1.0.0 `license_sha256` changed" in b for b in bad), bad)
+        self.assertTrue(any(guard.LICENSE_DRIFT in b for b in bad), bad)       # still compared with the BASE's digest
+        # Dropping the old digest, or the old release, does not help either.
+        drop = lambda s: s.replace(f'license_sha256 = "{LIC_A}"\n', "")
+        bad = self.bump_with(f'[[release]]\nversion = "1.0.1"\nlicense_sha256 = "{LIC_B}"\n', rest_edit=drop)
+        self.assertTrue(any("release 1.0.0 `license_sha256` changed" in b for b in bad) and any(guard.LICENSE_DRIFT in b for b in bad), bad)
+        gone = lambda s: s.replace(f'[[release]]\nversion = "1.0.0"\nlicense_sha256 = "{LIC_A}"\n', "")
+        bad = self.bump_with(f'[[release]]\nversion = "1.0.1"\nlicense_sha256 = "{LIC_B}"\n', rest_edit=gone)
+        self.assertTrue(any(guard.LICENSE_DRIFT in b for b in bad), bad)
+
+    def test_a_bot_cannot_add_a_digest_to_an_existing_release_or_bump_without_a_baseline(self):
+        strip = lambda s: s.replace(f'license_sha256 = "{LIC_A}"\n', "")
+        bad = self.bump_with(f'[[release]]\nversion = "1.0.1"\nlicense_sha256 = "{LIC_A}"\n', base_edit=strip)
+        self.assertTrue(any("no `license_sha256` to compare with" in b for b in bad), bad)
+        g = self.g      # (the base now has no digest) adding one to the existing release is a human's
+        run(["git", "checkout", "-q", g.base, "--", "."], g.root)
+        g.write("packages/foo/package.toml", (g.root / "packages/foo/package.toml").read_text().replace(
+            'version = "1.0.0"\n', f'version = "1.0.0"\nlicense_sha256 = "{LIC_A}"\n'))
+        g.commit("backfill by a bot")
+        self.assertTrue(any("release 1.0.0 `license_sha256` changed" in b for b in g.verdict()))
+
+    def test_the_baseline_is_the_newest_release_by_semver_not_by_position(self):
+        # 1.10.0 (digest B) is newer than 1.9.0 (digest A) although it is listed second.
+        two = lambda s: s.replace(f'[[release]]\nversion = "1.0.0"\nlicense_sha256 = "{LIC_A}"\n',
+                                  f'[[release]]\nversion = "1.9.0"\nlicense_sha256 = "{LIC_A}"\n'
+                                  f'[[release]]\nversion = "1.10.0"\nlicense_sha256 = "{LIC_B}"\n')
+        self.assertEqual(self.bump_with(f'[[release]]\nversion = "1.11.0"\nlicense_sha256 = "{LIC_B}"\n', base_edit=two), [])
+        bad = self.bump_with(f'[[release]]\nversion = "1.12.0"\nlicense_sha256 = "{LIC_A}"\n')
+        self.assertTrue(any(guard.LICENSE_DRIFT in b for b in bad), bad)
+        self.assertGreater(guard.semver_key("1.10.0"), guard.semver_key("1.9.0"))
+        self.assertGreater(guard.semver_key("1.0.0"), guard.semver_key("1.0.0-rc.1"))
+        for v in ("1.2.3", "1.2.3-rc.1", "0.0.1", "10.20.30"):
+            self.assertEqual(guard.semver_key(v), rt.semver_key(v))
+
+    def test_duplicate_or_malformed_releases_are_refused(self):
+        bad = self.bump_with(f'[[release]]\nversion = "1.0.1"\nlicense_sha256 = "{LIC_A}"\n'
+                             f'[[release]]\nversion = "1.0.1"\nlicense_sha256 = "{LIC_B}"\n')
+        self.assertTrue(any("listed twice" in b for b in bad), bad)
+        self.assertTrue(self.bump_with('[[release]]\nversion = 3\n'))
+
+    def test_a_human_pr_is_not_restricted(self):
+        self.bump_with(f'[[release]]\nversion = "1.0.1"\nlicense_sha256 = "{LIC_B}"\n')
+        g = self.g
+        r = run([sys.executable, str(HERE / "guard.py"), "--base", g.base, "--head", "HEAD", "--author", "alice",
+                 "--head-ref", "bump-foo-1.0.1"], g.root)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        r = run([sys.executable, str(HERE / "guard.py"), "--base", g.base, "--head", "HEAD", "--author", "alice",
+                 "--head-ref", "bot/bump-foo-1.0.1"], g.root)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn(guard.LICENSE_DRIFT, r.stdout)
 
 
 class LintPolicy(unittest.TestCase):
@@ -1226,6 +1343,657 @@ class Workflows(unittest.TestCase):
         triage = code[code.index("  triage:"):code.index("  repair:")]
         self.assertIn("head_repository.full_name == github.repository", triage)
         self.assertIn("startsWith(github.event.workflow_run.head_branch, 'bot/bump-')", triage)
+
+
+# ---------------------------------------------------------------------------
+# The three gate holes: license drift, the sha256 cross-check, superseded bump PRs. No network.
+# ---------------------------------------------------------------------------
+
+def make_archive(files: dict[str, bytes], *, links: dict[str, str] | None = None, kind: str = "tar") -> bytes:
+    buf = io.BytesIO()
+    if kind == "zip":
+        with zipfile.ZipFile(buf, "w") as z:
+            for n, data in files.items():
+                z.writestr(n, data)
+        return buf.getvalue()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        for n, data in files.items():
+            info = tarfile.TarInfo(n)
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+        for n, target in (links or {}).items():
+            info = tarfile.TarInfo(n)
+            info.type = tarfile.SYMTYPE
+            info.linkname = target
+            tf.addfile(info)
+    return buf.getvalue()
+
+
+MIT = b"MIT License\n\nCopyright (c) 2015-2024 Jane Doe\n\nPermission is hereby granted, free of charge, to any person...\n"
+
+
+class LicenseDigest(unittest.TestCase):
+    def test_which_files_count(self):
+        for yes in ("LICENSE", "license.txt", "LICENCE.md", "LICENSE-MIT", "LICENSE_1_0.txt", "COPYING", "COPYING.LIB",
+                    "COPYRIGHT", "UNLICENSE", "LICENSE.MIT", "LICENSES/MIT.txt", "licenses/anything"):
+            self.assertTrue(watch.license_path(yes), yes)
+        for no in ("README.md", "src/LICENSE", "docs/COPYING", "licenser.c", "copyright.c", "license.h", "LICENSE.py", "COPYINGX", "LICENSES/sub/x.txt",
+                   "NOTICE", "third_party/LICENSES/MIT.txt"):
+            self.assertFalse(watch.license_path(no), no)
+
+    def test_years_and_whitespace_do_not_count_but_wording_does(self):
+        d = lambda b: watch.license_info({"LICENSE": b}).digest  # noqa: E731
+        base = d(MIT)
+        self.assertEqual(base, d(MIT.replace(b"2015-2024", b"2015-2025")))            # a new year
+        self.assertEqual(base, d(MIT.replace(b"2015-2024", b"2015, 2016, 2024 - 2026")))
+        self.assertEqual(base, d(MIT.replace(b"\n", b"\r\n")))                        # line endings
+        self.assertEqual(base, d(MIT.replace(b"free of charge, to", b"free of charge,\n   to") + b"\n\n"))
+        self.assertNotEqual(base, d(MIT.replace(b"MIT License", b"Server Side Public License")))
+        self.assertNotEqual(base, d(MIT.replace(b"Jane Doe", b"Jane Doe and Example Corp")))
+        self.assertNotEqual(base, d(MIT + b"Additional terms apply to commercial use.\n"))
+        # A version number is not a year.
+        self.assertNotEqual(d(b"GNU GENERAL PUBLIC LICENSE Version 2"), d(b"GNU GENERAL PUBLIC LICENSE Version 3"))
+
+    def test_the_set_of_files_counts(self):
+        one = watch.license_info({"LICENSE": MIT})
+        self.assertEqual(one.files, [("LICENSE", hashlib.sha256(watch.normalize_license_text(MIT)).hexdigest())])
+        self.assertEqual(one.digest, hashlib.sha256(f"{one.files[0][1]}  LICENSE\n".encode()).hexdigest())
+        self.assertNotEqual(one.digest, watch.license_info({"LICENSE.txt": MIT}).digest)                 # renamed
+        self.assertNotEqual(one.digest, watch.license_info({"LICENSE": MIT, "COPYING": b"GPL"}).digest)  # one added
+        self.assertNotEqual(one.digest, watch.license_info({}).digest)                                   # removed
+        self.assertEqual(watch.license_info({}).digest, hashlib.sha256(b"").hexdigest())
+        self.assertEqual(watch.license_info({"b": b"1", "a": b"2"}).digest, watch.license_info({"a": b"2", "b": b"1"}).digest)
+
+    def test_license_files_are_read_from_an_archive_without_extracting(self):
+        files = {"zlib-1.3.2/LICENSE": MIT, "zlib-1.3.2/LICENSES/GPL-2.0.txt": b"GPL", "zlib-1.3.2/src/LICENSE": b"nested",
+                 "zlib-1.3.2/zlib.h": b"h", "zlib-1.3.2/contrib/COPYING": b"x"}
+        with tempfile.TemporaryDirectory() as tmp:
+            for kind in ("tar", "zip"):
+                with self.subTest(kind):
+                    p = Path(tmp) / f"a.{kind}"
+                    p.write_bytes(make_archive(files, kind=kind))
+                    self.assertEqual(watch.license_texts_of(p, "zlib-1.3.2"), {"LICENSE": MIT, "LICENSES/GPL-2.0.txt": b"GPL"})
+                    self.assertEqual(watch.license_texts_of(p, None), {})         # the top level holds one directory
+                    self.assertEqual(os.listdir(tmp), [f"a.{kind}"] if kind == "tar" else sorted(["a.tar", "a.zip"]))
+            flat = Path(tmp) / "flat.tar"
+            flat.write_bytes(make_archive({"./COPYING": b"c", "./x.c": b"x"}, links={"./LICENSE": "docs/LICENSE.md"}))
+            self.assertEqual(watch.license_texts_of(flat, None), {"COPYING": b"c", "LICENSE": b"-> docs/LICENSE.md"})
+            big = Path(tmp) / "big.tar"
+            big.write_bytes(make_archive({"p/LICENSE": b"x" * (watch.MAX_LICENSE_FILE_BYTES + 1)}))
+            with self.assertRaises(watch.WatchError):
+                watch.license_texts_of(big, "p")
+
+    def test_license_files_of_a_git_commit_without_a_checkout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            up = Path(tmp) / "up"
+            up.mkdir()
+            run(GIT + ["init", "-q", "-b", "main"], up)
+            (up / "LICENSE").write_bytes(MIT)
+            (up / "LICENSES").mkdir()
+            (up / "LICENSES" / "MIT.txt").write_bytes(b"mit")
+            (up / "src").mkdir()
+            (up / "src" / "COPYING").write_bytes(b"nested")
+            os.symlink("LICENSE", up / "COPYING")
+            run(GIT + ["add", "-A"], up)
+            run(GIT + ["commit", "-q", "-m", "one"], up)
+            run(GIT + ["tag", "-a", "v1.0.0", "-m", "annotated"], up)
+            rev1 = run(["git", "rev-parse", "HEAD"], up).stdout.strip()
+            (up / "LICENSE").write_bytes(b"Business Source License 1.1\n")
+            run(GIT + ["commit", "-qam", "relicense"], up)
+            run(GIT + ["tag", "v2.0.0"], up)
+            rev2 = run(["git", "rev-parse", "HEAD"], up).stdout.strip()
+            url = up.as_uri()
+            want = {"LICENSE": MIT, "LICENSES/MIT.txt": b"mit", "COPYING": b"-> LICENSE"}
+            self.assertEqual(watch.git_license_texts(url, rev1, "v1.0.0", protocols=("file",)), want)
+            self.assertEqual(watch.git_license_texts(url, rev2, "v2.0.0", protocols=("file",))["LICENSE"], b"Business Source License 1.1\n")
+            # A tag that does not lead to the commit (moved, or unknown) falls back to the commit itself.
+            self.assertEqual(watch.git_license_texts(url, rev2, "v1.0.0", protocols=("file",))["LICENSE"], b"Business Source License 1.1\n")
+            self.assertEqual(watch.git_license_texts(url, rev2, None, protocols=("file",))["LICENSE"], b"Business Source License 1.1\n")
+            self.assertNotEqual(watch.license_info(watch.git_license_texts(url, rev1, "v1.0.0", protocols=("file",))).digest,
+                                watch.license_info(watch.git_license_texts(url, rev2, "v2.0.0", protocols=("file",))).digest)
+            with self.assertRaises(watch.WatchError):                       # https only unless told otherwise
+                watch.git_license_texts(url, rev1, "v1.0.0")
+            with self.assertRaises(watch.WatchError):
+                watch.git_license_texts(url, "f" * 40, None, protocols=("file",))
+            with self.assertRaises(watch.WatchError):
+                watch.git_license_texts(url, "v1.0.0", None, protocols=("file",))
+            self.assertFalse((up / ".git" / "shallow").exists())
+
+    def test_set_release_field(self):
+        text = ('[package]\nname = "p"\n\n# newest\n[[release]]\nversion = "1.1.0"\nsha256 = "a"   # the tarball\nrepublish = "r"\n\n'
+                '[[release]]\nversion = "1.0.0"\nrev = "b"\n\n[test]\nobjects = 1\n')
+        out = watch.set_release_field(text, "1.0.0", "license_sha256", "zz")
+        self.assertEqual(out, text.replace('rev = "b"\n', 'rev = "b"\nlicense_sha256 = "zz"\n'))
+        out = watch.set_release_field(text, "1.1.0", "license_sha256", "zz")
+        self.assertEqual(out, text.replace('# the tarball\n', '# the tarball\nlicense_sha256 = "zz"\n'))
+        with self.assertRaises(watch.WatchError):
+            watch.set_release_field(out, "1.1.0", "license_sha256", "yy")
+        again = watch.set_release_field(out, "1.1.0", "license_sha256", "yy", replace=True)
+        self.assertEqual(again, out.replace('"zz"', '"yy"'))
+        with self.assertRaises(watch.WatchError):
+            watch.set_release_field(text, "9.9.9", "license_sha256", "zz")
+        self.assertEqual(watch.set_release_field(text.replace("\n", "\r\n"), "1.0.0", "k", "v").count("\r\n"), text.count("\n") + 1)
+
+    def test_lint_requires_the_digest_on_the_newest_release(self):
+        def lint_zlib(mutate):
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                shutil.copytree(REPO / "packages/zlib", root / "packages/zlib")
+                p = root / "packages/zlib/package.toml"
+                p.write_text(mutate(p.read_text()))
+                old, rt.PACKAGES = rt.PACKAGES, root / "packages"
+                try:
+                    linter = lint.Linter()
+                    linter.lint("zlib")
+                    return [m for _, m in linter.errors]
+                finally:
+                    rt.PACKAGES = old
+        self.assertEqual(lint_zlib(lambda s: s), [])
+        self.assertTrue(any("must record `license_sha256`" in m for m in lint_zlib(lambda s: re.sub(r'license_sha256 = "[0-9a-f]+"\n', "", s))))
+        self.assertTrue(any("64 lowercase hex" in m for m in lint_zlib(lambda s: re.sub(r'license_sha256 = "[0-9a-f]+"', 'license_sha256 = "ABC"', s))))
+        self.assertTrue(any("unknown key" in m for m in lint_zlib(lambda s: s.replace("license_sha256", "licence_sha256"))))
+
+    def test_every_package_records_a_digest(self):
+        for name in rt.package_names():
+            self.assertRegex(rt.load_package(name).newest.license_sha256 or "", r"^[0-9a-f]{64}$", name)
+
+    def test_a_package_without_a_baseline_digest_is_not_watchable(self):
+        f = analyze_text  # noqa: F841
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "p"
+            d.mkdir()
+            (d / "package.toml").write_text(toml(UP + 'url = "https://x.invalid/p-{version}.tar.gz"\n'))
+            self.assertIn("license_sha256", watch.not_watchable(rt.load_package("p", root=Path(tmp))))
+            (d / "package.toml").write_text(toml(UP + 'url = "https://x.invalid/p-{version}.tar.gz"\n', extra=f'license_sha256 = "{LIC_A}"\n'))
+            self.assertIsNone(watch.not_watchable(rt.load_package("p", root=Path(tmp))))
+
+    def test_verify_license_rederives_only_what_changed_and_reports_a_false_digest(self):
+        pkg = rt.load_package("zlib")
+        base = (REPO / "packages/zlib/package.toml").read_bytes()
+        self.assertEqual(watch.releases_to_verify(pkg, base), [])
+        self.assertEqual([r.version for r in watch.releases_to_verify(pkg, None)], ["1.3.1"])
+        self.assertEqual([r.version for r in watch.releases_to_verify(pkg, base.replace(pkg.newest.license_sha256.encode(), LIC_A.encode()))], ["1.3.1"])
+        self.assertEqual([r.version for r in watch.releases_to_verify(pkg, base.replace(b'"1.3.1"', b'"1.3.0"'))], ["1.3.1"])
+        good = watch.license_info({"LICENSE": MIT})
+        calls = []
+
+        def fetch(url, strip_prefix=None, sha256=pkg.newest.sha256, texts={"LICENSE": MIT}):
+            calls.append(url)
+            return watch.ArchiveInfo(sha256, 1, ["zlib-1.3.1/LICENSE"], dict(texts))
+        pkg.newest.license_sha256 = good.digest
+        self.assertEqual(watch.release_license(pkg, pkg.newest, fetch=fetch).digest, good.digest)
+        # The tarball must be the pinned one, or its license files prove nothing.
+        with self.assertRaises(watch.WatchError) as cm:
+            watch.release_license(pkg, pkg.newest, fetch=lambda url, strip_prefix=None: fetch(url, sha256="0" * 64))
+        self.assertIn("not the pinned", str(cm.exception))
+        # A git-pinned release is read at its rev.
+        png = rt.load_package("libpng")
+        seen = []
+        watch.release_license(png, png.newest, tree=lambda url, rev, tag=None: seen.append((url, rev, tag)) or {"LICENSE": MIT})
+        self.assertEqual(seen, [("https://github.com/pnggroup/libpng.git", png.newest.rev, "v1.6.50")])
+
+
+class LicenseDriftBump(unittest.TestCase):
+    """A bump whose upstream license files changed: written, but as a PR for a human."""
+
+    def setUp(self):
+        self.b = BumpOnACopy("test_report_shape")
+        self.b.setUp()
+        self.addCleanup(self.b.doCleanups)
+
+    TAGS = ls(("v1.3.1", sha(1)), ("v1.3.2", sha(2)))
+    RELICENSED = {"LICENSE": b"Business Source License 1.1\n", "LICENSE-COMMERCIAL": b"Contact sales.\n"}
+
+    def test_a_changed_digest_makes_a_needs_human_pr_that_the_guard_refuses(self):
+        b = self.b
+        info, _ = b.do_bump("zlib", self.TAGS, ["zlib-1.3.2/", "zlib-1.3.2/zlib.h"], texts=self.RELICENSED)
+        new = watch.license_info(self.RELICENSED).digest
+        self.assertEqual((info["license_changed"], info["auto_merge"]), (True, False))
+        self.assertEqual(info["labels"], ["bot", "bump", "needs-human", "license-changed"])
+        self.assertEqual((info["license_sha256"], info["old_license_sha256"]), (new, watch.license_info(b.LICENSE).digest))
+        ptoml = (b.root / "packages/zlib/package.toml").read_text()
+        self.assertIn(f'version = "1.3.2"\nsha256 = "{"ab" * 32}"\nlicense_sha256 = "{new}"\n', ptoml)
+        self.assertIn('license = "Zlib"', ptoml)                    # carried forward: not the bot's to edit
+        self.assertEqual(ptoml.count(watch.license_info(b.LICENSE).digest), 1)      # the old release keeps its digest
+        body = watch.pr_body(info)
+        self.assertTrue(body.startswith("## Upstream's license files changed: a human is needed"), body[:80])
+        for needle in ("needs-human", "license-changed", "auto-merge was **not** requested", new, "`LICENSE-COMMERCIAL`", "CHANGED"):
+            self.assertIn(needle, body)
+        self.assertIn("CHANGED", info["commit_note"])
+        # The rest of the gate's fast checks still pass; the guard, as a bot, refuses for exactly one reason.
+        self.assertEqual(b.py("lint.py").returncode, 0)
+        self.assertEqual(b.py("render.py", "--check", "--base", "HEAD").returncode, 0)
+        run(GIT + ["checkout", "-q", "-b", info["branch"]], b.root)
+        run(GIT + ["add", "-A"], b.root)
+        run(GIT + ["commit", "-q", "-m", "bump"], b.root)
+        g = b.py("guard.py", "--base", "main", "--head", "HEAD", "--author", "someone", "--head-ref", info["branch"])
+        self.assertEqual(g.returncode, 1, g.stdout)
+        errors = [l for l in g.stdout.splitlines() if l.startswith("error: ")]
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("upstream's license files changed", errors[0])      # the literal the workflow greps for
+        self.assertIn(guard.LICENSE_DRIFT, errors[0])
+        # A human taking it over (not a bot branch, no bot label) is not restricted.
+        h = b.py("guard.py", "--base", "main", "--head", "HEAD", "--author", "alice", "--head-ref", "bump-zlib-1.3.2")
+        self.assertEqual(h.returncode, 0, h.stdout)
+
+    def test_git_pinned_packages_are_covered_too(self):
+        info, _ = self.b.do_bump("harfbuzz", ls(("15.0.0", sha(1), sha(11)), ("15.1.0", sha(2), sha(22))), texts=self.RELICENSED)
+        self.assertTrue(info["license_changed"])
+        self.assertFalse(info["auto_merge"])
+
+    def test_a_license_change_does_not_excuse_any_other_violation(self):
+        b = self.b
+        orig = watch.run_tool
+
+        def tamper(root, script, *a):       # something else slips into the candidate after render
+            out = orig(root, script, *a)
+            if script == "lint.py":
+                b.edit("packages/zlib/package.toml", lambda s: s.replace('tag = "v{version}"', 'tag = "v{version}"\nmax_bump = "major"'))
+            return out
+        watch.run_tool = tamper
+        self.addCleanup(lambda: setattr(watch, "run_tool", orig))
+        with self.assertRaises(watch.WatchError) as cm:
+            b.do_bump("zlib", self.TAGS, ["zlib-1.3.2/"], texts=self.RELICENSED)
+        self.assertIn("[upstream] max_bump changed", str(cm.exception))
+        self.assertNotIn(guard.LICENSE_DRIFT, str(cm.exception))          # the expected refusal is not listed as a problem
+        self.assertEqual(b.status(), "")
+
+    def test_self_check_expects_the_refusal_only_when_the_digest_changed(self):
+        b = self.b
+        b.do_bump("zlib", self.TAGS, ["zlib-1.3.2/"])                   # unchanged license
+        self.assertEqual(watch.self_check(b.root, "zlib"), [])
+        self.assertTrue(any("internal error" in p for p in watch.self_check(b.root, "zlib", license_changed=True)))
+
+    def test_a_source_with_no_license_file_is_noted(self):
+        info, _ = self.b.do_bump("zlib", self.TAGS, ["zlib-1.3.2/"], texts={})
+        self.assertTrue(info["license_changed"])
+        self.assertTrue(any("empty list" in n for n in info["notes"]))
+
+
+class CrossCheck(unittest.TestCase):
+    URL = "https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz"
+    SHA = "ab" * 32
+    OTHER = "cd" * 32
+
+    def api(self, assets):
+        return json.dumps({"tag_name": "v1.3.2", "assets": assets}).encode()
+
+    def asset(self, name="zlib-1.3.2.tar.gz", digest=None):
+        return {"name": name, "digest": digest,
+                "browser_download_url": f"https://github.com/madler/zlib/releases/download/v1.3.2/{name}"}
+
+    def getter(self, table):
+        calls = []
+
+        def get(url, api=False):
+            calls.append((url, api))
+            v = table.get(url)
+            if isinstance(v, Exception):
+                raise v
+            return v
+        return get, calls
+
+    API_URL = "https://api.github.com/repos/madler/zlib/releases/tags/v1.3.2"
+
+    def test_release_asset_urls(self):
+        self.assertEqual(watch.github_release_asset(self.URL), ("madler/zlib", "v1.3.2", "zlib-1.3.2.tar.gz"))
+        self.assertEqual(watch.github_release_asset("https://github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.gz")[1], "curl-8_22_0")
+        for no in ("https://github.com/DaveGamble/cJSON/archive/refs/tags/v1.7.18.tar.gz", "https://download.redis.io/releases/redis-7.2.16.tar.gz",
+                   "https://evil.invalid/github.com/a/b/releases/download/t/f", "http://github.com/a/b/releases/download/t/f"):
+            self.assertIsNone(watch.github_release_asset(no), no)
+
+    def test_api_digest_agrees(self):
+        get, calls = self.getter({self.API_URL: self.api([self.asset(digest="sha256:" + self.SHA)])})
+        out = watch.cross_check(self.URL, self.SHA, get=get)
+        self.assertEqual(out["status"], "agrees")
+        self.assertEqual([s["source"] for s in out["sources"]], ["github-api-digest"])
+        self.assertEqual(calls[0], (self.API_URL, True))                     # the API call, and only it, is `api`
+        self.assertTrue(all(not api for _, api in calls[1:]))
+        line = watch.cross_check_lines(out)[0]
+        self.assertIn("cross-checked, agrees", line)
+        self.assertIn("GitHub's releases API", line)
+        self.assertIn("not of whoever uploaded", line)                         # what the source is worth, stated
+
+    def test_api_digest_disagrees_fails(self):
+        get, _ = self.getter({self.API_URL: self.api([self.asset(digest="sha256:" + self.OTHER)])})
+        with self.assertRaises(watch.WatchError) as cm:
+            watch.cross_check(self.URL, self.SHA, get=get)
+        for needle in ("DISAGREES", self.SHA, self.OTHER):
+            self.assertIn(needle, str(cm.exception))
+
+    def test_one_agreeing_source_does_not_outvote_a_disagreeing_one(self):
+        sums = self.asset("SHA256SUMS")
+        get, _ = self.getter({self.API_URL: self.api([self.asset(digest="sha256:" + self.SHA), sums]),
+                              sums["browser_download_url"]: f"{self.OTHER}  zlib-1.3.2.tar.gz\n".encode()})
+        with self.assertRaises(watch.WatchError):
+            watch.cross_check(self.URL, self.SHA, get=get)
+
+    def test_no_digest_anywhere_is_not_cross_checked_and_says_why(self):
+        get, calls = self.getter({self.API_URL: self.api([self.asset(digest=None)])})
+        out = watch.cross_check(self.URL, self.SHA, get=get)
+        self.assertEqual((out["status"], out["sources"]), ("none", []))
+        self.assertIn((self.URL + ".sha256", False), calls)                    # the sibling was looked for
+        line = watch.cross_check_lines(out)[0]
+        self.assertIn("**not cross-checked**", line)
+        self.assertIn("no digest for this asset", line)
+        self.assertIn("not cross-checked", watch.cross_check_lines(None)[0])
+
+    def test_an_unreachable_api_is_never_agreement(self):
+        get, _ = self.getter({self.API_URL: watch.WatchError("HTTP 403 rate limit")})
+        out = watch.cross_check(self.URL, self.SHA, get=get)
+        self.assertEqual(out["status"], "none")
+        self.assertIn("could not be read", out["notes"][0])
+        for junk in (b"not json", b"[1, 2]", None):
+            get, _ = self.getter({self.API_URL: junk})
+            self.assertEqual(watch.cross_check(self.URL, self.SHA, get=get)["status"], "none", junk)
+
+    def test_the_asset_must_be_the_one_downloaded(self):
+        # Same name under another URL, or a digest in an unexpected shape: not a source.
+        other = dict(self.asset(digest="sha256:" + self.SHA), browser_download_url="https://github.com/x/y/releases/download/v1.3.2/zlib-1.3.2.tar.gz")
+        for assets in ([other], [self.asset(digest="md5:" + "0" * 32)], [self.asset(digest="sha256:xyz")], [self.asset("zlib-1.3.2.tar.xz", "sha256:" + self.SHA)]):
+            get, _ = self.getter({self.API_URL: self.api(assets)})
+            self.assertEqual(watch.cross_check(self.URL, self.SHA, get=get)["status"], "none", assets)
+
+    def test_checksum_assets_and_the_sibling_file_are_the_weaker_source(self):
+        named = self.asset("zlib-1.3.2.tar.gz.sha256")
+        get, calls = self.getter({self.API_URL: self.api([self.asset(), named]),
+                                  named["browser_download_url"]: (self.SHA + "\n").encode()})
+        out = watch.cross_check(self.URL, self.SHA, get=get)
+        self.assertEqual([s["source"] for s in out["sources"]], ["checksum-file"])
+        self.assertEqual(len([c for c in calls if c[0].endswith(".sha256")]), 1)      # not fetched twice
+        line = watch.cross_check_lines(out)[0]
+        self.assertIn("same host", line)
+        self.assertIn("not a compromised host", line)
+        # A checksum asset URL outside the release is not followed.
+        rogue = dict(self.asset("SHA256SUMS"), browser_download_url="https://evil.invalid/SHA256SUMS")
+        get, calls = self.getter({self.API_URL: self.api([self.asset(), rogue])})
+        self.assertEqual(watch.cross_check(self.URL, self.SHA, get=get)["status"], "none")
+        self.assertNotIn(("https://evil.invalid/SHA256SUMS", False), calls)
+        # A host that is not GitHub: only `<url>.sha256`, and the API is not asked.
+        url = "https://download.example.invalid/releases/p-1.0.tar.gz"
+        get, calls = self.getter({url + ".sha256": f"{self.SHA} *p-1.0.tar.gz\n".encode()})
+        self.assertEqual(watch.cross_check(url, self.SHA, get=get)["status"], "agrees")
+        self.assertEqual(calls, [(url + ".sha256", False)])
+        get, _ = self.getter({url + ".sha256": f"{self.OTHER}  p-1.0.tar.gz\n".encode()})
+        with self.assertRaises(watch.WatchError):
+            watch.cross_check(url, self.SHA, get=get)
+        get, _ = self.getter({url + ".sha256": b"<html>404 but with status 200</html>"})
+        out = watch.cross_check(url, self.SHA, get=get)
+        self.assertEqual(out["status"], "none")
+        self.assertIn("gives no sha256", out["notes"][0])
+
+    def test_checksum_file_formats(self):
+        h, f = self.SHA, "p-1.0.tar.gz"
+        for text in (f"{h}  {f}\n", f"{h} *{f}\n", f"{h.upper()}  ./dist/{f}\n", f"SHA256 ({f}) = {h}\n", f"SHA2-256({f})= {h}\n",
+                     f"{'0' * 64}  other.tar.gz\n{h}  {f}\n", f"{h}\n", f"\n{h}\n\n"):
+            self.assertEqual(watch.parse_checksum_text(text, f), h, text)
+        for text in ("", f"{h}  other.tar.gz\n", f"{h}\n{'0' * 64}\n", f"{h[:-1]}  {f}\n", f"md5 {f}\n", f"{h}  {f}.asc\n"):
+            self.assertIsNone(watch.parse_checksum_text(text, f), text)
+
+    def test_network_rules(self):
+        for url in ("http://api.github.com/x", "ftp://example.invalid/a", "file:///etc/passwd"):
+            with self.assertRaises(watch.WatchError):
+                watch.fetch_small(url)
+        with self.assertRaises(watch.WatchError):                    # the token-bearing mode is for one host
+            watch.fetch_small("https://api.github.com.evil.invalid/repos/a/b", api=True)
+        with self.assertRaises(watch.WatchError):
+            watch.fetch_small("https://example.invalid/x", api=True)
+        import urllib.request
+        with self.assertRaises(watch.WatchError):                    # ... and it follows no redirect
+            watch._NoRedirect().redirect_request(urllib.request.Request("https://api.github.com/x"), None, 302, "Found", {},
+                                                 "https://elsewhere.invalid/x")
+
+    def test_bump_fails_on_disagreement_and_reports_agreement(self):
+        b = BumpOnACopy("test_report_shape")
+        b.setUp()
+        self.addCleanup(b.doCleanups)
+        tags = ls(("v1.3.1", sha(1)), ("v1.3.2", sha(2)))
+
+        def disagree(url, sha256):
+            raise watch.WatchError("the sha256 of the downloaded tarball DISAGREES with what upstream publishes")
+        with self.assertRaises(watch.WatchError):
+            b.do_bump("zlib", tags, ["zlib-1.3.2/"], cross=disagree)
+        self.assertEqual(b.status(), "")                              # nothing written
+        seen = []
+
+        def agree(url, sha256):
+            seen.append((url, sha256))
+            return {"status": "agrees", "sources": [{"source": "github-api-digest", "detail": "GitHub releases API, asset `zlib-1.3.2.tar.gz`"}], "notes": []}
+        info, _ = b.do_bump("zlib", tags, ["zlib-1.3.2/"], cross=agree)
+        self.assertEqual(seen, [(self.URL, "ab" * 32)])               # what was downloaded is what is checked
+        self.assertEqual(info["cross_check"]["status"], "agrees")
+        self.assertIn("cross-checked, agrees", watch.pr_body(info))
+        self.assertIn("github-api-digest", info["commit_note"])
+        self.assertNotIn("not cross-checked", watch.pr_body(info))
+
+
+BOT_MAIL = watch.BOT_COMMIT_EMAILS[0]
+
+
+def bot_pr(number, branch, *, labels=("bot", "bump"), repo="o/r", head="h" * 40, author="registry-bot"):
+    return {"number": number, "headRefName": branch, "headRepo": repo, "sha": head, "labels": list(labels), "author": author}
+
+
+def commits(*emails, head="h" * 40):
+    """Commits as (author, committer) email pairs; the last one is the PR head."""
+    out = [{"sha": f"{i:040x}", "author_email": a, "committer_email": c} for i, (a, c) in enumerate(emails)]
+    out[-1]["sha"] = head
+    return out
+
+
+BOT_COMMITS = commits((BOT_MAIL, BOT_MAIL))
+
+
+class Supersede(unittest.TestCase):
+    def test_which_prs_are_the_watchers_to_close(self):
+        ok = bot_pr(5, "bot/bump-zlib-1.3.2")
+        self.assertIsNone(watch.keep_reason(ok, BOT_COMMITS, "o/r"))
+        self.assertIsNone(watch.keep_reason(ok, commits((BOT_MAIL, BOT_MAIL), (BOT_MAIL, BOT_MAIL)), "o/r"))
+        cases = {
+            "not a bump branch": (bot_pr(5, "feature/zlib"), BOT_COMMITS),
+            "another repository": (bot_pr(5, "bot/bump-zlib-1.3.2", repo="fork/r"), BOT_COMMITS),
+            "`bot` and `bump` labels": (bot_pr(5, "bot/bump-zlib-1.3.2", labels=("bump",)), BOT_COMMITS),
+            "`keep` label": (bot_pr(5, "bot/bump-zlib-1.3.2", labels=("bot", "bump", "keep")), BOT_COMMITS),
+            "could not be listed": (ok, None),
+            "too many commits": (ok, commits(*[(BOT_MAIL, BOT_MAIL)] * 250)),
+            "branch moved": (ok, commits((BOT_MAIL, BOT_MAIL), head="e" * 40)),
+            "a person pushed": (ok, commits((BOT_MAIL, BOT_MAIL), ("alice@example.invalid", "alice@example.invalid"))),
+        }
+        for needle, (pr, cs) in cases.items():
+            with self.subTest(needle):
+                self.assertIn(needle, watch.keep_reason(pr, cs, "o/r") or "")
+        # A web-UI edit: the author may even be the bot's address, the committer is GitHub's.
+        self.assertIn("a person pushed", watch.keep_reason(ok, commits((BOT_MAIL, "noreply@github.com")), "o/r"))
+        self.assertIn("a person pushed", watch.keep_reason(ok, commits(("alice@example.invalid", BOT_MAIL)), "o/r"))
+        self.assertIn("could not be listed", watch.keep_reason(ok, [], "o/r"))
+        self.assertIsNotNone(watch.keep_reason(ok, BOT_COMMITS, ""))
+        self.assertIsNotNone(watch.keep_reason({"number": 1}, BOT_COMMITS, "o/r"))
+
+    def drop(self, bumps, prs, issues=(), commit_map=None):
+        cm = commit_map or {}
+        return watch.drop_open(bumps, prs, list(issues), commits_of=lambda n: cm.get(n), repo="o/r")
+
+    def test_detect_lets_a_newer_version_through_only_over_a_purely_bot_pr(self):
+        bump = [{"package": "zlib", "version": "1.3.3"}]
+        older = bot_pr(5, "bot/bump-zlib-1.3.2")
+        kept, skipped = self.drop(bump, [older], commit_map={5: BOT_COMMITS})
+        self.assertEqual(kept, [{"package": "zlib", "version": "1.3.3", "supersedes": "5"}])
+        self.assertEqual(skipped, [])
+        # A person pushed to the older PR: wait, as before.
+        human = commits((BOT_MAIL, BOT_MAIL), ("alice@example.invalid", "alice@example.invalid"))
+        kept, skipped = self.drop(bump, [older], commit_map={5: human})
+        self.assertEqual(kept, [])
+        self.assertIn("PR #5", skipped[0]["skipped"])
+        self.assertIn("a person pushed", skipped[0]["skipped"])
+        # `keep`, a fork, missing labels, unlistable commits: wait.
+        for pr in (bot_pr(5, "bot/bump-zlib-1.3.2", labels=("bot", "bump", "keep")), bot_pr(5, "bot/bump-zlib-1.3.2", repo="fork/r"),
+                   bot_pr(5, "bot/bump-zlib-1.3.2", labels=())):
+            self.assertEqual(self.drop(bump, [pr], commit_map={5: BOT_COMMITS})[0], [], pr)
+        self.assertEqual(self.drop(bump, [older])[0], [])
+        # Two older PRs: both must be closable.
+        two = [older, bot_pr(6, "bot/bump-zlib-1.3.1")]
+        self.assertEqual(self.drop(bump, two, commit_map={5: BOT_COMMITS, 6: BOT_COMMITS})[0][0]["supersedes"], "5,6")
+        self.assertEqual(self.drop(bump, two, commit_map={5: BOT_COMMITS, 6: human})[0], [])
+
+    def test_detect_same_version_newer_version_and_issues(self):
+        bump = [{"package": "zlib", "version": "1.3.3"}]
+        same = bot_pr(7, "bot/bump-zlib-1.3.3")
+        self.assertIn("PR #7", self.drop(bump, [same])[1][0]["skipped"])
+        newer = bot_pr(8, "bot/bump-zlib-1.4.0")
+        self.assertIn("newer version", self.drop(bump, [newer])[1][0]["skipped"])
+        # The replacement is open but an older closable PR is still there: keep the leg so it gets closed.
+        kept, _ = self.drop(bump, [same, bot_pr(5, "bot/bump-zlib-1.3.2")], commit_map={5: BOT_COMMITS})
+        self.assertEqual(kept[0]["supersedes"], "5")
+        # A needs-human issue for this exact version still blocks, superseding or not.
+        kept, skipped = self.drop(bump, [bot_pr(5, "bot/bump-zlib-1.3.2")], [{"number": 9, "title": "needs-human: zlib 1.3.3"}], {5: BOT_COMMITS})
+        self.assertEqual(kept, [])
+        self.assertIn("#9", skipped[0]["skipped"])
+        # Semver, not text: 1.10.0 supersedes 1.9.0; other packages and prefixes of the name are untouched.
+        kept, _ = self.drop([{"package": "zlib", "version": "1.10.0"}, {"package": "zlib-ng", "version": "2.0.0"}],
+                            [bot_pr(5, "bot/bump-zlib-1.9.0"), bot_pr(6, "bot/bump-zlib-ng-1.0.0", labels=())],
+                            commit_map={5: BOT_COMMITS, 6: BOT_COMMITS})
+        self.assertEqual(kept, [{"package": "zlib", "version": "1.10.0", "supersedes": "5"}])
+
+    def fake_gh(self, prs, commit_map, *, comments=None, refs=None, fail=()):
+        calls = []
+        comments, refs = comments or {}, refs if refs is not None else {p["headRefName"]: p["sha"] for p in prs}
+
+        def gh(*a, timeout=120):
+            calls.append(a)
+            path = next((x for x in a if x.startswith("repos/")), "")
+            method = a[a.index("--method") + 1] if "--method" in a else "GET"
+            if any(f in path and (m == method) for f, m in fail):
+                raise watch.WatchError("boom")
+            if path.startswith("repos/o/r/pulls?"):
+                return "\n".join(json.dumps(p) for p in prs) + "\n"
+            m = re.fullmatch(r"repos/o/r/pulls/(\d+)/commits\?per_page=100", path)
+            if m:
+                return "\n".join(json.dumps(c) for c in commit_map.get(int(m.group(1)), [])) + "\n"
+            m = re.fullmatch(r"repos/o/r/issues/(\d+)/comments\?per_page=100", path)
+            if m and method == "GET":
+                return "\n".join(json.dumps(c) for c in comments.get(int(m.group(1)), [])) + "\n"
+            m = re.fullmatch(r"repos/o/r/git/ref/heads/(.+)", path)
+            if m and method == "GET":
+                if m.group(1) not in refs:
+                    raise watch.WatchError("HTTP 404")
+                return refs[m.group(1)] + "\n"
+            return ""
+        return gh, calls
+
+    def writes(self, calls):
+        out = []
+        for c in calls:
+            if "--method" in c:
+                out.append((c[c.index("--method") + 1], next(x for x in c if x.startswith("repos/"))))
+        return out
+
+    NEW = bot_pr(9, "bot/bump-zlib-1.3.3", head="n" * 40)
+
+    def test_closes_with_one_comment_and_deletes_the_branch(self):
+        old = bot_pr(5, "bot/bump-zlib-1.3.2")
+        gh, calls = self.fake_gh([old, self.NEW], {5: BOT_COMMITS})
+        logs = []
+        self.assertEqual(watch.supersede("o/r", "zlib", "1.3.3", run=gh, log=logs.append), [5])
+        self.assertEqual(self.writes(calls), [("POST", "repos/o/r/issues/5/comments"), ("PATCH", "repos/o/r/pulls/5"),
+                                              ("DELETE", "repos/o/r/git/refs/heads/bot/bump-zlib-1.3.2")])
+        comment = next(c for c in calls if "POST" in c)
+        body = next(x for x in comment if x.startswith("body="))
+        self.assertIn("Superseded by #9", body)
+        self.assertIn(watch.SUPERSEDED_MARKER, body)
+        self.assertIn("state=closed", next(c for c in calls if "PATCH" in c))
+        self.assertIn("closed #5", logs[0])
+
+    def test_a_retry_does_not_comment_twice(self):
+        old = bot_pr(5, "bot/bump-zlib-1.3.2")
+        said = {5: [{"login": "registry-bot", "body": watch.SUPERSEDED_MARKER + "\nSuperseded by #9"}]}
+        gh, calls = self.fake_gh([old, self.NEW], {5: BOT_COMMITS}, comments=said)
+        self.assertEqual(watch.supersede("o/r", "zlib", "1.3.3", run=gh, log=lambda s: None), [5])
+        self.assertEqual([w[0] for w in self.writes(calls)], ["PATCH", "DELETE"])
+        # Somebody else quoting the marker does not suppress the watcher's comment.
+        quoted = {5: [{"login": "mallory", "body": watch.SUPERSEDED_MARKER}]}
+        gh, calls = self.fake_gh([old, self.NEW], {5: BOT_COMMITS}, comments=quoted)
+        watch.supersede("o/r", "zlib", "1.3.3", run=gh, log=lambda s: None)
+        self.assertEqual([w[0] for w in self.writes(calls)], ["POST", "PATCH", "DELETE"])
+
+    def test_never_closes_what_is_not_purely_the_watchers(self):
+        human = commits((BOT_MAIL, BOT_MAIL), ("alice@example.invalid", "alice@example.invalid"))
+        cases = {
+            "a person pushed": ([bot_pr(5, "bot/bump-zlib-1.3.2")], {5: human}),
+            "keep label": ([bot_pr(5, "bot/bump-zlib-1.3.2", labels=("bot", "bump", "keep"))], {5: BOT_COMMITS}),
+            "fork": ([bot_pr(5, "bot/bump-zlib-1.3.2", repo="fork/r")], {5: BOT_COMMITS}),
+            "another account opened it": ([bot_pr(5, "bot/bump-zlib-1.3.2", author="alice")], {5: BOT_COMMITS}),
+            "not a bump PR": ([bot_pr(5, "feature/zlib-1.3.2"), bot_pr(6, "bot/zlib-1.3.2"), bot_pr(7, "bump-zlib-1.3.2")], {5: BOT_COMMITS, 6: BOT_COMMITS, 7: BOT_COMMITS}),
+            "another package": ([bot_pr(5, "bot/bump-zlib-ng-1.3.2"), bot_pr(6, "bot/bump-lz4-1.0.0")], {5: BOT_COMMITS, 6: BOT_COMMITS}),
+            "not older": ([bot_pr(5, "bot/bump-zlib-1.4.0"), bot_pr(6, "bot/bump-zlib-1.3.3", repo="fork/r")], {5: BOT_COMMITS, 6: BOT_COMMITS}),
+            "commits unlistable": ([bot_pr(5, "bot/bump-zlib-1.3.2")], {}),
+        }
+        for label, (prs, cm) in cases.items():
+            with self.subTest(label):
+                gh, calls = self.fake_gh([*prs, self.NEW], cm)
+                self.assertEqual(watch.supersede("o/r", "zlib", "1.3.3", run=gh, log=lambda s: None), [])
+                self.assertEqual(self.writes(calls), [])
+
+    def test_nothing_is_closed_without_an_open_replacement(self):
+        old = bot_pr(5, "bot/bump-zlib-1.3.2")
+        for others in ([], [bot_pr(9, "bot/bump-zlib-1.3.3", repo="fork/r")], [bot_pr(9, "bot/bump-zlib-1.3.3", labels=("bump",))]):
+            gh, calls = self.fake_gh([old, *others], {5: BOT_COMMITS})
+            self.assertEqual(watch.supersede("o/r", "zlib", "1.3.3", run=gh, log=lambda s: None), [])
+            self.assertEqual(self.writes(calls), [])
+        with self.assertRaises(watch.WatchError):
+            watch.supersede("o/r", "zlib; rm -rf /", "1.3.3", run=gh)
+
+    def test_the_branch_is_deleted_only_where_it_was_checked(self):
+        old = bot_pr(5, "bot/bump-zlib-1.3.2")
+        gh, calls = self.fake_gh([old, self.NEW], {5: BOT_COMMITS}, refs={"bot/bump-zlib-1.3.2": "e" * 40})     # moved since
+        logs = []
+        self.assertEqual(watch.supersede("o/r", "zlib", "1.3.3", run=gh, log=logs.append), [5])
+        self.assertEqual([w[0] for w in self.writes(calls)], ["POST", "PATCH"])
+        self.assertIn("left in place", logs[0])
+        gh, calls = self.fake_gh([old, self.NEW], {5: BOT_COMMITS}, refs={})                                    # already gone
+        self.assertEqual(watch.supersede("o/r", "zlib", "1.3.3", run=gh, log=lambda s: None), [5])
+        self.assertEqual([w[0] for w in self.writes(calls)], ["POST", "PATCH"])
+        # A failed close is an error (the job goes red), after the comment and before any deletion.
+        gh, calls = self.fake_gh([old, self.NEW], {5: BOT_COMMITS}, fail=[("pulls/5", "PATCH")])
+        with self.assertRaises(watch.WatchError):
+            watch.supersede("o/r", "zlib", "1.3.3", run=gh, log=lambda s: None)
+        self.assertEqual([w[0] for w in self.writes(calls)], ["POST", "PATCH"])
+
+
+class GateHoleWiring(unittest.TestCase):
+    """What the workflows must keep saying for the three rules above to hold."""
+
+    def setUp(self):
+        self.watch = (REPO / ".github/workflows/watch.yml").read_text()
+        self.pr = (REPO / ".github/workflows/pr.yml").read_text()
+
+    def test_auto_merge_is_never_requested_for_a_license_change(self):
+        self.assertIn("if: steps.pr.outputs.url != '' && steps.pr.outputs.auto_merge == 'true' && vars.REGISTRY_AUTO_MERGE == 'true'", self.watch)
+        code = "\n".join(l for l in self.watch.splitlines() if not l.strip().startswith("#"))
+        self.assertEqual(code.count("gh pr merge --auto --squash"), 1)
+        self.assertEqual(code.count("gh pr merge --auto --squash") + code.count("gh pr merge --auto failed"), code.count("pr merge"))
+        self.assertIn('if .auto_merge == true and .license_changed == false then "true" else "false" end', self.watch)
+        # The phrase the bump job greps the guard's output for is the guard's own.
+        self.assertIn(f'grep -qv "{guard.LICENSE_DRIFT}"', self.watch)
+
+    def test_the_gate_rederives_license_digests(self):
+        self.assertIn("python tools/watch.py verify-license --base HEAD^1", self.pr)
+        self.assertIn("needs: [guard, plan, license, harbour, index, test]", self.pr)
+
+    def test_tokens(self):
+        # The step that downloads third-party bytes gets the read-only token, never the bot's.
+        step = self.watch[self.watch.index("- name: Write the candidate"):self.watch.index("- name: Fast local checks")]
+        self.assertIn("WATCH_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}", step)
+        self.assertNotIn("REGISTRY_BOT_TOKEN", "\n".join(l for l in step.splitlines() if not l.strip().startswith("#")))
+        bump = self.watch[self.watch.index("  bump:"):self.watch.index("  triage:")]
+        self.assertRegex(bump, r"permissions:\n      contents: read\n")
+        self.assertIn('python tools/watch.py supersede --package "$PKG" --version "$VERSION"', bump)
+
+    def test_labels_exist_and_a_license_changed_pr_is_not_sent_to_repair(self):
+        for label in ("license-changed", "keep", "needs-human", "bot", "bump"):
+            self.assertIn(label, bump_triage.LABELS)
+        d = bump_triage.decide("failure", ["bot", "bump", "needs-human", "license-changed"], 2, True)
+        self.assertEqual((d.action, d.add), ("ignore", []))
+
 
 class Republish(unittest.TestCase):
     """`republish` exempts exactly one version, in exactly the PR that adds the marker."""

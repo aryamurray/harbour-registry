@@ -14,6 +14,7 @@ strip_prefix = "pugixml-{version}"
 version = "1.16.0"
 upstream_version = "1.16"
 sha256 = "4cee1ca4aad395170f4c7a07824f3bdd41f28316c6e1e1090a1425b278ec0b4b"
+license_sha256 = "98521d608080c87b8dc497c3de813186e6d854a847c0c71c40504c7c5f027b96"
 
 [test]
 platforms = ["linux", "macos", "windows"]

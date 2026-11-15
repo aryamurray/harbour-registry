@@ -13,6 +13,7 @@ strip_prefix = "lz4-{version}"
 [[release]]
 version = "1.11.1"
 sha256 = "683fed08a844ad012196381e40badf80c0bbe4962959761416d41c9e67d77ec7"
+license_sha256 = "6048acb71bbd00cd6b6a05ed5bd46d359e02700485c4175a98cc71df865075b9"
 
 [test]
 platforms = ["linux", "macos", "windows"]

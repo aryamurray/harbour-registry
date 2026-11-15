@@ -13,6 +13,7 @@ strip_prefix = "Python-{version}"
 [[release]]
 version = "3.14.9"
 sha256 = "8b47e85ee67e93945e93620a051a8f44bfc1e9735ed67075d166f4a74b7a060b"
+license_sha256 = "0bb2311fa1ac8042ab6040e09864f794aaba5ea95ca941b2a00b07aa55238331"
 
 [test]
 platforms = ["linux", "macos"]

@@ -29,6 +29,10 @@ strip_prefix = "example-{version}"     # the tarball's single top-level director
 version = "1.0.0"                      # semver. Must equal [package] version in Harbour.toml for the newest release
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"   # of the tarball, 64 hex digits
 # rev = "<40-digit commit>"            # instead of sha256: pin a git commit (needs [upstream] git)
+# Digest of upstream's top-level license files (LICENSE*, COPYING*, ...) at this release. Do not write it by
+# hand: `python3 tools/watch.py license-digest <name> --write` computes it from the pinned source and adds
+# the line. Required on the newest release; a bump whose digest differs from it is handed to a human.
+license_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 # upstream_version = "1.0"             # when upstream's spelling is not semver; `version` must be its normalisation
 # url = "..."  strip_prefix = "..."    # per-release overrides of the templates above
 # republish = "reason"                 # HUMANS ONLY: acknowledge rewriting an already published version

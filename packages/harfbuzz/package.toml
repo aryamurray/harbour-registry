@@ -11,6 +11,7 @@ tag = "{version}"
 [[release]]
 version = "15.0.0"
 rev = "35f656a1a2bab548ea7f54a6dd3fba2b09680d14"
+license_sha256 = "b35cd165b566417165547219fd6b7c351a74c27141950f1e40e507d3c1890908"
 republish = "15.0.0 shipped without libm on its public link surface; a C consumer links only because the C++ driver happens to add it. The manifest now declares it"
 
 [test]
