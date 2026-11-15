@@ -1,0 +1,26 @@
+# Consumer test for protobuf, through the registry (see ../../zlib/test/Harbour.toml). Two programs, because
+# `protobuf` and `protobuf-lite` must never be linked together (the full library contains the lite sources):
+# `pb-full` uses the full runtime, `pb-lite` only the lite one. There is no protoc here, so neither uses
+# generated code of its own.
+[package]
+name = "protobuf-test"
+version = "0.1.0"
+
+[dependencies]
+protobuf = "*"
+
+[targets.pb-full]
+kind = "exe"
+lang = "c++"
+sources = ["src/full.cc"]
+
+[targets.pb-full.deps]
+protobuf = { target = "protobuf" }
+
+[targets.pb-lite]
+kind = "exe"
+lang = "c++"
+sources = ["src/lite.cc"]
+
+[targets.pb-lite.deps]
+protobuf = { target = "protobuf-lite" }

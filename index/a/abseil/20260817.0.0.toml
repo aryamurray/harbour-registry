@@ -1,0 +1,15 @@
+[package]
+name = "abseil"
+version = "20260817.0.0"
+
+[source.git]
+url = "https://github.com/abseil/abseil-cpp.git"
+rev = "2065f4ded0558c6f89fee67c8e5228feb4eb960e"
+
+[metadata]
+license = "Apache-2.0"
+upstream_url = "https://github.com/abseil/abseil-cpp.git"
+
+[[patches]]
+file = "20260817.0.0.patch"
+sha256 = "4ce1d1de2b8756074ad651ffcbcaa492e21853761b0c32e821caa41014f10bc5"

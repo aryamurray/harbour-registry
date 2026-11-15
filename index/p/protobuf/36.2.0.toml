@@ -1,0 +1,15 @@
+[package]
+name = "protobuf"
+version = "36.2.0"
+
+[source.tarball]
+url = "https://github.com/protocolbuffers/protobuf/releases/download/v36.2/protobuf-36.2.tar.gz"
+sha256 = "3d9642a662d10e68ebae5e53f14dcce5105684212d5078f8e0d47d1ab3ae6b64"
+strip_prefix = "protobuf-36.2"
+
+[metadata]
+license = "BSD-3-Clause AND MIT"
+
+[[patches]]
+file = "36.2.0.patch"
+sha256 = "aba07f2ea6b788e2ae6e122968bdfa0438b143930fb030971fe9f27e95302863"

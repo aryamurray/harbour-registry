@@ -1,0 +1,1 @@
+{"format_version":1,"name":"protobuf","version":"36.2.0","yanked":false,"deps":[{"name":"abseil","version_req":"^20260817","optional":false,"default_features":true,"kind":"normal","registry":null}],"checksum":"3d9642a662d10e68ebae5e53f14dcce5105684212d5078f8e0d47d1ab3ae6b64","license":"BSD-3-Clause AND MIT","shim":"p/protobuf/36.2.0.toml"}
