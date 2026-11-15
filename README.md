@@ -16,7 +16,7 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [cpython](packages/cpython) | 3.14.9 | `PSF-2.0` | linux, macos | The Python interpreter, built from its generated sources |
 | [crc32c](packages/crc32c) | 1.1.0 | `BSD-3-Clause` | linux, macos, windows | CRC32C implementation with support for CPU-specific acceleration instructions |
 | [curl](packages/curl) | 8.22.0 | `curl` | linux, macos | Command-line tool and library for transferring data with URLs, configured by Harbour probes |
-| [expat](packages/expat) | 2.10.0 | `MIT` | linux, macos | Stream-oriented XML parser library, configured by Harbour probes |
+| [expat](packages/expat) | 2.10.0 | `MIT` | linux, macos, windows | Stream-oriented XML parser library, configured by Harbour probes |
 | [fmt](packages/fmt) | 11.2.0 | `MIT` | linux, macos, windows | A modern formatting library |
 | [freetype](packages/freetype) | 2.14.3 | `FTL OR GPL-2.0-or-later` | linux, macos | Font rasterisation library (TrueType, OpenType, Type 1, bitmap fonts) |
 | [googletest](packages/googletest) | 1.18.0 | `BSD-3-Clause` | linux, macos, windows | Google's C++ testing (gtest) and mocking (gmock) framework |
@@ -24,7 +24,7 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [jsoncpp](packages/jsoncpp) | 1.9.8 | `MIT` | linux, macos, windows | C++ library for reading, writing and manipulating JSON |
 | [libdeflate](packages/libdeflate) | 1.26.0 | `MIT` | linux, macos, windows | Fast whole-buffer DEFLATE, zlib and gzip compression and decompression |
 | [libjpeg-turbo](packages/libjpeg-turbo) | 3.2.1 | `IJG AND BSD-3-Clause AND Zlib` | linux, macos, windows | JPEG image codec: the libjpeg and TurboJPEG APIs, built without SIMD |
-| [libpng](packages/libpng) | 1.6.50 | `libpng-2.0` | linux, macos | Reference implementation of the PNG image format |
+| [libpng](packages/libpng) | 1.6.50 | `libpng-2.0` | linux, macos, windows | Reference implementation of the PNG image format |
 | [libuv](packages/libuv) | 1.51.0 | `MIT` | linux, macos, windows | Cross-platform asynchronous I/O |
 | [libwebp](packages/libwebp) | 1.6.0 | `BSD-3-Clause` | linux, macos, windows | WebP image codec: encoder, decoder, sharp YUV conversion, demux and mux libraries |
 | [luajit](packages/luajit) | 2.1.1792588164 | `MIT` | linux, macos, windows | Just-in-time compiler and interpreter for the Lua language |
