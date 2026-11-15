@@ -1,0 +1,21 @@
+[package]
+name = "abseil"
+description = "Abseil C++ common libraries (LTS): strings, containers, time, status, synchronization, hashing, random, logging, flags"
+license = "Apache-2.0"
+homepage = "https://abseil.io"
+
+[upstream]
+git = "https://github.com/abseil/abseil-cpp.git"
+tag = "{version}"
+# No `url`/`strip_prefix`: abseil publishes no release asset, only GitHub's auto-generated archives, which
+# are not byte-stable. The release is pinned by the git commit its tag points at.
+# Only LTS tags are followed (the date-named ones); `.rc` tags are pre-releases.
+
+[[release]]
+version = "20260817.0.0"
+upstream_version = "20260817.0"
+rev = "2065f4ded0558c6f89fee67c8e5228feb4eb960e"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 157

@@ -1,0 +1,25 @@
+[package]
+name = "spdlog"
+description = "Fast C++ logging library, built in compiled mode against the registry's fmt"
+license = "MIT"
+homepage = "https://github.com/gabime/spdlog"
+
+[upstream]
+git = "https://github.com/gabime/spdlog.git"
+tag = "v{version}"
+# No `url`/`strip_prefix`: spdlog publishes no release asset, only GitHub's auto-generated archives,
+# which are not byte-stable. The release is pinned by the git commit its tag points at.
+
+[[release]]
+version = "1.17.0"
+rev = "79524ddd08a4ec981b7fea76afd08ee05f83755d"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 6
+# verify stays off: `harbour verify` includes every public header that compiles on its own, and spdlog's
+# `*-inl.h` implementation headers (async_logger-inl.h, ...) define the compiled library's symbols
+# unconditionally, so linking the harness against libspdlog.a fails with multiple definitions; the bundled
+# fmt headers (include/spdlog/fmt/bundled, unused with SPDLOG_FMT_EXTERNAL) fail the same way. `public_headers`
+# cannot exclude by suffix, and listing the 68 non-inl headers by hand would be a longer lie than the
+# consumer test in test/, which exercises the library, the external fmt and the flags.

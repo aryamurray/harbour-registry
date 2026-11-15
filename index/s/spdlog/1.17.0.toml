@@ -1,0 +1,15 @@
+[package]
+name = "spdlog"
+version = "1.17.0"
+
+[source.git]
+url = "https://github.com/gabime/spdlog.git"
+rev = "79524ddd08a4ec981b7fea76afd08ee05f83755d"
+
+[metadata]
+license = "MIT"
+upstream_url = "https://github.com/gabime/spdlog.git"
+
+[[patches]]
+file = "1.17.0.patch"
+sha256 = "4d127c12c25620a4fca4e4cef2183b6560e4a1a07dc4974355f02d2c72b0310a"

@@ -1,0 +1,201 @@
+# protobuf 36.2 (C++ runtime 7.36.2): the two runtime libraries, `protobuf-lite` and `protobuf`, over the
+# registry's `abseil`, plus the bundled `utf8_range`. `protoc` and `libprotoc` are NOT built (no code
+# generator: this package is the runtime only; descriptor.proto's own classes and the well-known types
+# are in the runtime and are generated already).
+#
+# Read from the release tarball's own build files:
+#   src/file_lists.cmake, `libprotobuf_lite_srcs` (29 files) and `libprotobuf_srcs` (86 files), copied
+#       verbatim: they are the two source lists below. libprotobuf's list repeats most of lite's (the full
+#       library is a superset), so the two archives must never both be linked: a consumer names exactly
+#       one of `protobuf` and `protobuf-lite`;
+#   cmake/libprotobuf-lite.cmake and libprotobuf.cmake: PUBLIC include `src`, PUBLIC link of
+#       ${protobuf_ABSL_USED_TARGETS} (the absl targets listed in cmake/abseil-cpp.cmake: with the registry's
+#       single `absl` archive that is the whole of it), PRIVATE ${CMAKE_THREAD_LIBS_INIT} (pthread; public here
+#       because a static archive does not record it), utf8_validity (PRIVATE for lite, PUBLIC for the full
+#       library: the public header parse_context.h includes utf8_validity.h, so here both get it public);
+#   cmake/protobuf-configure-target.cmake: cxx_std_17 PUBLIC, and PRIVATE -DGOOGLE_PROTOBUF_CMAKE_BUILD.
+#       Not carried over: the MSVC options, protobuf_UNICODE, protobuf_DISABLE_RTTI, HAVE_ZLIB (protobuf_WITH_ZLIB
+#       is OFF by default: gzip_stream.cc is compiled but its body is under `#if HAVE_ZLIB`), libatomic (only for
+#       targets without builtin 64-bit atomics), visibility presets (shared builds), version scripts;
+#   third_party/utf8_range/CMakeLists.txt: `utf8_validity` is the single C file utf8_range.c with
+#       third_party/utf8_range as its include directory (utf8_validity.h is a header over absl::string_view).
+#       It is its own C target here, as it is its own library upstream. Its SSE4.1/NEON paths are guarded by the
+#       compiler's predefined macros and need no flag of their own.
+# abseil: protobuf 36.2 pins abseil 20250512.1 in MODULE.bazel and cmake/dependencies.cmake; the registry's
+# abseil is 20260817.0 (newer LTS), which the build and the test here show is fine.
+# License: protobuf is BSD-3-Clause; the bundled third_party/utf8_range is MIT, hence `BSD-3-Clause AND MIT`.
+# Not claimed: Windows (abseil is not).
+[package]
+name = "protobuf"
+version = "36.2.0"
+description = "Protocol Buffers C++ runtime: the lite and the full libraries, over the registry's abseil"
+license = "BSD-3-Clause AND MIT"
+homepage = "https://protobuf.dev"
+requires = "hosted"
+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
+# Three library targets: the full runtime is the default; `protobuf-lite` is named explicitly by a consumer,
+# `utf8_range` is a piece the two runtimes pull in themselves.
+default_target = "protobuf"
+
+[dependencies]
+abseil = "^20260817"
+
+[targets.utf8_range]
+kind = "staticlib"
+lang = "c"
+sources = ["third_party/utf8_range/utf8_range.c"]
+public_headers = ["third_party/utf8_range/utf8_range.h", "third_party/utf8_range/utf8_validity.h"]
+
+[targets.utf8_range.public]
+include_dirs = ["third_party/utf8_range"]
+
+[targets.protobuf-lite]
+kind = "staticlib"
+lang = "c++"
+cpp_std = "17"
+sources = [
+  "src/google/protobuf/any_lite.cc",
+  "src/google/protobuf/arena.cc",
+  "src/google/protobuf/arena_align.cc",
+  "src/google/protobuf/arena_allocation_policy.cc",
+  "src/google/protobuf/arenastring.cc",
+  "src/google/protobuf/arenaz_sampler.cc",
+  "src/google/protobuf/extension_set.cc",
+  "src/google/protobuf/generated_enum_util.cc",
+  "src/google/protobuf/generated_message_tctable_lite.cc",
+  "src/google/protobuf/generated_message_util.cc",
+  "src/google/protobuf/implicit_weak_message.cc",
+  "src/google/protobuf/inlined_string_field.cc",
+  "src/google/protobuf/io/coded_stream.cc",
+  "src/google/protobuf/io/io_win32.cc",
+  "src/google/protobuf/io/zero_copy_stream.cc",
+  "src/google/protobuf/io/zero_copy_stream_impl.cc",
+  "src/google/protobuf/io/zero_copy_stream_impl_lite.cc",
+  "src/google/protobuf/map.cc",
+  "src/google/protobuf/message_lite.cc",
+  "src/google/protobuf/micro_string.cc",
+  "src/google/protobuf/parse_context.cc",
+  "src/google/protobuf/port.cc",
+  "src/google/protobuf/raw_ptr.cc",
+  "src/google/protobuf/repeated_field.cc",
+  "src/google/protobuf/repeated_ptr_field.cc",
+  "src/google/protobuf/stubs/common.cc",
+  "src/google/protobuf/type_id.cc",
+  "src/google/protobuf/unknown_field_set_lite.cc",
+  "src/google/protobuf/wire_format_lite.cc",
+]
+public_headers = ["src/google/protobuf/**/*.h", "src/google/protobuf/**/*.inc"]
+
+[targets.protobuf-lite.deps]
+utf8_range = { local = true }
+
+[targets.protobuf-lite.public]
+include_dirs = ["src"]
+system_libs = ["pthread"]
+
+[targets.protobuf-lite.private]
+defines = ["GOOGLE_PROTOBUF_CMAKE_BUILD"]
+
+[targets.protobuf]
+kind = "staticlib"
+lang = "c++"
+cpp_std = "17"
+sources = [
+  "src/google/protobuf/any.cc",
+  "src/google/protobuf/any.pb.cc",
+  "src/google/protobuf/any_lite.cc",
+  "src/google/protobuf/api.pb.cc",
+  "src/google/protobuf/arena.cc",
+  "src/google/protobuf/arena_align.cc",
+  "src/google/protobuf/arena_allocation_policy.cc",
+  "src/google/protobuf/arenastring.cc",
+  "src/google/protobuf/arenaz_sampler.cc",
+  "src/google/protobuf/compiler/importer.cc",
+  "src/google/protobuf/compiler/parser.cc",
+  "src/google/protobuf/cpp_features.pb.cc",
+  "src/google/protobuf/cpp_file_options.pb.cc",
+  "src/google/protobuf/descriptor.cc",
+  "src/google/protobuf/descriptor.pb.cc",
+  "src/google/protobuf/descriptor_database.cc",
+  "src/google/protobuf/duration.pb.cc",
+  "src/google/protobuf/dynamic_message.cc",
+  "src/google/protobuf/empty.pb.cc",
+  "src/google/protobuf/extension_set.cc",
+  "src/google/protobuf/extension_set_heavy.cc",
+  "src/google/protobuf/feature_resolver.cc",
+  "src/google/protobuf/field_mask.pb.cc",
+  "src/google/protobuf/generated_enum_util.cc",
+  "src/google/protobuf/generated_message_bases.cc",
+  "src/google/protobuf/generated_message_reflection.cc",
+  "src/google/protobuf/generated_message_tctable_full.cc",
+  "src/google/protobuf/generated_message_tctable_gen.cc",
+  "src/google/protobuf/generated_message_tctable_lite.cc",
+  "src/google/protobuf/generated_message_util.cc",
+  "src/google/protobuf/implicit_weak_message.cc",
+  "src/google/protobuf/inlined_string_field.cc",
+  "src/google/protobuf/internal_feature_helper.cc",
+  "src/google/protobuf/io/coded_stream.cc",
+  "src/google/protobuf/io/gzip_stream.cc",
+  "src/google/protobuf/io/io_win32.cc",
+  "src/google/protobuf/io/printer.cc",
+  "src/google/protobuf/io/strtod.cc",
+  "src/google/protobuf/io/tokenizer.cc",
+  "src/google/protobuf/io/zero_copy_sink.cc",
+  "src/google/protobuf/io/zero_copy_stream.cc",
+  "src/google/protobuf/io/zero_copy_stream_impl.cc",
+  "src/google/protobuf/io/zero_copy_stream_impl_lite.cc",
+  "src/google/protobuf/json/internal/lexer.cc",
+  "src/google/protobuf/json/internal/message_path.cc",
+  "src/google/protobuf/json/internal/parser.cc",
+  "src/google/protobuf/json/internal/unparser.cc",
+  "src/google/protobuf/json/internal/untyped_message.cc",
+  "src/google/protobuf/json/internal/writer.cc",
+  "src/google/protobuf/json/internal/zero_copy_buffered_stream.cc",
+  "src/google/protobuf/json/json.cc",
+  "src/google/protobuf/json_enumvalue_options.pb.cc",
+  "src/google/protobuf/map.cc",
+  "src/google/protobuf/map_field.cc",
+  "src/google/protobuf/message.cc",
+  "src/google/protobuf/message_lite.cc",
+  "src/google/protobuf/micro_string.cc",
+  "src/google/protobuf/naming_style.cc",
+  "src/google/protobuf/parse_context.cc",
+  "src/google/protobuf/port.cc",
+  "src/google/protobuf/raw_ptr.cc",
+  "src/google/protobuf/reflection_mode.cc",
+  "src/google/protobuf/reflection_ops.cc",
+  "src/google/protobuf/repeated_field.cc",
+  "src/google/protobuf/repeated_ptr_field.cc",
+  "src/google/protobuf/service.cc",
+  "src/google/protobuf/source_context.pb.cc",
+  "src/google/protobuf/struct.pb.cc",
+  "src/google/protobuf/stubs/common.cc",
+  "src/google/protobuf/symbol.cc",
+  "src/google/protobuf/symbol_checker.cc",
+  "src/google/protobuf/text_format.cc",
+  "src/google/protobuf/timestamp.pb.cc",
+  "src/google/protobuf/type.pb.cc",
+  "src/google/protobuf/type_id.cc",
+  "src/google/protobuf/unknown_field_set.cc",
+  "src/google/protobuf/unknown_field_set_lite.cc",
+  "src/google/protobuf/util/delimited_message_util.cc",
+  "src/google/protobuf/util/field_comparator.cc",
+  "src/google/protobuf/util/field_mask_util.cc",
+  "src/google/protobuf/util/message_differencer.cc",
+  "src/google/protobuf/util/time_util.cc",
+  "src/google/protobuf/util/type_resolver_util.cc",
+  "src/google/protobuf/wire_format.cc",
+  "src/google/protobuf/wire_format_lite.cc",
+  "src/google/protobuf/wrappers.pb.cc",
+]
+public_headers = ["src/google/protobuf/**/*.h", "src/google/protobuf/**/*.inc"]
+
+[targets.protobuf.deps]
+utf8_range = { local = true }
+
+[targets.protobuf.public]
+include_dirs = ["src"]
+system_libs = ["pthread"]
+
+[targets.protobuf.private]
+defines = ["GOOGLE_PROTOBUF_CMAKE_BUILD"]
