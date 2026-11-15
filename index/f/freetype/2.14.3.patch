@@ -1,9 +1,9 @@
 diff --git a/Harbour.toml b/Harbour.toml
 new file mode 100644
-index 0000000..ce13f75
+index 0000000..9a318b7
 --- /dev/null
 +++ b/Harbour.toml
-@@ -0,0 +1,74 @@
+@@ -0,0 +1,99 @@
 +[package]
 +name = "freetype"
 +version = "2.14.3"
@@ -21,9 +21,7 @@ index 0000000..ce13f75
 +kind = "staticlib"
 +lang = "c"
 +sources = [
-+    "src/base/ftsystem.c",
 +    "src/base/ftinit.c",
-+    "src/base/ftdebug.c",
 +    "src/base/ftbase.c",
 +    "src/base/ftbbox.c",
 +    "src/base/ftglyph.c",
@@ -78,3 +76,30 @@ index 0000000..ce13f75
 +feature = "harfbuzz"
 +[targets.freetype.surface.when."compile.public"]
 +defines = ["FT_CONFIG_OPTION_USE_HARFBUZZ"]
++
++# ftsystem.c and ftdebug.c are the two files upstream picks per platform: CMakeLists.txt
++# compiles builds/windows/ftsystem.c and builds/windows/ftdebug.c on WIN32 (memory-mapped
++# files through CreateFileMapping, debug output through OutputDebugString) and, off Windows,
++# src/base/ftdebug.c with a ftsystem.c this manifest has always taken from src/base (the
++# portable stdio one; upstream's CMake takes builds/unix/ftsystem.c on UNIX, which needs a
++# generated ftconfig.h). Linux and macOS keep the files they had. src/base/ftver.rc, which
++# upstream adds on WIN32, is a resource script for a DLL's version block and is not compiled
++# into a static library here.
++[[targets.freetype.when]]
++os = "linux"
++sources = ["src/base/ftsystem.c", "src/base/ftdebug.c"]
++
++[[targets.freetype.when]]
++os = "macos"
++sources = ["src/base/ftsystem.c", "src/base/ftdebug.c"]
++
++# `_CRT_SECURE_NO_WARNINGS` and `_CRT_NONSTDC_NO_WARNINGS` are what CMakeLists.txt adds for WIN32.
++# DLL_EXPORT is only for a shared library, which this is not.
++#
++# FT_CONFIG_OPTION_USE_PNG (public, above) is on here as on Unix, so libpng is a dependency on
++# Windows too. Upstream's own CMake makes PNG optional (FT_DISABLE_PNG); this manifest has no
++# per-platform dependencies, so the choice is the same on every platform.
++[[targets.freetype.when]]
++os = "windows"
++sources = ["builds/windows/ftsystem.c", "builds/windows/ftdebug.c"]
++defines = ["_CRT_SECURE_NO_WARNINGS", "_CRT_NONSTDC_NO_WARNINGS"]
