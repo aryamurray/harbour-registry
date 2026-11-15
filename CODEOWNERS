@@ -1,0 +1,12 @@
+# Whoever owns these paths must approve any change to them (enable "Require review
+# from Code Owners" on main). They are the things packages are JUDGED by: the tests,
+# the tools that run them, the workflows, and the Harbour pin. An automated pull
+# request cannot touch them at all (see tools/guard.py and the `guard` job in
+# .github/workflows/pr.yml), so a change here is always a human's.
+/tools/                  @aryamurray
+/.github/                @aryamurray
+/packages/*/test/        @aryamurray
+/.harbour-version        @aryamurray
+/CODEOWNERS              @aryamurray
+/.gitattributes          @aryamurray
+/config.toml             @aryamurray

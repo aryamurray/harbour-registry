@@ -1,0 +1,14 @@
+# A stub project whose only job is to depend on cpython through the registry
+# (zlib feature OFF). Harbour builds every target of a dependency, the
+# interpreter included, under .harbour/target/<profile>/deps/cpython-<version>/.
+# run.sh builds this, then swaps in Harbour.toml.on and builds again.
+[package]
+name = "cpython-test"
+version = "0.1.0"
+
+[dependencies]
+cpython = "*"
+
+[targets.cpython-test]
+kind = "exe"
+sources = ["src/main.c"]

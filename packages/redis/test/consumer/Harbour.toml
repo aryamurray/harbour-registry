@@ -1,0 +1,14 @@
+# A stub project whose only job is to depend on redis through the registry:
+# Harbour builds every target of a dependency (the libraries AND the three
+# programs) under .harbour/target/<profile>/deps/redis-<version>/, which is
+# where run.sh finds them. See ../run.sh.
+[package]
+name = "redis-test"
+version = "0.1.0"
+
+[dependencies]
+redis = "*"
+
+[targets.redis-test]
+kind = "exe"
+sources = ["src/main.c"]

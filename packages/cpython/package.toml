@@ -1,0 +1,22 @@
+[package]
+name = "cpython"
+description = "The Python interpreter, built from its generated sources"
+license = "PSF-2.0"
+homepage = "https://www.python.org"
+
+[upstream]
+git = "https://github.com/python/cpython"
+tag = "v{version}"
+url = "https://www.python.org/ftp/python/{version}/Python-{version}.tgz"
+strip_prefix = "Python-{version}"
+
+[[release]]
+version = "3.14.9"
+sha256 = "8b47e85ee67e93945e93620a051a8f44bfc1e9735ed67075d166f4a74b7a060b"
+
+[test]
+platforms = ["linux", "macos"]
+objects = { default = 197, macos = 196 }
+
+[review]
+generators = true

@@ -1,0 +1,14 @@
+# Consumer test for zlib: depends on it THROUGH THE REGISTRY (tools/test.py points
+# Harbour at this checkout), never by path. "*" means "whatever the registry's
+# newest version is", so a version bump needs no edit here (and a bot cannot edit
+# test/ anyway: see the guard job in .github/workflows/pr.yml).
+[package]
+name = "zlib-test"
+version = "0.1.0"
+
+[dependencies]
+zlib = "*"
+
+[targets.zlib-test]
+kind = "exe"
+sources = ["src/**/*.c"]

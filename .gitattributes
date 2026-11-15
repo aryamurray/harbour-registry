@@ -1,2 +1,5 @@
-# Patches are hashed by their exact bytes; never convert their line endings.
+# LF everywhere, so a checkout on Windows cannot change what gets hashed or rendered.
+* text=auto eol=lf
+# Patches are hashed by their exact bytes (a shim lists the sha256 of each, and users' lockfiles
+# pin it); never convert their line endings. `harbour registry index` insists on this rule.
 *.patch -text

@@ -1,0 +1,16 @@
+# Consumer test for libuv, through the registry (see ../../zlib/test/Harbour.toml).
+[package]
+name = "libuv-test"
+version = "0.1.0"
+
+[dependencies]
+libuv = "*"
+
+[targets.libuv-test]
+kind = "exe"
+sources = ["src/main.c"]
+
+# `target = "uv"` pinned rather than relying on the default: libuv's manifest
+# declares one library target, but naming it stays correct if a second is added.
+[targets.libuv-test.deps]
+libuv = { target = "uv" }

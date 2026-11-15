@@ -1,0 +1,208 @@
+name: PR
+
+# A pull request to this registry is judged here, and nowhere else. The result job at
+# the bottom (`PR result`) is the one check branch protection should require.
+#
+# `pull_request`, NEVER `pull_request_target`. This workflow builds and RUNS code that
+# comes from the pull request (third-party sources, manifests, generator scripts,
+# consumer tests). `pull_request_target` would run that with the base repository's
+# secrets and a write token; `pull_request` gives it a read-only token and no secrets
+# even for PRs from forks. There is nothing here for a malicious PR to steal.
+on:
+  pull_request:
+
+# Read-only, for every job. A job that needs more asks for it itself (none here).
+permissions:
+  contents: read
+
+# Deliberately no `paths-ignore` at workflow level, as in harbour's ci.yml: a workflow
+# that is filtered away never reports, so a required check would wait forever on a PR
+# that touched only the filtered paths. What a PR does or does not need to run is decided
+# by the `plan` job, whose skipped dependants still let `PR result` report.
+#
+# One in-flight run per PR: a second push supersedes the first.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # Is this an automated PR, and if so did it stay inside what automation may touch?
+  #
+  # THIS IS THE SAFETY PROPERTY OF THE FUTURE AUTONOMOUS LOOP: the judge cannot be
+  # modified by the judged. A bot that opens "bump zlib" PRs (or an LLM that repairs a
+  # manifest that stopped building) is rewarded by green CI. If it could also edit the
+  # consumer test, the tools, or this workflow, the cheapest way to make a broken bump
+  # green would be to weaken whatever is red. So an automated PR may change only
+  # package.toml (releases), Harbour.toml, overlay/, patches/ and the rendered index/;
+  # never packages/*/test/**, tools/**, .github/**, .harbour-version or CODEOWNERS. The
+  # path list lives in tools/guard.py, which also refuses a bot changing a package's
+  # `[test]` or `[review]` tables.
+  #
+  # Two limits worth knowing. (1) This job is an in-band check: a PR that edits this very
+  # file runs its own edited copy, so what actually stops a bot from removing the job is
+  # CODEOWNERS (.github/ is owned by a human) together with branch protection "Require
+  # review from Code Owners" and this workflow's `PR result` being a required check. The
+  # script is therefore taken from the BASE commit, which at least means a PR cannot
+  # weaken the rules and still be judged by them. (2) "Bot" is decided from the PR author
+  # (login ending in [bot], or user type Bot) or the `bot` label; a human who removes the
+  # label is making a human decision, and shows up in the audit log.
+  guard:
+    name: Automated-PR guard
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check the diff against what an automated PR may touch
+        env:
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          USER_TYPE: ${{ github.event.pull_request.user.type }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          # The merge commit's first parent is the current tip of the base branch, so
+          # `HEAD^1..HEAD` is exactly what merging this PR would change.
+          base="$(git rev-parse HEAD^1)"
+          # Judge with the base branch's guard, not the PR's copy of it. On the very first
+          # run (no guard on the base yet) fall back to the PR's own.
+          mkdir -p "$RUNNER_TEMP/judge/tools"
+          if git cat-file -e "$base:tools/guard.py" 2>/dev/null; then
+            git show "$base:tools/guard.py" > "$RUNNER_TEMP/judge/tools/guard.py"
+          else
+            cp tools/guard.py "$RUNNER_TEMP/judge/tools/guard.py"
+          fi
+          python "$RUNNER_TEMP/judge/tools/guard.py" --base "$base" --head HEAD \
+            --author "$AUTHOR" --labels "$LABELS" --event-user-type "$USER_TYPE"
+
+  # Static checks, render freshness, and the affected set. No Harbour, no network: it
+  # should finish in seconds, and a failure here stops the (expensive) matrix.
+  plan:
+    name: Plan
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      runners: ${{ steps.plan.outputs.runners }}
+      packages: ${{ steps.plan.outputs.packages }}
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The tools' own tests: render_add_patch against real `git diff`, the guard's path
+      # rules, the lint rules. A broken tool must not be able to pass a package.
+      - name: Self-test the tools
+        run: python -m unittest discover -s tools -p "test_*.py" -v
+
+      # Every package, not just the changed ones: it takes a fraction of a second, and a
+      # change to a shared rule (the SPDX allowlist) must be visible on every package.
+      - name: Lint
+        run: python tools/lint.py
+
+      # `index/` is committed, because Harbour reads the git repository's index/ directly,
+      # so it must be exactly what packages/ renders to. --base also enforces that a
+      # published version's shim and patch are byte-identical to the base branch's: users'
+      # lockfiles pin the patch hash.
+      - name: Is index/ what packages/ renders to?
+        run: python tools/render.py --check --base HEAD^1
+
+      - name: Work out which packages this change affects
+        id: plan
+        run: python tools/plan.py --base HEAD^1
+
+  # Harbour, built once per runner image and cached, BEFORE the matrix: otherwise every
+  # matrix leg starts at the same moment on a cold cache and every one of them builds
+  # Harbour for ~3 minutes. See .github/actions/setup-harbour.
+  harbour:
+    name: Harbour (${{ matrix.runner }})
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.runners) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-harbour
+
+  # The authoritative index check. render.py's built-in .idx renderer is a port of what
+  # `harbour registry index` does; this runs the real thing over the whole registry (it
+  # downloads every package's source, which is acceptable at this size and is also the only
+  # check against the full SPDX list) and fails if the two disagree or index/ is stale.
+  index:
+    name: Index (harbour registry index)
+    needs: [plan, harbour]
+    if: needs.plan.outputs.count != '0'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-harbour
+      - run: python tools/render.py --check --harbour "$HOME/harbour-bin/harbour"
+
+  # One leg per (affected package, platform it lists). `fail-fast: false`: which legs are
+  # red is the diagnostic (everything red means Harbour; one package means that package; one
+  # OS means that OS's block in the manifest).
+  test:
+    name: ${{ matrix.package }} (${{ matrix.os }})
+    needs: [plan, harbour]
+    if: needs.plan.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    # Git Bash on Windows, as harbour's own Windows canary job does: the tools and the run.sh
+    # drivers are bash and Python. Harbour finds MSVC itself (vswhere, then vcvarsall); do NOT
+    # add a vcvars / msvc-dev-cmd step, it would hide a failure of that discovery. Git Bash's
+    # `link` is GNU coreutils' and would shadow MSVC's if it were ever resolved from PATH.
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Tarballs that hold symlinks (zstd's does) need this to extract under Git Bash.
+      MSYS: winsymlinks:lnk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-harbour
+      - name: Consumer test
+        env:
+          PKG: ${{ matrix.package }}
+        run: python tools/test.py "$PKG"
+
+  # The single check to require in branch protection. Requiring the expanded matrix names
+  # directly deadlocks any PR where `plan` decided there is nothing to run: GitHub never
+  # expands a skipped matrix, so the expanded names would wait forever. This job always
+  # runs, and fails if anything it depends on failed or was cancelled; "skipped because
+  # nothing was affected" counts as passing.
+  result:
+    name: PR result
+    needs: [guard, plan, harbour, index, test]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fail if any job failed or was cancelled
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "guard=${{ needs.guard.result }} plan=${{ needs.plan.result }} harbour=${{ needs.harbour.result }} index=${{ needs.index.result }} test=${{ needs.test.result }}"
+          case " $RESULTS " in
+            *" failure "* | *" cancelled "*) exit 1 ;;
+          esac

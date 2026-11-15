@@ -1,0 +1,89 @@
+name: Set up Harbour
+description: >-
+  Put the `harbour` binary pinned by .harbour-version on PATH, building it from
+  source on a cache miss.
+
+# Why this builds from source: Harbour has no release yet, so the only thing that
+# can be pinned is a commit. `.harbour-version` holds the full SHA of the
+# aryamurray/harbour commit this registry is tested against, so "the registry
+# passes" always means "passes with THAT harbour" and a change to Harbour reaches
+# the registry only as a reviewed change to that one line (which, being a change
+# to .harbour-version, re-tests every package; see tools/plan.py).
+#
+# The binary is cached per commit, OS and CPU architecture, so only the first run
+# per (SHA, OS) pays the ~3 minute `cargo build --release --locked`. pr.yml and
+# nightly.yml run a `harbour` job per runner image BEFORE the matrix, so the
+# matrix legs restore that cache instead of every leg building at once on a cold
+# cache.
+#
+# Switching to a released Harbour later is a change to THIS FILE only: replace the
+# three "build" steps with the project's `install.sh` (or a download of the release
+# asset) at a version read from `.harbour-version`, and keep the cache step and the
+# PATH step. Nothing else in the repository knows how the binary was obtained.
+
+runs:
+  using: composite
+  steps:
+    - name: Read the pinned Harbour commit
+      id: pin
+      shell: bash
+      run: |
+        sha="$(tr -d '[:space:]' < .harbour-version)"
+        case "$sha" in
+          *[!0-9a-f]* | "") echo "::error file=.harbour-version::expected a full lowercase commit SHA, got '$sha'"; exit 1 ;;
+        esac
+        if [ "${#sha}" -ne 40 ]; then
+          echo "::error file=.harbour-version::expected 40 hex digits, got ${#sha}"; exit 1
+        fi
+        echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+    - name: Restore the cached binary
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ~/harbour-bin
+        key: harbour-${{ runner.os }}-${{ runner.arch }}-${{ steps.pin.outputs.sha }}
+
+    # --- build steps: replace with install.sh / a release download later --------
+    - name: Fetch Harbour source
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        # A shallow fetch of exactly the pinned commit; no checkout action, so the
+        # registry's own workspace stays clean.
+        src="$RUNNER_TEMP/harbour-src"
+        rm -rf "$src"
+        git init -q "$src"
+        git -C "$src" remote add origin https://github.com/aryamurray/harbour.git
+        git -C "$src" fetch -q --depth 1 origin "${{ steps.pin.outputs.sha }}"
+        git -C "$src" checkout -q FETCH_HEAD
+        test "$(git -C "$src" rev-parse HEAD)" = "${{ steps.pin.outputs.sha }}"
+
+    - name: Install the Rust toolchain
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Build Harbour
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        cd "$RUNNER_TEMP/harbour-src"
+        cargo build --release --locked
+        mkdir -p "$HOME/harbour-bin"
+        cp target/release/harbour "$HOME/harbour-bin/" 2>/dev/null || cp target/release/harbour.exe "$HOME/harbour-bin/"
+    # ---------------------------------------------------------------------------
+
+    - name: Put harbour on PATH
+      shell: bash
+      run: |
+        # GITHUB_PATH entries are read by native programs too. Under Git Bash
+        # `$HOME` is `/c/Users/...`, which bash understands and a native
+        # Windows process (the Python that runs tools/test.py) does not: the
+        # first Windows run found no `harbour` although this step had just
+        # printed its version. Write the native spelling there.
+        bin="$HOME/harbour-bin"
+        if command -v cygpath >/dev/null 2>&1; then
+          bin="$(cygpath -w "$bin")"
+        fi
+        echo "$bin" >> "$GITHUB_PATH"
+        "$HOME/harbour-bin/harbour" --version

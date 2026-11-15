@@ -1,0 +1,17 @@
+[package]
+name = "freetype"
+description = "Font rasterisation library (TrueType, OpenType, Type 1, bitmap fonts)"
+license = "FTL OR GPL-2.0-or-later"
+homepage = "https://freetype.org"
+
+[upstream]
+git = "https://gitlab.freedesktop.org/freetype/freetype.git"
+tag = "VER-{major}-{minor}-{patch}"
+
+[[release]]
+version = "2.14.3"
+rev = "0a0221a1347e2f1e07c395263540026e9a0aa7c7"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 41

@@ -1,0 +1,19 @@
+[package]
+name = "curl"
+description = "Command-line tool and library for transferring data with URLs, configured by Harbour probes"
+license = "curl"
+homepage = "https://curl.se"
+
+[upstream]
+git = "https://github.com/curl/curl"
+tag = "curl-{major}_{minor}_{patch}"
+url = "https://github.com/curl/curl/releases/download/{tag}/curl-{version}.tar.gz"
+strip_prefix = "curl-{version}"
+
+[[release]]
+version = "8.22.0"
+sha256 = "d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 196

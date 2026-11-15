@@ -1,0 +1,17 @@
+[package]
+name = "libpng"
+description = "Reference implementation of the PNG image format"
+license = "libpng-2.0"
+homepage = "https://www.libpng.org/pub/png/libpng.html"
+
+[upstream]
+git = "https://github.com/pnggroup/libpng.git"
+tag = "v{version}"
+
+[[release]]
+version = "1.6.50"
+rev = "2b978915d82377df13fcbb1fb56660195ded868a"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 15

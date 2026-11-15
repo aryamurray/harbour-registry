@@ -1,0 +1,40 @@
+# Copy this directory to packages/<name>, then replace every `example` and every value below.
+# Everything here is read by tools/lint.py, tools/render.py and tools/test.py; unknown keys are errors.
+
+[package]
+name = "example"                      # lowercase letters, digits, - and _; must equal the directory name
+description = "One line saying what the library is (max 200 characters)"
+license = "MIT"                       # SPDX expression, the UPSTREAM's license; allowlist in tools/lint.py
+homepage = "https://example.com/example"   # https only
+
+[upstream]
+# Where releases come from. {version} is the upstream spelling of the version (the release's
+# `upstream_version` if it has one, else `version`); {major} {minor} {patch} come from the semver
+# `version`; {tag} (url and strip_prefix only) is the tag template below, expanded.
+git = "https://github.com/example/example"   # where tags are listed; for a git-pinned release (`rev`) it is also the clone url
+tag = "v{version}"
+url = "https://github.com/example/example/releases/download/{tag}/example-{version}.tar.gz"
+strip_prefix = "example-{version}"     # the tarball's single top-level directory, dropped on extraction
+# scheme = "four-part"                 # only for upstreams with 1.2.3.4 versions: see README "Versions that are not semver"
+
+# One entry per release. The newest (highest semver) is the one rendered from Harbour.toml and
+# overlay/; older entries are only checked, never rewritten (see README "Several versions").
+[[release]]
+version = "1.0.0"                      # semver. Must equal [package] version in Harbour.toml for the newest release
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"   # of the tarball, 64 hex digits
+# rev = "<40-digit commit>"            # instead of sha256: pin a git commit (needs [upstream] git)
+# upstream_version = "1.0"             # when upstream's spelling is not semver; `version` must be its normalisation
+# url = "..."  strip_prefix = "..."    # per-release overrides of the templates above
+# republish = "reason"                 # HUMANS ONLY: acknowledge rewriting an already published version
+
+[test]
+platforms = ["linux", "macos"]         # where CI must build and run test/; subset of linux, macos, windows
+objects = 1                            # EXACT translation units the library compiles. Or per platform:
+                                       #   objects = { default = 37, linux = 35, "linux-x86_64" = 38 }
+# needs = ["perl"]                     # executables that must be on PATH
+# timeout = 1800                       # seconds
+
+# [review]
+# generators = true                    # REQUIRED if Harbour.toml runs code during the build (prebuild, host
+#                                      # targets, recipe) or overlay/ holds scripts. A human must approve it;
+#                                      # a bot's PR may never change this table.

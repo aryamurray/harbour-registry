@@ -1,0 +1,19 @@
+[package]
+name = "redis"
+description = "In-memory data structure store"
+license = "BSD-3-Clause"
+homepage = "https://redis.io"
+
+[upstream]
+git = "https://github.com/redis/redis"
+tag = "{version}"
+url = "https://download.redis.io/releases/redis-{version}.tar.gz"
+strip_prefix = "redis-{version}"
+
+[[release]]
+version = "7.2.16"
+sha256 = "960a8ec15e34ff40e57ff16837b26b33bd81f2da6d24497bb63de532a323a18e"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 145
