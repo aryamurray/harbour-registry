@@ -1,0 +1,14 @@
+# Consumer test for nghttp2, through the registry (see ../../zlib/test/Harbour.toml).
+[package]
+name = "nghttp2-test"
+version = "0.1.0"
+
+[dependencies]
+nghttp2 = "*"
+
+[targets.nghttp2-test]
+kind = "exe"
+sources = ["src/main.c"]
+
+[targets.nghttp2-test.deps]
+nghttp2 = { target = "nghttp2" }
