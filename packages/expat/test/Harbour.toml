@@ -1,0 +1,11 @@
+# Consumer test for expat, through the registry (see ../../zlib/test/Harbour.toml).
+[package]
+name = "expat-test"
+version = "0.1.0"
+
+[dependencies]
+expat = "*"
+
+[targets.expat-test]
+kind = "exe"
+sources = ["src/main.c"]

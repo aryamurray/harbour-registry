@@ -1,0 +1,16 @@
+# Consumer test for brotli, through the registry (see ../../zlib/test/Harbour.toml).
+# Selects all three libraries the way a user would, with `targets = [...]`: the test then
+# references a symbol of each, so a missing library fails to link.
+[package]
+name = "brotli-test"
+version = "0.1.0"
+
+[dependencies]
+brotli = "*"
+
+[targets.brotli-test]
+kind = "exe"
+sources = ["src/main.c"]
+
+[targets.brotli-test.deps]
+brotli = { targets = ["brotlienc", "brotlidec", "brotlicommon"] }

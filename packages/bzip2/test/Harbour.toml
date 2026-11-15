@@ -1,0 +1,11 @@
+# Consumer test for bzip2, through the registry (see ../../zlib/test/Harbour.toml).
+[package]
+name = "bzip2-test"
+version = "0.1.0"
+
+[dependencies]
+bzip2 = "*"
+
+[targets.bzip2-test]
+kind = "exe"
+sources = ["src/main.c"]

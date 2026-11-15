@@ -1,0 +1,15 @@
+[package]
+name = "libdeflate"
+version = "1.26.0"
+
+[source.tarball]
+url = "https://github.com/ebiggers/libdeflate/releases/download/v1.26/libdeflate-1.26.tar.gz"
+sha256 = "125856d4656e0feab660f94842f835923410c9281fedbcee64598c918da42b5a"
+strip_prefix = "libdeflate-1.26"
+
+[metadata]
+license = "MIT"
+
+[[patches]]
+file = "1.26.0.patch"
+sha256 = "72f1b1a2086660055646ecca04066ad908a087d0e1d9fe72709e0e27d16b47a4"

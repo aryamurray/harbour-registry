@@ -1,0 +1,18 @@
+[package]
+name = "brotli"
+description = "Brotli compression: the common, decoder and encoder libraries as three targets"
+license = "MIT"
+homepage = "https://github.com/google/brotli"
+
+[upstream]
+git = "https://github.com/google/brotli"
+tag = "v{version}"
+
+[[release]]
+version = "1.2.1"
+rev = "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 35
+verify = true

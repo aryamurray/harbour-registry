@@ -1,0 +1,11 @@
+# Consumer test for lz4, through the registry (see ../../zlib/test/Harbour.toml).
+[package]
+name = "lz4-test"
+version = "0.1.0"
+
+[dependencies]
+lz4 = "*"
+
+[targets.lz4-test]
+kind = "exe"
+sources = ["src/main.c"]

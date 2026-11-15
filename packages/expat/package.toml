@@ -1,0 +1,20 @@
+[package]
+name = "expat"
+description = "Stream-oriented XML parser library, configured by Harbour probes"
+license = "MIT"
+homepage = "https://libexpat.github.io"
+
+[upstream]
+git = "https://github.com/libexpat/libexpat"
+tag = "R_{major}_{minor}_{patch}"
+url = "https://github.com/libexpat/libexpat/releases/download/{tag}/expat-{version}.tar.gz"
+strip_prefix = "expat-{version}"
+
+[[release]]
+version = "2.10.0"
+sha256 = "5466a341f9c692ef7a958a6881311be597f8e1ce345984cf78414f54793dea4c"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 5
+verify = true

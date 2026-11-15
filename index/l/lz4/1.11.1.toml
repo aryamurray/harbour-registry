@@ -1,0 +1,15 @@
+[package]
+name = "lz4"
+version = "1.11.1"
+
+[source.tarball]
+url = "https://github.com/lz4/lz4/releases/download/v1.11.1/lz4-1.11.1.tar.gz"
+sha256 = "683fed08a844ad012196381e40badf80c0bbe4962959761416d41c9e67d77ec7"
+strip_prefix = "lz4-1.11.1"
+
+[metadata]
+license = "BSD-2-Clause"
+
+[[patches]]
+file = "1.11.1.patch"
+sha256 = "6f24b5e9751562b730667a961b86d93c435f0cf3e105a35ccc4cb5fe0a9c6865"

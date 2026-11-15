@@ -1,0 +1,34 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..76a47b8
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,28 @@
++# xxHash 0.8.4: the library is one translation unit, xxhash.c (with xxhash.h, and xxh3.h, a
++# compatibility stub that includes xxhash.h). The xxhsum CLI (cli/, GPL-2.0-or-later) is not built.
++#
++# Source list: upstream's CMake build (build/cmake/CMakeLists.txt) is
++#   add_library(xxhash "${XXHASH_DIR}/xxhash.c")
++# and `libxxhash.a` in the Makefile is built from xxhash.o alone. The x86 runtime dispatcher
++# (xxh_x86dispatch.c) is CMake's opt-in DISPATCH option, off by default, and is left out.
++#
++# Defines: none. CMake's only definitions are XXH_EXPORT, for a shared library, and
++# XXH_DEBUGLEVEL=1, for a Debug build; neither applies to a static release archive.
++[package]
++name = "xxhash"
++version = "0.8.4"
++description = "Extremely fast non-cryptographic hash algorithm: XXH32, XXH64, XXH3 and XXH128"
++license = "BSD-2-Clause"
++homepage = "https://xxhash.com"
++requires = "hosted"
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
++
++[targets.xxhash]
++kind = "staticlib"
++lang = "c"
++sources = ["xxhash.c"]
++public_headers = ["xxhash.h", "xxh3.h"]
++
++# Consumers write `#include <xxhash.h>`; the header sits at the package root.
++[targets.xxhash.public]
++include_dirs = ["."]

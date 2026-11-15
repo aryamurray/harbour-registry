@@ -1,0 +1,18 @@
+[package]
+name = "xxhash"
+description = "Extremely fast non-cryptographic hash algorithm: XXH32, XXH64, XXH3 and XXH128"
+license = "BSD-2-Clause"
+homepage = "https://xxhash.com"
+
+[upstream]
+git = "https://github.com/Cyan4973/xxHash"
+tag = "v{version}"
+
+[[release]]
+version = "0.8.4"
+rev = "c87183a77d67f7d37e3d2d1b7eaac5e7c695e4f0"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 1
+verify = true
