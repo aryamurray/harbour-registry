@@ -1,0 +1,16 @@
+# Consumer test for abseil, through the registry (see ../../zlib/test/Harbour.toml). It names only the
+# `absl` target; the SIMD-flagged `absl_randen_hwaes` must arrive through the `local` edge.
+[package]
+name = "abseil-test"
+version = "0.1.0"
+
+[dependencies]
+abseil = "*"
+
+[targets.abseil-test]
+kind = "exe"
+lang = "c++"
+sources = ["src/main.cc"]
+
+[targets.abseil-test.deps]
+abseil = "absl"

@@ -1,0 +1,17 @@
+# Consumer test for spdlog, through the registry (see ../../zlib/test/Harbour.toml). spdlog is the
+# first registry package that depends on another one (fmt), so this also checks that fmt reaches the
+# consumer's link line through spdlog.
+[package]
+name = "spdlog-test"
+version = "0.1.0"
+
+[dependencies]
+spdlog = "*"
+
+[targets.spdlog-test]
+kind = "exe"
+lang = "c++"
+sources = ["src/main.cc"]
+
+[targets.spdlog-test.deps]
+spdlog = "spdlog"
