@@ -1,0 +1,1 @@
+{"format_version":1,"name":"spdlog","version":"1.17.0","yanked":false,"deps":[{"name":"fmt","version_req":"^11.2","optional":false,"default_features":true,"kind":"normal","registry":null}],"checksum":null,"license":"MIT","shim":"s/spdlog/1.17.0.toml"}

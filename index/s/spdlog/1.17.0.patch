@@ -1,0 +1,63 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..e255c09
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,57 @@
++# spdlog 1.17.0 in compiled-library mode, against the registry's {fmt} instead of the bundled copy.
++#
++# Read from upstream's CMakeLists.txt, which this mirrors with SPDLOG_COMPILED_LIB defaults and
++# SPDLOG_FMT_EXTERNAL=ON:
++#   SPDLOG_SRCS = src/spdlog.cpp stdout_sinks.cpp color_sinks.cpp file_sinks.cpp async.cpp cfg.cpp
++#       -> the six sources below. src/bundled_fmtlib_format.cpp is appended only when neither
++#       SPDLOG_USE_STD_FORMAT nor SPDLOG_FMT_EXTERNAL is set, so it is left out: the formatting engine
++#       comes from the `fmt` package (11.2.0; spdlog's headers branch on FMT_VERSION and support >= 8
++#       down to 6 in places, the bundled copy is 12.1.0);
++#   target_compile_definitions(spdlog PUBLIC SPDLOG_COMPILED_LIB) and, for external fmt,
++#       PUBLIC SPDLOG_FMT_EXTERNAL                                -> [targets.spdlog.public] defines;
++#   target_link_libraries(spdlog PUBLIC Threads::Threads)        -> system lib `pthread`, public;
++#   target_include_directories(spdlog PUBLIC include)            -> public include dir;
++#   check_symbol_exists(fwrite_unlocked "stdio.h") -> PRIVATE SPDLOG_FWRITE_UNLOCKED (the header-only
++#       interface gets it too, but that is not this target): the named probe below. The probe's
++#       answer defines the macro to 1 where the symbol exists (Linux glibc/musl, and it is measured on
++#       macOS) and leaves it undefined where it does not, as upstream's does.
++#   cxx_std: spdlog sets none (C++11 is the floor of its code); fmt's own target declares 17, so the
++#       graph is compiled as 17 at least. cpp_std = "11" here is the minimum spdlog itself needs.
++# Not carried over: the tweak options (all OFF by default: SPDLOG_NO_EXCEPTIONS, SPDLOG_WCHAR_*,
++# SPDLOG_CLOCK_COARSE, SPDLOG_PREVENT_CHILD_FD, SPDLOG_NO_THREAD_ID, ...), SPDLOG_USE_STD_FORMAT, the
++# bundled fmt, the MSVC flags (/utf-8, /Zc:__cplusplus) and Windows: the registry's fmt is POSIX only,
++# so spdlog cannot be claimed on Windows.
++[package]
++name = "spdlog"
++version = "1.17.0"
++description = "Fast C++ logging library, built in compiled mode against the registry's fmt"
++license = "MIT"
++homepage = "https://github.com/gabime/spdlog"
++requires = "hosted"
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
++
++[dependencies]
++fmt = "^11.2"
++
++[targets.spdlog]
++kind = "staticlib"
++lang = "c++"
++cpp_std = "11"
++sources = [
++  "src/spdlog.cpp",
++  "src/stdout_sinks.cpp",
++  "src/color_sinks.cpp",
++  "src/file_sinks.cpp",
++  "src/async.cpp",
++  "src/cfg.cpp",
++]
++public_headers = ["include/spdlog/**/*.h"]
++
++[targets.spdlog.public]
++include_dirs = ["include"]
++defines = ["SPDLOG_COMPILED_LIB", "SPDLOG_FMT_EXTERNAL"]
++system_libs = ["pthread"]
++
++[targets.spdlog.probes.named.SPDLOG_FWRITE_UNLOCKED]
++symbol = "fwrite_unlocked"
++prelude = ["stdio.h"]
