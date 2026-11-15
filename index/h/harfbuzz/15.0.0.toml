@@ -12,4 +12,4 @@ upstream_url = "https://github.com/harfbuzz/harfbuzz.git"
 
 [[patches]]
 file = "15.0.0.patch"
-sha256 = "f045eeb4a7680f04577306eca79bf54fbca3702274a347071cc781786afb92c5"
+sha256 = "389d6b76dc0237ef41a57ffffe645c27e31df11cdbffa2d1c252d04bc9bdb5d2"
