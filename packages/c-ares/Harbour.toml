@@ -1,0 +1,544 @@
+# c-ares 1.34.9, built the way upstream's own non-autotools builds do, with its configuration
+# written by Harbour (probes) instead of by CMake or configure.
+#
+# Source list: `CSOURCES` of src/lib/Makefile.inc, verbatim (what CMake's transform_makefile_inc
+# feeds to add_library). Every platform's files are in it (ares_sysconfig_win.c, ares_event_win32.c,
+# ares_event_epoll.c, ares_event_kqueue.c, ares_sysconfig_mac.c, windows_port.c...): they guard
+# themselves with the HAVE_*/_WIN32 macros, so none is selected per OS here.
+#
+# Configuration, Unix (linux, macos). Upstream's CMake compiles with HAVE_CONFIG_H=1 and a generated
+# ares_config.h (src/lib/ares_config.h.cmake). Here the probes below write that file; each name is a
+# `#cmakedefine` of that template that the library reads, answered as CMakeLists.txt answers it:
+# CHECK_INCLUDE_FILES (header probes; net/if.h and netinet/tcp.h with the prelude CMake gives them),
+# CHECK_SYMBOL_EXISTS (symbol probes for functions, constant probes for macros), CARES_TYPE_EXISTS
+# (type probes). Choices CMake makes without measuring are literals: the CARES_THREADS option (ON),
+# CARES_RANDOM_FILE (/dev/urandom), and the send/recv/getnameinfo argument types, which CMake sets
+# from HAVE_SSIZE_T and HAVE_SOCKLEN_T (both exist on every Unix claimed here).
+# Two names are CMake's conjunctions of two answers, probed as the one that varies:
+# HAVE_FCNTL_O_NONBLOCK (fcntl exists, which POSIX guarantees, and O_NONBLOCK) and
+# HAVE_IOCTL_FIONBIO (ioctl exists and FIONBIO). HAVE_SETSOCKOPT_SO_NONBLOCK is SO_NONBLOCK alone
+# likewise. HAVE_GETSERVBY*_R is probed; its ARGS value is CMake's "probably linux" 6, on Linux only.
+# CMake's SYSFLAGS become the per-OS defines below (they reach the probes as well).
+#
+# ares_build.h is not generated: include/ares_build.h ships in the tarball with the "non-configure"
+# answers (socklen_t and ssize_t under __GNUC__, the Windows headers under _WIN32), which are the
+# answers CMake's ares_build.h.cmake gives on these platforms, and ares.h includes it by quote from
+# its own directory, so a generated copy could never win. Likewise ares_version.h is upstream's.
+#
+# Windows (MSVC): upstream's Makefile.msvc builds with no generated header: HAVE_CONFIG_H is
+# not defined, ares_setup.h includes the hand-written src/lib/config-win32.h, and the compile line is
+# `/DCARES_BUILDING_LIBRARY /DCARES_STATICLIB /D_WIN32_WINNT=0x0602` with ws2_32, advapi32,
+# iphlpapi, kernel32 (CMake's CARES_DEPENDENT_LIBS for WIN32 is ws2_32 advapi32 iphlpapi and its
+# SYSFLAGS add WIN32_LEAN_AND_MEAN and the two _CRT_*_DEPRECATE). Probes still run there (the
+# Unix header names simply answer no) and their header is never included.
+#
+# Libraries: static builds need CARES_STATICLIB on the public surface (upstream adds it for WIN32;
+# elsewhere it is inert). CARES_THREADS is ON upstream, so Unix links the thread library
+# (CMake's Threads::Threads, public on the static target). Not linked: resolv (CMake adds it only if
+# res_servicename is in libresolv and not already in libc, which it is on macOS and glibc),
+# nsl/socket/network (Solaris, Haiku), rt (clock_gettime is in libc).
+[package]
+name = "c-ares"
+version = "1.34.9"
+description = "Asynchronous DNS resolver library, configured by Harbour probes"
+license = "MIT"
+homepage = "https://c-ares.org"
+requires = "hosted"
+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
+
+[targets.cares]
+kind = "staticlib"
+lang = "c"
+sources = [
+  "src/lib/ares_addrinfo2hostent.c",
+  "src/lib/ares_addrinfo_localhost.c",
+  "src/lib/ares_android.c",
+  "src/lib/ares_cancel.c",
+  "src/lib/ares_close_sockets.c",
+  "src/lib/ares_conn.c",
+  "src/lib/ares_cookie.c",
+  "src/lib/ares_data.c",
+  "src/lib/ares_destroy.c",
+  "src/lib/ares_free_hostent.c",
+  "src/lib/ares_free_string.c",
+  "src/lib/ares_freeaddrinfo.c",
+  "src/lib/ares_getaddrinfo.c",
+  "src/lib/ares_getenv.c",
+  "src/lib/ares_gethostbyaddr.c",
+  "src/lib/ares_gethostbyname.c",
+  "src/lib/ares_getnameinfo.c",
+  "src/lib/ares_hosts_file.c",
+  "src/lib/ares_init.c",
+  "src/lib/ares_library_init.c",
+  "src/lib/ares_metrics.c",
+  "src/lib/ares_options.c",
+  "src/lib/ares_parse_into_addrinfo.c",
+  "src/lib/ares_process.c",
+  "src/lib/ares_qcache.c",
+  "src/lib/ares_query.c",
+  "src/lib/ares_search.c",
+  "src/lib/ares_send.c",
+  "src/lib/ares_set_socket_functions.c",
+  "src/lib/ares_socket.c",
+  "src/lib/ares_sortaddrinfo.c",
+  "src/lib/ares_strerror.c",
+  "src/lib/ares_sysconfig.c",
+  "src/lib/ares_sysconfig_files.c",
+  "src/lib/ares_sysconfig_mac.c",
+  "src/lib/ares_sysconfig_win.c",
+  "src/lib/ares_timeout.c",
+  "src/lib/ares_update_servers.c",
+  "src/lib/ares_version.c",
+  "src/lib/inet_net_pton.c",
+  "src/lib/inet_ntop.c",
+  "src/lib/windows_port.c",
+  "src/lib/dsa/ares_array.c",
+  "src/lib/dsa/ares_htable.c",
+  "src/lib/dsa/ares_htable_asvp.c",
+  "src/lib/dsa/ares_htable_dict.c",
+  "src/lib/dsa/ares_htable_strvp.c",
+  "src/lib/dsa/ares_htable_szvp.c",
+  "src/lib/dsa/ares_htable_vpstr.c",
+  "src/lib/dsa/ares_htable_vpvp.c",
+  "src/lib/dsa/ares_llist.c",
+  "src/lib/dsa/ares_slist.c",
+  "src/lib/event/ares_event_configchg.c",
+  "src/lib/event/ares_event_epoll.c",
+  "src/lib/event/ares_event_kqueue.c",
+  "src/lib/event/ares_event_poll.c",
+  "src/lib/event/ares_event_select.c",
+  "src/lib/event/ares_event_thread.c",
+  "src/lib/event/ares_event_wake_pipe.c",
+  "src/lib/event/ares_event_win32.c",
+  "src/lib/legacy/ares_create_query.c",
+  "src/lib/legacy/ares_expand_name.c",
+  "src/lib/legacy/ares_expand_string.c",
+  "src/lib/legacy/ares_fds.c",
+  "src/lib/legacy/ares_getsock.c",
+  "src/lib/legacy/ares_parse_a_reply.c",
+  "src/lib/legacy/ares_parse_aaaa_reply.c",
+  "src/lib/legacy/ares_parse_caa_reply.c",
+  "src/lib/legacy/ares_parse_mx_reply.c",
+  "src/lib/legacy/ares_parse_naptr_reply.c",
+  "src/lib/legacy/ares_parse_ns_reply.c",
+  "src/lib/legacy/ares_parse_ptr_reply.c",
+  "src/lib/legacy/ares_parse_soa_reply.c",
+  "src/lib/legacy/ares_parse_srv_reply.c",
+  "src/lib/legacy/ares_parse_txt_reply.c",
+  "src/lib/legacy/ares_parse_uri_reply.c",
+  "src/lib/record/ares_dns_mapping.c",
+  "src/lib/record/ares_dns_multistring.c",
+  "src/lib/record/ares_dns_name.c",
+  "src/lib/record/ares_dns_parse.c",
+  "src/lib/record/ares_dns_record.c",
+  "src/lib/record/ares_dns_write.c",
+  "src/lib/str/ares_buf.c",
+  "src/lib/str/ares_str.c",
+  "src/lib/str/ares_strsplit.c",
+  "src/lib/util/ares_iface_ips.c",
+  "src/lib/util/ares_threads.c",
+  "src/lib/util/ares_timeval.c",
+  "src/lib/util/ares_math.c",
+  "src/lib/util/ares_rand.c",
+  "src/lib/util/ares_uri.c",
+]
+public_headers = [
+  "include/ares.h",
+  "include/ares_build.h",
+  "include/ares_dns.h",
+  "include/ares_dns_record.h",
+  "include/ares_nameser.h",
+  "include/ares_version.h",
+]
+
+[targets.cares.public]
+include_dirs = ["include"]
+defines = ["CARES_STATICLIB"]
+
+[targets.cares.private]
+include_dirs = ["src/lib", "src/lib/include", "include"]
+defines = ["CARES_BUILDING_LIBRARY"]
+
+[targets.cares.probes]
+emit = { header = "ares_config.h" }
+defines = [
+  "CARES_THREADS=1",
+  "CARES_RANDOM_FILE=\"/dev/urandom\"",
+  "GETHOSTNAME_TYPE_ARG2=size_t",
+  "GETNAMEINFO_QUAL_ARG1=const",
+  "GETNAMEINFO_TYPE_ARG1=struct sockaddr *",
+  "GETNAMEINFO_TYPE_ARG2=socklen_t",
+  "GETNAMEINFO_TYPE_ARG46=socklen_t",
+  "GETNAMEINFO_TYPE_ARG7=int",
+  "RECVFROM_TYPE_ARG1=int",
+  "RECVFROM_TYPE_ARG2=void *",
+  "RECVFROM_TYPE_ARG2_IS_VOID=0",
+  "RECVFROM_TYPE_ARG3=size_t",
+  "RECVFROM_TYPE_ARG4=int",
+  "RECVFROM_TYPE_ARG5=struct sockaddr *",
+  "RECVFROM_TYPE_ARG5_IS_VOID=0",
+  "RECVFROM_TYPE_ARG6=socklen_t *",
+  "RECVFROM_TYPE_ARG6_IS_VOID=0",
+  "RECVFROM_TYPE_RETV=ssize_t",
+  "RECV_TYPE_ARG1=int",
+  "RECV_TYPE_ARG2=void *",
+  "RECV_TYPE_ARG3=size_t",
+  "RECV_TYPE_ARG4=int",
+  "RECV_TYPE_RETV=ssize_t",
+  "SEND_TYPE_ARG1=int",
+  "SEND_TYPE_ARG2=const void *",
+  "SEND_TYPE_ARG3=size_t",
+  "SEND_TYPE_ARG4=int",
+  "SEND_TYPE_RETV=ssize_t",
+]
+
+[targets.cares.probes.named.HAVE_ARPA_INET_H]
+header = "arpa/inet.h"
+
+[targets.cares.probes.named.HAVE_ARPA_NAMESER_COMPAT_H]
+header = "arpa/nameser_compat.h"
+
+[targets.cares.probes.named.HAVE_ARPA_NAMESER_H]
+header = "arpa/nameser.h"
+
+[targets.cares.probes.named.HAVE_ASSERT_H]
+header = "assert.h"
+
+[targets.cares.probes.named.HAVE_DLFCN_H]
+header = "dlfcn.h"
+
+[targets.cares.probes.named.HAVE_ERRNO_H]
+header = "errno.h"
+
+[targets.cares.probes.named.HAVE_POLL_H]
+header = "poll.h"
+
+[targets.cares.probes.named.HAVE_FCNTL_H]
+header = "fcntl.h"
+
+[targets.cares.probes.named.HAVE_INTTYPES_H]
+header = "inttypes.h"
+
+[targets.cares.probes.named.HAVE_LIMITS_H]
+header = "limits.h"
+
+[targets.cares.probes.named.HAVE_MALLOC_H]
+header = "malloc.h"
+
+[targets.cares.probes.named.HAVE_MEMORY_H]
+header = "memory.h"
+
+[targets.cares.probes.named.HAVE_AVAILABILITYMACROS_H]
+header = "AvailabilityMacros.h"
+
+[targets.cares.probes.named.HAVE_NETDB_H]
+header = "netdb.h"
+
+[targets.cares.probes.named.HAVE_NETINET_IN_H]
+header = "netinet/in.h"
+
+[targets.cares.probes.named.HAVE_NETINET6_IN6_H]
+header = "netinet6/in6.h"
+
+[targets.cares.probes.named.HAVE_SIGNAL_H]
+header = "signal.h"
+
+[targets.cares.probes.named.HAVE_SOCKET_H]
+header = "socket.h"
+
+[targets.cares.probes.named.HAVE_STDBOOL_H]
+header = "stdbool.h"
+
+[targets.cares.probes.named.HAVE_STDINT_H]
+header = "stdint.h"
+
+[targets.cares.probes.named.HAVE_STDLIB_H]
+header = "stdlib.h"
+
+[targets.cares.probes.named.HAVE_STRINGS_H]
+header = "strings.h"
+
+[targets.cares.probes.named.HAVE_STRING_H]
+header = "string.h"
+
+[targets.cares.probes.named.HAVE_STROPTS_H]
+header = "stropts.h"
+
+[targets.cares.probes.named.HAVE_SYS_IOCTL_H]
+header = "sys/ioctl.h"
+
+[targets.cares.probes.named.HAVE_SYS_PARAM_H]
+header = "sys/param.h"
+
+[targets.cares.probes.named.HAVE_SYS_RANDOM_H]
+header = "sys/random.h"
+
+[targets.cares.probes.named.HAVE_SYS_EVENT_H]
+header = "sys/event.h"
+
+[targets.cares.probes.named.HAVE_SYS_EPOLL_H]
+header = "sys/epoll.h"
+
+[targets.cares.probes.named.HAVE_SYS_SELECT_H]
+header = "sys/select.h"
+
+[targets.cares.probes.named.HAVE_SYS_SOCKET_H]
+header = "sys/socket.h"
+
+[targets.cares.probes.named.HAVE_SYS_STAT_H]
+header = "sys/stat.h"
+
+[targets.cares.probes.named.HAVE_SYS_TIME_H]
+header = "sys/time.h"
+
+[targets.cares.probes.named.HAVE_SYS_TYPES_H]
+header = "sys/types.h"
+
+[targets.cares.probes.named.HAVE_SYS_UIO_H]
+header = "sys/uio.h"
+
+[targets.cares.probes.named.HAVE_TIME_H]
+header = "time.h"
+
+[targets.cares.probes.named.HAVE_IFADDRS_H]
+header = "ifaddrs.h"
+
+[targets.cares.probes.named.HAVE_UNISTD_H]
+header = "unistd.h"
+
+[targets.cares.probes.named.HAVE_PTHREAD_H]
+header = "pthread.h"
+
+[targets.cares.probes.named.HAVE_PTHREAD_NP_H]
+header = "pthread_np.h"
+
+[targets.cares.probes.named.HAVE_NET_IF_H]
+header = "net/if.h"
+prelude = ["sys/types.h", "sys/socket.h"]
+
+[targets.cares.probes.named.HAVE_NETINET_TCP_H]
+header = "netinet/tcp.h"
+prelude = ["sys/types.h"]
+
+[targets.cares.probes.named.HAVE_STRUCT_ADDRINFO]
+type = "struct addrinfo"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "netdb.h", "sys/time.h", "time.h"]
+
+[targets.cares.probes.named.HAVE_STRUCT_IN6_ADDR]
+type = "struct in6_addr"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "netdb.h", "sys/time.h", "time.h"]
+
+[targets.cares.probes.named.HAVE_STRUCT_SOCKADDR_IN6]
+type = "struct sockaddr_in6"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "netdb.h", "sys/time.h", "time.h"]
+
+[targets.cares.probes.named.HAVE_STRUCT_SOCKADDR_STORAGE]
+type = "struct sockaddr_storage"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "netdb.h", "sys/time.h", "time.h"]
+
+[targets.cares.probes.named.HAVE_STRUCT_TIMEVAL]
+type = "struct timeval"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "netdb.h", "sys/time.h", "time.h"]
+
+[targets.cares.probes.named.HAVE_STRUCT_SOCKADDR_IN6_SIN6_SCOPE_ID]
+type = "struct sockaddr_in6"
+member = "sin6_scope_id"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "netdb.h", "sys/time.h", "time.h"]
+
+[targets.cares.probes.named.HAVE_AF_INET6]
+constant = "AF_INET6"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_PF_INET6]
+constant = "PF_INET6"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_MSG_NOSIGNAL]
+constant = "MSG_NOSIGNAL"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_FCNTL_O_NONBLOCK]
+constant = "O_NONBLOCK"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_IOCTL_FIONBIO]
+constant = "FIONBIO"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_SETSOCKOPT_SO_NONBLOCK]
+constant = "SO_NONBLOCK"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_CLOCK_GETTIME_MONOTONIC]
+constant = "CLOCK_MONOTONIC"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_ARC4RANDOM_BUF]
+symbol = "arc4random_buf"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_CONNECTX]
+symbol = "connectx"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_FREEADDRINFO]
+symbol = "freeaddrinfo"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_GETADDRINFO]
+symbol = "getaddrinfo"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_GETENV]
+symbol = "getenv"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_GETHOSTNAME]
+symbol = "gethostname"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_GETIFADDRS]
+symbol = "getifaddrs"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_GETNAMEINFO]
+symbol = "getnameinfo"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_GETRANDOM]
+symbol = "getrandom"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_GETSERVBYNAME_R]
+symbol = "getservbyname_r"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_GETSERVBYPORT_R]
+symbol = "getservbyport_r"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_GETTIMEOFDAY]
+symbol = "gettimeofday"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_IF_INDEXTONAME]
+symbol = "if_indextoname"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_IF_NAMETOINDEX]
+symbol = "if_nametoindex"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_MEMMEM]
+symbol = "memmem"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_PIPE]
+symbol = "pipe"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_PIPE2]
+symbol = "pipe2"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_POLL]
+symbol = "poll"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_RECV]
+symbol = "recv"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_RECVFROM]
+symbol = "recvfrom"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_SEND]
+symbol = "send"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_SENDTO]
+symbol = "sendto"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_STAT]
+symbol = "stat"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_STRCASECMP]
+symbol = "strcasecmp"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_STRCMPI]
+symbol = "strcmpi"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_STRDUP]
+symbol = "strdup"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_STRICMP]
+symbol = "stricmp"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_STRNCASECMP]
+symbol = "strncasecmp"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_STRNCMPI]
+symbol = "strncmpi"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_STRNICMP]
+symbol = "strnicmp"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_STRNLEN]
+symbol = "strnlen"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_WRITEV]
+symbol = "writev"
+prelude = ["sys/types.h", "sys/socket.h", "netinet/in.h", "arpa/inet.h", "netdb.h", "unistd.h", "fcntl.h", "sys/ioctl.h", "sys/time.h", "time.h", "string.h", "strings.h", "stdlib.h", "signal.h", "poll.h", "ifaddrs.h", "net/if.h", "sys/uio.h", "sys/stat.h", "sys/random.h"]
+
+[targets.cares.probes.named.HAVE_EPOLL]
+symbol = "epoll_create1"
+prelude = ["sys/epoll.h"]
+
+[targets.cares.probes.named.HAVE_KQUEUE]
+symbol = "kqueue"
+prelude = ["sys/types.h", "sys/event.h"]
+
+[targets.cares.probes.named.HAVE_PTHREAD_INIT]
+symbol = "pthread_init"
+prelude = ["pthread.h"]
+
+# CMake's SYSFLAGS for Linux, and HAVE_CONFIG_H=1 so that ares_setup.h includes the generated header.
+[[targets.cares.when]]
+os = "linux"
+defines = ["HAVE_CONFIG_H=1", "_GNU_SOURCE", "_POSIX_C_SOURCE=200809L", "_XOPEN_SOURCE=700", "GETSERVBYPORT_R_ARGS=6", "GETSERVBYNAME_R_ARGS=6"]
+
+# SYSFLAGS for Darwin; HAVE_GETADDRINFO_THREADSAFE is CMake's per-system answer for Darwin.
+[[targets.cares.when]]
+os = "macos"
+defines = ["HAVE_CONFIG_H=1", "_DARWIN_C_SOURCE", "HAVE_GETADDRINFO_THREADSAFE=1"]
+
+# Windows: no HAVE_CONFIG_H (config-win32.h is used); SYSFLAGS, plus the _WIN32_WINNT Makefile.msvc sets.
+[[targets.cares.when]]
+os = "windows"
+defines = ["WIN32_LEAN_AND_MEAN", "_CRT_SECURE_NO_DEPRECATE", "_CRT_NONSTDC_NO_DEPRECATE", "_WIN32_WINNT=0x0602"]
+
+[[targets.cares.surface.when]]
+os = "linux"
+[targets.cares.surface.when."link.public"]
+libs = ["pthread"]
+
+[[targets.cares.surface.when]]
+os = "macos"
+[targets.cares.surface.when."link.public"]
+libs = ["pthread"]
+
+[[targets.cares.surface.when]]
+os = "windows"
+[targets.cares.surface.when."link.public"]
+libs = ["ws2_32", "advapi32", "iphlpapi"]

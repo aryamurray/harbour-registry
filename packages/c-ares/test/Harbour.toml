@@ -1,0 +1,14 @@
+# Consumer test for c-ares, through the registry (see ../../zlib/test/Harbour.toml).
+[package]
+name = "c-ares-test"
+version = "0.1.0"
+
+[dependencies]
+c-ares = "*"
+
+[targets.c-ares-test]
+kind = "exe"
+sources = ["src/main.c"]
+
+[targets.c-ares-test.deps]
+c-ares = { target = "cares" }
