@@ -14,6 +14,7 @@ tag = "{version}"
 [[release]]
 version = "11.2.0"
 rev = "40626af88bd7df9a5fb80be7b25ac85b122d6c21"
+license_sha256 = "1d21e28d91da87404ae0d214db28ba25fee15ec777e1eb43d2907ce1ac64041e"
 republish = "gains Windows (MSVC) support; Linux and macOS build unchanged"
 
 [test]

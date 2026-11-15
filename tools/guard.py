@@ -34,6 +34,19 @@ A PR is also treated as automated when its head branch starts with `bot/` (the w
 payloads carry the labels as they were when the event fired, and a PR opened through the API and
 labelled a moment later is seen by the first run as unlabelled.
 
+LICENSE DRIFT. A bot may not change `[package] license`, so a bump carries it forward; an upstream
+relicense would otherwise merge unseen. Each release therefore records `license_sha256`, a digest
+of upstream's license files at that release (computed by tools/watch.py, re-derived from the pinned
+source by the `License digests` job of the PR workflow). For an automated PR:
+
+  * a release that exists at the base keeps its `license_sha256` exactly (present, absent or
+    changed: all refused), so the baseline cannot be rewritten;
+  * a release the PR adds must carry a well-formed `license_sha256`;
+  * and it must EQUAL the digest of the newest release at the base. A different digest means
+    upstream's license files changed, and whether `license` is still right is a human's call: the PR
+    is refused, and a human takes the bump over in a PR of their own. A base release with no digest
+    is refused the same way (there is nothing to compare with; a human records the first one).
+
 Under index/ a bot may add new files (a new version's shim and patches) and change .idx files,
 but may not modify or delete an existing version's shim or patch: those are pinned by users'
 lockfiles (a published version is immutable).
@@ -76,6 +89,59 @@ README_END = "<!-- packages:end -->"
 
 
 BOT_BRANCH_PREFIX = "bot/"
+# The phrase every license-drift refusal carries. tools/watch.py looks for it: a candidate whose
+# license digest changed is expected to be refused for this reason and no other.
+LICENSE_DRIFT = "upstream's license files changed"
+_HEX64 = re.compile(r"[0-9a-f]{64}")
+_SEMVER = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?")
+
+
+def semver_key(text):
+    """Semver precedence (as tools/regtools.py has it; this file imports none of the other tools).
+    Something that is not a version sorts below every version."""
+    m = _SEMVER.fullmatch(text) if isinstance(text, str) else None
+    if not m:
+        return (-1, -1, -1, 0, ())
+    pre = m.group(4)
+    ident = tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in pre.split(".")) if pre else ()
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)), 0 if pre else 1, ident)
+
+
+def license_digest_violations(path: str, a: dict, b: dict) -> list[str]:
+    """The LICENSE DRIFT rules of the module docstring, for one package.toml (old `a`, new `b`)."""
+    old_list, new_list = a.get("release", []), b.get("release", [])
+    if not isinstance(old_list, list) or not isinstance(new_list, list) \
+            or not all(isinstance(r, dict) and isinstance(r.get("version"), str) for r in [*old_list, *new_list]):
+        return [f"{path}: every [[release]] must be a table with a string `version`"]
+    bad = []
+    versions = [r["version"] for r in new_list]
+    for v in sorted({v for v in versions if versions.count(v) > 1}):
+        bad.append(f"{path}: release {v} is listed twice")
+    old = {r["version"]: r for r in old_list}
+    for r in new_list:
+        v = r["version"]
+        if v in old and r.get("license_sha256") != old[v].get("license_sha256"):
+            bad.append(f"{path}: release {v} `license_sha256` changed; the digest of a release that is already "
+                       "there is the baseline later bumps are compared with, so only a human may add or change it")
+    added = [r for r in new_list if r["version"] not in old]
+    if not added:
+        return bad
+    newest = max(old_list, key=lambda r: semver_key(r["version"]), default=None)
+    baseline = newest.get("license_sha256") if newest else None
+    for r in added:
+        v, digest = r["version"], r.get("license_sha256")
+        if not isinstance(digest, str) or not _HEX64.fullmatch(digest):
+            bad.append(f"{path}: release {v} must record `license_sha256` (64 lowercase hex digits: the digest of "
+                       "upstream's license files, written by tools/watch.py)")
+        elif not isinstance(baseline, str) or not _HEX64.fullmatch(baseline):
+            bad.append(f"{path}: release {v}: the newest existing release ({newest['version'] if newest else 'none'}) has "
+                       "no `license_sha256` to compare with, so an automated PR cannot show the license is unchanged; "
+                       "a human records the first digest")
+        elif digest != baseline:
+            bad.append(f"{path}: release {v}: {LICENSE_DRIFT} since {newest['version']} (license_sha256 {baseline} -> "
+                       f"{digest}). `license` is carried forward unchanged and may be wrong now; a human must check it "
+                       "and take this bump over in a pull request of their own")
+    return bad
 
 
 def is_bot(author: str, labels: list[str], user_type: str, head_ref: str = "") -> tuple[bool, str]:
@@ -145,7 +211,7 @@ def package_toml_violations(base: str, head: str, path: str) -> list[str]:
     for r in b.get("release", []):
         if isinstance(r, dict) and r.get("republish") != old_re.get(r.get("version")):
             bad.append(f"{path}: release {r.get('version')} `republish` changed; rewriting a published version is a human's decision")
-    return bad
+    return bad + license_digest_violations(path, a, b)
 
 
 def violations(base: str, head: str) -> list[str]:

@@ -11,6 +11,7 @@ tag = "mbedtls-{version}"
 [[release]]
 version = "3.6.7"
 rev = "068ff080b369adfac81509f9b57b2afabaf82dc5"
+license_sha256 = "fb56063beef517d1dc9af408ac6cb98b9324287729393ff04349ea69ddb2a18a"
 
 [test]
 platforms = ["linux", "macos", "windows"]

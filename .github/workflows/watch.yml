@@ -5,7 +5,10 @@ name: Watch
 #   detect   every 6 hours: is any package's newest [[release]] older than upstream's newest stable tag?
 #   bump     one PR per (package, newest version): a new [[release]] with the hash, Harbour.toml's
 #            `version`, the re-rendered index/. The manifest, overlay/ and patches/ are carried
-#            forward UNCHANGED.
+#            forward UNCHANGED. The tarball's sha256 is cross-checked against what upstream publishes
+#            (a disagreement fails the job). A bump whose upstream license files changed is opened for
+#            a human (`needs-human` + `license-changed`, never auto-merged, refused by the guard). An
+#            older open bump PR of the same package is closed as superseded, if it is purely the bot's.
 #   (gate)   pr.yml judges that PR exactly as it judges any other. Nothing here can change what it
 #            checks: an automated PR may not touch tests, tools or workflows (tools/guard.py).
 #   triage   when the gate finishes on a bump PR: label it, post ONE failure summary, and decide whether
@@ -35,8 +38,10 @@ name: Watch
 #   variable  REPAIR_MODEL         the model name that endpoint expects.
 #   variable  REPAIR_TEMPERATURE, REPAIR_MAX_TOKENS, REPAIR_TIMEOUT, REPAIR_MAX_PROMPT_CHARS
 #                                  optional tuning; defaults and meaning in tools/repair.py's docstring.
-#   labels    bot, bump, needs-repair, needs-human (and repair-attempt-N): created by this workflow
-#             when missing (`tools/bump_triage.py ensure-labels`), nothing to do by hand.
+#   labels    bot, bump, needs-repair, needs-human, license-changed, keep (and repair-attempt-N):
+#             created by this workflow when missing (`tools/bump_triage.py ensure-labels`), nothing to
+#             do by hand. `keep` is the one a PERSON applies: a bump PR carrying it is never closed as
+#             superseded.
 #   settings  Actions > General > "Allow GitHub Actions to create and approve pull requests" is NOT
 #             needed (the PAT opens the PRs); "Allow auto-merge" is, if REGISTRY_AUTO_MERGE is used.
 #
@@ -91,8 +96,9 @@ env:
 
 jobs:
   # Which packages have a newer upstream release, and no PR or needs-human issue in the way?
-  # Needs no secret and writes nothing: `git ls-remote` for the tags (no API, no rate limit) and two
-  # read-only `gh` queries.
+  # Needs no secret and writes nothing: `git ls-remote` for the tags (no API, no rate limit) and
+  # read-only `gh` queries (open PRs, needs-human issues, and the commits of an open bump PR that a
+  # newer version would supersede: it is only superseded when every commit on it is the watcher's).
   detect:
     name: Detect
     if: github.event_name != 'workflow_run'
@@ -143,6 +149,7 @@ jobs:
             jq -r '.packages[] | "| \(.package) | \(.current) | \(.upstream_newest // "-") | \(if .target then "-> " + .target.version elif .status != "ok" then .status + ": " + (.reason // "") else "none" end) |"' report.json
             echo
             jq -r '.skipped[] | "* skipped \(.package) \(.version): \(.skipped)"' report.json
+            jq -r '.bumps[] | select(.supersedes) | "* \(.package) \(.version) supersedes the open bump PR(s) \(.supersedes)"' report.json
             jq -r '.packages[] | .package as $p | .notes[] | "* \($p): \(.)"' report.json
           } >> "$GITHUB_STEP_SUMMARY"
           jq -r '.errors[] | "::warning title=Could not list upstream tags::\(.package): \(.reason)"' report.json
@@ -154,8 +161,8 @@ jobs:
     if: github.event_name != 'workflow_run' && needs.detect.outputs.count != '0'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    # The GITHUB_TOKEN of this job can only READ. Every write (the push, the labels, the PR, the
-    # auto-merge) uses REGISTRY_BOT_TOKEN, in the steps that need it and nowhere else, so that the
+    # The GITHUB_TOKEN of this job can only READ. Every write (the push, the labels, the PR, closing
+    # a superseded bump PR, the auto-merge) uses REGISTRY_BOT_TOKEN, in the steps that need it and nowhere else, so that the
     # PR's events trigger pr.yml (see the token problem above) and so that a mistake in a step that
     # downloads and hashes a third-party tarball cannot write with a token of its own.
     permissions:
@@ -207,8 +214,15 @@ jobs:
       # extracted), check its top-level directory against `strip_prefix`, write the new [[release]],
       # bump Harbour.toml's version, render. Exits non-zero, with what the archive really contains,
       # if anything is off. `--to` pins the exact version `detect` chose.
+      # It also cross-checks the sha256 against the digests upstream publishes (and FAILS on a
+      # disagreement), and records the digest of upstream's license files (README, "License drift").
+      # WATCH_GITHUB_TOKEN is this job's READ-ONLY GITHUB_TOKEN: watch.py sends it to api.github.com
+      # only (the releases API, which anonymous runners are rate-limited out of) and follows no
+      # redirect with it. It can write nothing, so the rule above still holds.
       - name: Write the candidate
         if: steps.exists.outputs.skip != 'true'
+        env:
+          WATCH_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python tools/watch.py bump "$PKG" --to "$VERSION" \
             --json-out "$RUNNER_TEMP/bump.json" --pr-body "$RUNNER_TEMP/pr-body.md"
@@ -230,10 +244,34 @@ jobs:
           git checkout -q -b "$BRANCH"
           git add -A
           old="$(jq -r .old_version "$RUNNER_TEMP/bump.json")"
+          # `commit_note` is written by watch.py from fixed phrases (cross-check result, license
+          # digest verdict); it holds no upstream text.
+          note="$(jq -r .commit_note "$RUNNER_TEMP/bump.json")"
           git commit -q -m "Bump $PKG $old -> $VERSION" \
-            -m "Written by tools/watch.py bump. The manifest, overlay/ and patches/ are carried forward unchanged; the PR gate decides whether that still builds."
+            -m "Written by tools/watch.py bump. The manifest, overlay/ and patches/ are carried forward unchanged; the PR gate decides whether that still builds." \
+            -m "$note"
           # The guard as the PR workflow will run it: the bot's own diff against the base it came from.
-          python tools/guard.py --base "$base" --head HEAD --author "$GITHUB_ACTOR" --labels bot --head-ref "$BRANCH"
+          if [ "$(jq -r .license_changed "$RUNNER_TEMP/bump.json")" = "true" ]; then
+            # Upstream's license files changed. The guard refuses such a bot PR ON PURPOSE (the PR is
+            # opened for a human and stays red), so here it must refuse, and for that reason alone.
+            if out="$(python tools/guard.py --base "$base" --head HEAD --author "$GITHUB_ACTOR" --labels bot --head-ref "$BRANCH")"; then
+              printf '%s\n' "$out"
+              echo "::error::the license digest changed but the guard accepted the candidate"
+              exit 1
+            fi
+            printf '%s\n' "$out"
+            if ! printf '%s\n' "$out" | grep -q "^error: .*upstream's license files changed"; then
+              echo "::error::the guard failed, but not because of the license change"
+              exit 1
+            fi
+            if printf '%s\n' "$out" | grep '^error: ' | grep -qv "upstream's license files changed"; then
+              echo "::error::the guard refuses the candidate for more than the license change"
+              exit 1
+            fi
+            echo "::warning title=License files changed::$PKG $VERSION: upstream's license files differ from $old. The PR is opened for a human and is not auto-merged."
+          else
+            python tools/guard.py --base "$base" --head HEAD --author "$GITHUB_ACTOR" --labels bot --head-ref "$BRANCH"
+          fi
           git diff --stat "$base" HEAD
           {
             echo "### $PKG $old -> $VERSION"
@@ -264,17 +302,39 @@ jobs:
         run: |
           python tools/bump_triage.py ensure-labels --repo "$GH_REPO"
           old="$(jq -r .old_version "$RUNNER_TEMP/bump.json")"
+          # `bot` + `bump`, plus `needs-human` + `license-changed` when upstream's license files
+          # changed (watch.py decides; the names are its own constants, not upstream text).
+          labels=()
+          while IFS= read -r label; do labels+=(--label "$label"); done < <(jq -r '.labels[]' "$RUNNER_TEMP/bump.json")
           url="$(gh pr create --base "$BASE_BRANCH" --head "$BRANCH" \
             --title "Bump $PKG $old -> $VERSION" --body-file "$RUNNER_TEMP/pr-body.md" \
-            --label bot --label bump)"
+            "${labels[@]}")"
           echo "url=$url" >> "$GITHUB_OUTPUT"
+          # Only the literal `true` lets the next-but-one step ask for auto-merge.
+          echo "auto_merge=$(jq -r 'if .auto_merge == true and .license_changed == false then "true" else "false" end' "$RUNNER_TEMP/bump.json")" >> "$GITHUB_OUTPUT"
           echo "Opened $url"
+
+      # An older bump PR of this package that is still open is now out of date: close it, with one
+      # comment pointing at the replacement, IF it is purely the watcher's own (its `bot/bump-*`
+      # branch in this repository, `bot` + `bump` labels, no `keep` label, every commit by the
+      # watcher's identity, opened by this same account). `detect` only let this bump through when
+      # that looked true; watch.py checks again here, from live state, and closes nothing when no
+      # replacement PR is open. This step also runs when the branch already existed, so a run that
+      # opened the replacement and died before closing is finished by the next one.
+      - name: Close the bump PRs this one supersedes
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.REGISTRY_BOT_TOKEN }}
+        run: |
+          python tools/watch.py supersede --package "$PKG" --version "$VERSION" | tee -a "$GITHUB_STEP_SUMMARY"
 
       # Off unless the owner flips REGISTRY_AUTO_MERGE to `true`. This only ASKS GitHub to merge once
       # the required checks pass and the branch rules are met; if the repository has no such rules,
       # or auto-merge is not enabled in its settings, this is a warning and the PR waits for a human.
+      # NEVER for a bump whose upstream license files changed (`auto_merge` is then `false`): that PR
+      # is a human's, and the guard keeps it red besides.
       - name: Enable auto-merge
-        if: steps.pr.outputs.url != '' && vars.REGISTRY_AUTO_MERGE == 'true'
+        if: steps.pr.outputs.url != '' && steps.pr.outputs.auto_merge == 'true' && vars.REGISTRY_AUTO_MERGE == 'true'
         env:
           GH_TOKEN: ${{ secrets.REGISTRY_BOT_TOKEN }}
           PR_URL: ${{ steps.pr.outputs.url }}

@@ -13,6 +13,7 @@ strip_prefix = "libwebp-{version}"
 [[release]]
 version = "1.6.0"
 sha256 = "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564"
+license_sha256 = "d62ec3b251e352e71e28b3c8e86bf7b7f0d95e6815962d1e08312a0745526c0b"
 
 [test]
 platforms = ["linux", "macos", "windows"]

@@ -107,7 +107,7 @@ packages/zlib/                          packages/cpython/
 | --- | --- |
 | `[package]` | `name` (= directory), `description`, `license` (SPDX, the upstream's), `homepage` |
 | `[upstream]` | `git` (where tags are listed; the clone url for `rev` releases), `tag` (template), `url` (tarball template), `strip_prefix` (template), `scheme`; the watcher's policy `watch`, `max_bump`, `prereleases` (see [Keeping packages current](#keeping-packages-current)) |
-| `[[release]]` | `version` (semver), exactly one of `sha256` (tarball) or `rev` (git commit), optional `upstream_version`, `url`, `strip_prefix`, `republish` |
+| `[[release]]` | `version` (semver), exactly one of `sha256` (tarball) or `rev` (git commit), `license_sha256` (the digest of upstream's license files at that release, required on the newest release; see [License drift](#license-drift)), optional `upstream_version`, `url`, `strip_prefix`, `republish` |
 | `[test]` | `platforms` (`linux`/`macos`/`windows`), `objects` (exact translation-unit count: an integer, or `{ default = N, linux = N, "linux-x86_64" = N }`), optional `needs`, `timeout`, `verify` |
 | `[review]` | `generators = true`, required when the build runs code (see below) |
 
@@ -156,6 +156,8 @@ shape is refused until `normalize_version()` in `tools/regtools.py` is extended 
 1. `cp -r packages/_template packages/<name>` and replace every `example`.
 2. **`package.toml`**: name, description, the upstream's SPDX `license`, `[upstream]` templates, one
    `[[release]]` with its `sha256` (of the exact tarball: `curl -fsSL <url> | sha256sum`) or a git `rev`.
+   Then `python3 tools/watch.py license-digest <name> --write` adds the release's `license_sha256` (it downloads
+   the pinned source, checks the hash, and digests upstream's license files; do not write it by hand).
 3. **`Harbour.toml`**: the manifest. Name every source file (a source list that silently shrinks still
    links). `[package] version` and `license` must equal the newest release's. Dependencies are other packages
    in this registry, by version.
@@ -170,6 +172,8 @@ shape is refused until `normalize_version()` in `tools/regtools.py` is extended 
 ## Bump a version by hand
 
 1. Add a new `[[release]]` above the old one in `package.toml` (`version`, `sha256` or `rev`). Keep the old entry.
+   `python3 tools/watch.py license-digest <name> --write` adds its `license_sha256`; if that differs from the old
+   release's, upstream's license files changed: read them, and correct `license` (here and in `Harbour.toml`) if needed.
 2. Set `[package] version` in `Harbour.toml` to the new version; fix the manifest and `overlay/` if the new
    release needs it (new source files, a regenerated vendored header).
 3. `python3 tools/render.py && python3 tools/lint.py && python3 tools/test.py <name>`.
@@ -184,6 +188,8 @@ A package is in the registry when, on every platform in its `[test] platforms`:
 * its **license** is an SPDX expression on the allowlist (`tools/lint.py`; `LicenseRef-*` is allowed for
   licenses SPDX has no identifier for), and it equals the `Harbour.toml` license;
 * its source is **pinned by hash** (tarball `sha256`, or full git `rev`) over https;
+* its newest release records **`license_sha256`**, re-derived from the pinned source by CI, so the next bump can
+  tell whether upstream's license files changed;
 * it **builds** through the registry with every source pattern matching a file (`--strict-sources`), a second build recompiles nothing, and the consumer **runs and prints `OK`
   as its last line** after asserting real behaviour (round trips, known answers, a server answering commands),
   including that the library reports the version `package.toml` declares;
@@ -207,7 +213,10 @@ All are Python 3.11+, standard library only, and run on Linux, macOS and Windows
 | `tools/plan.py --base REF \| --all` | affected packages (changed + reverse dependencies from the `.idx` files; everything, in shards, if `tools/test.py`, `tools/regtools.py`, `tools/plan.py`, `pr.yml`, `.github/actions/`, `.harbour-version`, `.gitattributes` or `config.toml` changed) and the CI matrix |
 | `tools/guard.py` | the automated-PR guard |
 | `tools/rot_issues.py` | the nightly workflow's issue bookkeeping |
-| `tools/watch.py list\|report\|bump` | the release watcher: find newer upstream versions, write the candidate bump |
+| `tools/watch.py list\|report\|bump` | the release watcher: find newer upstream versions, write the candidate bump (cross-checking the tarball's sha256, recording the license digest) |
+| `tools/watch.py license-digest PKG [--write]` | compute the newest release's `license_sha256` from its pinned source (network) |
+| `tools/watch.py verify-license --base REF` | re-derive every `license_sha256` a change adds or alters (network; the PR workflow's `License digests` job) |
+| `tools/watch.py supersede --package P --version V` | close the open bump PRs that the open bump PR for `V` replaces |
 | `tools/bump_triage.py` | what happens when the gate finishes on a bump PR (labels, one failure summary, repair budget) |
 | `tools/repair.py` | the repair step: asks a language model (any OpenAI-compatible endpoint, `REPAIR_*` settings) for a rewritten manifest and accepts only files inside its output contract. `--print-prompt` shows what would be sent without sending it |
 | `python3 -m unittest discover -s tools -p "test_*.py"` | tests of the tools (the patch renderer against real `git diff`, the guard against real git history, lint and render against mutated copies of this checkout) |
@@ -258,7 +267,8 @@ The runner then applies the same last-line and object-count checks.
 ## CI
 
 * **`pr.yml`** (`pull_request` only, read-only token, never `pull_request_target`): `guard` (automated PRs),
-  `plan` (tool self-tests, lint, `render.py --check --base`, affected set and matrix), `harbour` (build and cache
+  `plan` (tool self-tests, lint, `render.py --check --base`, affected set and matrix), `license` (re-derives from
+  the pinned source every `license_sha256` the PR adds or alters), `harbour` (build and cache
   Harbour per runner image), `index` (the authoritative `harbour registry index` check), `test` (one leg per
   affected package and platform; a change to what builds and tests packages re-tests everything, packed into a few
   shards per platform), and **`PR result`**, the one check to require in branch protection.
@@ -282,6 +292,12 @@ touch `packages/*/test/**`, `tools/**`, `.github/**`, `.harbour-version` or `COD
 from, and the watcher's policy `watch`, `max_bump`, `prereleases`) or a release's `republish`; may not add a package; and may only *add* version
 files under `index/` (a published version is immutable). `tools/guard.py` implements it and is tested against real
 git history.
+
+Because a bot may not change `license`, the guard also holds the rule that makes a relicense visible
+([License drift](#license-drift)): an automated PR may not add, change or remove the `license_sha256` of a
+release that already exists; a release it adds must carry one; and that digest must **equal** the digest of the
+newest release on the base branch. A different digest (upstream's license files changed), or no digest to compare
+with, is refused: that bump is a human's.
 
 What makes it hold, beyond the job: CODEOWNERS puts `tools/`, `.github/`, `packages/*/test/` and
 `.harbour-version` under a human, and the repository must enable *Require review from Code Owners*, require
@@ -336,8 +352,9 @@ watch.yml  detect --> bump (one PR per package, newest version) --> pr.yml gate 
 | `prereleases = true` | also follow rc/alpha/beta tags |
 
 One PR is one package and one version: the newest allowed, not every intermediate one. **Major releases are held back by default**
-(redis 7 -> 8, openssl 3 -> 4): that is where the things the gate cannot see change, such as the license, which
-a bot may not edit and would carry forward unchanged. Set `max_bump = "major"` on a package to let the watcher
+(redis 7 -> 8, openssl 3 -> 4): that is where the things the gate cannot see change, such as the API a dependent
+package was written against. (A license change is no longer one of them, at any version distance: see
+[License drift](#license-drift).) Set `max_bump = "major"` on a package to let the watcher
 follow them, or bump a major by hand. A package versioned by date (`2024-12-28`) follows every release by default,
 since its "major" is only the year.
 
@@ -346,26 +363,122 @@ since its "major" is only the year.
 * **tarball packages:** builds the URL from the templates, downloads it (https only, redirects must stay https,
   256 MiB cap, timeout, hashed while streaming; the archive is only *listed*, never extracted), records the
   `sha256`, and checks the archive's top-level directory against `strip_prefix` after templating. A wrong prefix
-  fails with what the archive actually contains.
+  fails with what the archive actually contains. The sha256 is then
+  [cross-checked](#cross-checking-the-sha256) against what upstream publishes.
 * **git-rev packages:** sets `rev` to the commit the tag points at.
+* **both:** records `license_sha256`, the digest of upstream's license files at the new release
+  ([License drift](#license-drift)).
 * Adds a `[[release]]` at the top of `package.toml` by **textual insertion** (comments and layout are untouched;
   the result is re-parsed and compared with the old file plus exactly one release), changes only the
   `[package] version` line of `Harbour.toml` the same way, and leaves `overlay/` and `patches/` byte-identical.
   `upstream_version` is added when upstream's spelling is not the semver. Then `render.py` runs for the package.
 * Self-check before it finishes: the result is judged by `tools/guard.py` as a bot PR, by `lint.py`, and by a
   stricter rule (only `package.toml`, `Harbour.toml`, the README table and that package's `index/` may differ).
-  If anything fails the working tree is rolled back. The tree must be clean when it starts.
+  If anything fails the working tree is rolled back. The tree must be clean when it starts. (When the license
+  digest changed, the guard's refusal for that reason, and only that one, is expected.)
 * Per-release `url` / `strip_prefix` overrides on the previous release are not carried forward (the templates
   are used); the prefix check catches a mismatch.
+
+### License drift
+
+A bump carries `[package] license` forward unchanged, and the bot may not edit it. Without more, an upstream
+relicense (redis 7.2 is BSD-3-Clause; 7.4 and 8 are not) would merge with a green gate. So every release records
+what upstream's license files looked like:
+
+```toml
+[[release]]
+version = "1.3.1"
+sha256 = "9a93b2b7..."
+license_sha256 = "3cb8e028..."     # digest of upstream's license files at this release
+```
+
+* **What is digested.** The files at the top level of the source (after `strip_prefix`) named `LICENSE*`,
+  `LICENCE*`, `COPYING*`, `COPYRIGHT*` or `UNLICENSE*` (any case; the bare name or the name followed by `.`, `-`
+  or `_`; not source files such as `license.h`), and every file directly inside a top-level `LICENSES/`. Each
+  file's text is normalised (every year, and run or range of years, becomes `YYYY`; whitespace is collapsed) and
+  hashed; `license_sha256` is the sha256 of the sorted lines `<file sha256>  <path>`. So a new copyright year, a
+  re-wrapped paragraph or CRLF endings change nothing; any change of wording, and any license file added, removed
+  or renamed, changes the digest. A link is recorded as its target, not followed. `tools/watch.py license-digest
+  PKG` prints the files and the digest.
+* **How it is read.** From the tarball's members, in memory (1 MiB per file, 64 files; nothing is extracted), or,
+  for a git-pinned release, from the tag's tree, fetched into a throw-away bare repository (https only, no hooks,
+  no checkout) and read with `git cat-file`.
+* **What the watcher does with it.** The new release gets its digest. When it equals the previous release's, the
+  PR body says "license files: unchanged". When it differs, the candidate is still written and the PR still
+  opened, but **for a human**: its body leads with the change (old and new digest, the files found), it is
+  labelled `needs-human` and `license-changed`, and **auto-merge is not requested for it**, whatever
+  `REGISTRY_AUTO_MERGE` says.
+* **What the gate enforces.** Two things, so that this does not rest on the watcher behaving:
+  1. `tools/guard.py` refuses an automated PR whose new release does not carry exactly the digest of the newest
+     release on the base branch, and refuses any automated change to an existing release's digest. A
+     license-changed bump PR is therefore **red** (`PR result` fails on the guard) and cannot merge, by auto-merge
+     or by a click. Triage leaves it alone (it is already `needs-human`; no repair attempt is spent on it).
+  2. The `License digests` job of `pr.yml` (`watch.py verify-license`) re-derives, from the pinned source, every
+     `license_sha256` a pull request adds or alters, and fails on a mismatch. A bot PR cannot pass by copying the
+     previous digest forward: the digest it records has to be the one the source it pins really has.
+* **What the human does.** Read upstream's license at the new tag. Then take the bump over in a PR of your own:
+  the same commit on a branch outside `bot/` without the `bot` label (for example `gh pr checkout <n> && git
+  switch -c bump-<pkg>-<version> && git push -u origin HEAD`, then open the PR and close the bot's), changing
+  `license` in `package.toml` and `Harbour.toml` if it did change. Human PRs are not restricted by the guard; the
+  new release's digest becomes the baseline for the next bump.
+* **Limits.** It sees the license *files*, not license headers inside sources, a `NOTICE`, or a license that
+  lives only in a README or below the top level. A source with no license file at its top level gets the digest
+  of an empty list (the PR says so), which can only show a license file *appearing*. Years are deliberately
+  ignored. A package whose newest release has no `license_sha256` is reported as `not watchable` until a human
+  records one, and `lint.py` requires it on every package's newest release.
+
+### Cross-checking the sha256
+
+The `sha256` a bump records is the hash of what the job downloaded. Where upstream publishes a digest of its own,
+`watch.py bump` compares before it writes anything:
+
+| source | when | what agreement is worth |
+| --- | --- | --- |
+| the asset's `digest` in GitHub's releases API (`api.github.com/repos/<o>/<r>/releases/tags/<tag>`) | the tarball is a GitHub release asset, and it was uploaded after GitHub began recording digests | the strongest available: computed by GitHub at upload and fetched from another host than the download. It rules out a corrupted or substituted download; it does not vouch for whoever uploaded the asset |
+| a checksum asset of the same release (`<tarball>.sha256`, `SHA256SUMS`, `checksums.txt`, ...) | such an asset exists and names the tarball | weaker: same uploader, same host. A corrupted, truncated or swapped download, not a compromised host or account |
+| `<tarball url>.sha256` | any host that serves one | the same, weaker kind |
+
+* A source that **disagrees fails the bump** (the job is red, nothing is pushed, the error shows both hashes).
+  Every source found is checked; one agreeing source does not outvote a disagreeing one.
+* When a source agrees, the PR body says `sha256 cross-checked, agrees with ...`, naming the source and what it is
+  worth, and the bump commit's message says which kind it was.
+* When there is none, or it cannot be reached (rate limit, outage), the PR body says **`sha256 not
+  cross-checked`** and why. Unreachable is never treated as agreement, and it does not fail the bump.
+* Same network rules as the download: https only, redirects must stay https, a size cap (4 MiB), a timeout;
+  nothing is executed. The API call may carry the job's **read-only** `GITHUB_TOKEN` (anonymous runners are
+  rate-limited); it is sent to `api.github.com` only and no redirect is followed with it.
+* Git-pinned packages have nothing to cross-check: a commit id is its own content hash. Signatures (`.asc`,
+  `.sig`, sigstore) are not verified.
 
 ### The workflow, and the token you must create
 
 `.github/workflows/watch.yml`: `detect` (read-only) -> `bump` matrix (`max-parallel: 2`; fast checks, guard, push
 `bot/bump-<package>-<version>`, open a PR labelled `bot` + `bump` that states the package, old -> new, the
 upstream compare URL when upstream is on GitHub, the new sha256 or rev, and "manifest carried forward
-unchanged") -> `triage` and `repair` for a failed gate. Manual runs take a `package` and a `dry-run` input
-(dry-run writes and checks the candidate and pushes nothing). A package that already has an open bump PR (any
-version) or an open `needs-human: <package> <version>` issue is skipped; a leftover branch is not reused.
+unchanged", whether the sha256 was cross-checked, and whether the license files changed) -> `triage` and `repair`
+for a failed gate. Manual runs take a `package` and a `dry-run` input
+(dry-run writes and checks the candidate and pushes nothing). A package with an open bump PR for the same or a
+newer version, or an open `needs-human: <package> <version>` issue, is skipped; a leftover branch is not reused.
+
+**A superseded bump PR.** When upstream releases a newer version while an older bump PR of the same package is
+still open, the watcher opens the newer bump and then closes the older PR with **one** comment pointing at the
+replacement, and deletes its branch. It does that only to a PR that is provably nothing but its own work:
+
+* the head branch is exactly `bot/bump-<package>-<older version>`, **in this repository** (not a fork);
+* it carries the `bot` and `bump` labels and does **not** carry `keep`;
+* **every commit** on it has the watcher's author *and* committer email
+  (`harbour-registry-watch@users.noreply.github.com`, `BOT_COMMIT_EMAILS` in `tools/watch.py`), the list is
+  complete (under 250) and ends at the PR's head;
+* it was opened by the same account as the replacement PR (the bot token's).
+
+Anything else (a person pushed a commit or edited a file in the web UI, someone added `keep`, the commits cannot be
+listed) and the watcher **waits**, as it used to, until that PR merges or is closed: a person is working there, and
+a second PR would only race them. `detect` makes that decision before a bump starts; the bump job checks again,
+from live state, after the replacement PR exists, and closes nothing when no replacement is open. The branch is
+deleted only if it still points at the commit that was checked. If closing fails after the replacement was opened,
+the next run finishes it and does not comment twice. To keep a bump PR open on purpose, label it `keep` or push a
+commit of your own. (A commit made by a later automated step under another identity, such as a repair commit,
+counts as "not the watcher's" until its email is added to `BOT_COMMIT_EMAILS`: the PR is then kept, not closed.)
 
 **The token problem.** A PR opened with the default `GITHUB_TOKEN` does not trigger `pull_request` workflows, so
 the gate would never run on it. Two designs were weighed:
@@ -383,15 +496,15 @@ What to create:
 
 | what | value |
 | --- | --- |
-| secret `REGISTRY_BOT_TOKEN` | a fine-grained PAT (or GitHub App installation token) scoped to this repository only: Contents read+write, Pull requests read+write, Issues read+write (for labels). Only the push, label, PR and auto-merge steps see it; keep that account **out of the branch-protection bypass list** |
-| variable `REGISTRY_AUTO_MERGE` | `true` to run `gh pr merge --auto --squash` on each bump PR. Default off. Needs "Allow auto-merge" in the repository settings and `PR result` required by branch protection; otherwise it is a warning and the PR waits for a human. **Nothing in the workflow merges anything itself.** Flip it once you trust the gate |
+| secret `REGISTRY_BOT_TOKEN` | a fine-grained PAT (or GitHub App installation token) scoped to this repository only: Contents read+write, Pull requests read+write, Issues read+write (for labels). Only the push, label, PR, supersede (comment on, close and delete the branch of a bump PR that a newer one replaces) and auto-merge steps see it; keep that account **out of the branch-protection bypass list** |
+| variable `REGISTRY_AUTO_MERGE` | `true` to run `gh pr merge --auto --squash` on each bump PR, **except one whose upstream license files changed** (never requested for those). Default off. Needs "Allow auto-merge" in the repository settings and `PR result` required by branch protection; otherwise it is a warning and the PR waits for a human. **Nothing in the workflow merges anything itself.** Flip it once you trust the gate |
 | variable `REGISTRY_REPAIR_ENABLED` | `true` once the three `REPAIR_*` settings below exist. Default off: a failed bump then goes straight to `needs-human` |
 | variable `REGISTRY_REPAIR_ATTEMPTS` | repair attempts per bump PR, default `2` |
 | secret `REPAIR_API_KEY` | the key of the model endpoint, sent as `Authorization: Bearer <key>`. Only the one step that calls the model sees it |
 | variable `REPAIR_API_BASE` | base URL of an OpenAI-compatible API, https, for example `https://api.example.com/v1`. The repair step POSTs to `<base>/chat/completions` and contacts nothing else |
 | variable `REPAIR_MODEL` | the model name that endpoint expects |
 | variables `REPAIR_TEMPERATURE`, `REPAIR_MAX_TOKENS`, `REPAIR_TIMEOUT`, `REPAIR_MAX_PROMPT_CHARS` | optional; see below |
-| labels `bot`, `bump`, `needs-repair`, `needs-human`, `repair-attempt-N` | created by the workflow when missing |
+| labels `bot`, `bump`, `needs-repair`, `needs-human`, `license-changed`, `keep`, `repair-attempt-N` | created by the workflow when missing. `keep` is the one a person applies (a bump PR carrying it is never closed as superseded) |
 
 Branch protection that makes this safe (already required by the guard section above): require `PR result`,
 require Code Owners review, and `bot/**` is treated as automated by the guard (`bot` label or a `bot/` head branch).
@@ -500,6 +613,11 @@ such a case: three sources removed, two renamed and two added makes 195 objects 
 * The repair step has never run against a real model or on GitHub Actions: the model call is tested against a
   local fake endpoint and the `repair` job's scripts were run by hand. It cannot delete files, and it sees the
   upstream file *listing*, not upstream file contents (GitHub's compare lists at most 300 files).
-* Closing a bump PR that a newer upstream release has superseded (the watcher waits until it merges or is closed).
-* Cross-checking upstream's published checksums or signatures (a bump records the hash of what was downloaded).
+* Verifying upstream **signatures** (`.asc`, `.sig`, sigstore). The sha256 cross-check covers published digests
+  only, and for hosts that publish none (python.org, download.redis.io, dist.libuv.org today) a bump still records
+  the hash of what was downloaded and says "not cross-checked".
+* License drift below the top level: license headers in sources, `NOTICE` files, a license stated only in a README.
+* Showing *which* license file changed, or a diff of it, in the PR (only the old and new digest and the new file
+  list are known; the previous release's per-file hashes are not stored).
+* Closing the `needs-human: <package> <version>` issue of a bump PR that was closed as superseded.
 * Binary overlay files and `.idx` yanking are not supported by the tools yet.

@@ -13,6 +13,7 @@ strip_prefix = "nghttp2-{version}"
 [[release]]
 version = "1.71.0"
 sha256 = "0cdd35ecec77919b4b7b245f87fe8d2216e3d62da854eb0838c594ff058042fc"
+license_sha256 = "ad32732537b27d4616c065b39c71e615a66c4ccbc92635d348f8e24b7f8dd755"
 
 [test]
 platforms = ["linux", "macos", "windows"]

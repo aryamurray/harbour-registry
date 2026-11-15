@@ -14,6 +14,7 @@ strip_prefix = "protobuf-{version}"
 version = "36.2.0"
 upstream_version = "36.2"
 sha256 = "3d9642a662d10e68ebae5e53f14dcce5105684212d5078f8e0d47d1ab3ae6b64"
+license_sha256 = "bc53c8e657d32057483b06e6462944c9cd4339ce8c3baf87d80b0f51369a371e"
 
 [test]
 platforms = ["linux", "macos"]

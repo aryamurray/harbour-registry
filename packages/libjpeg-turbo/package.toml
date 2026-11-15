@@ -13,6 +13,7 @@ strip_prefix = "libjpeg-turbo-{version}"
 [[release]]
 version = "3.2.1"
 sha256 = "c27ad72a68da151177929aa969ae773a2da5ac2af9ce946079314fdac8cece7f"
+license_sha256 = "df7b0c6ddb2239d5cb784a97578cc643a48905a2c353a9b5b82b67b594560377"
 
 [test]
 platforms = ["linux", "macos", "windows"]

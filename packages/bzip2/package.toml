@@ -11,6 +11,7 @@ tag = "bzip2-{version}"
 [[release]]
 version = "1.0.8"
 rev = "6a8690fc8d26c815e798c588f796eabe9d684cf0"
+license_sha256 = "90a49cebeff36168d7ff4afd34cb9bf4eec2b9f3aa952614a954fb681955c130"
 
 [test]
 platforms = ["linux", "macos", "windows"]

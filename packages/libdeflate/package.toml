@@ -14,6 +14,7 @@ strip_prefix = "libdeflate-{version}"
 version = "1.26.0"
 upstream_version = "1.26"
 sha256 = "125856d4656e0feab660f94842f835923410c9281fedbcee64598c918da42b5a"
+license_sha256 = "d29fd505c7bb3e10a97e317abe4d4eb59a7f0351be06ef9327d4ddaafc7e7be9"
 
 [test]
 platforms = ["linux", "macos", "windows"]

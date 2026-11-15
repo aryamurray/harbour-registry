@@ -122,6 +122,27 @@ jobs:
         id: plan
         run: python tools/plan.py --base HEAD^1
 
+  # LICENSE DRIFT. A bot may not edit `license`, so a bump carries it forward; each release records
+  # `license_sha256`, a digest of upstream's license files, and the guard above refuses an automated
+  # PR whose new release does not carry the previous release's digest. That rule is only worth
+  # something if the recorded digest is TRUE, so this job re-derives it from the pinned source (the
+  # tarball must hash to the recorded sha256; a git release is read at its rev) for every release
+  # this pull request adds or whose digest it changes, and fails on a mismatch. Network, no Harbour,
+  # no secrets; the source is downloaded and its license files read, nothing is extracted or run.
+  license:
+    name: License digests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Do the recorded license digests match the pinned sources?
+        run: python tools/watch.py verify-license --base HEAD^1
+
   # Harbour, built once per runner image and cached, BEFORE the matrix: otherwise every
   # matrix leg starts at the same moment on a cold cache and every one of them builds
   # Harbour for ~3 minutes. See .github/actions/setup-harbour.
@@ -206,7 +227,7 @@ jobs:
   # nothing was affected" counts as passing.
   result:
     name: PR result
-    needs: [guard, plan, harbour, index, test]
+    needs: [guard, plan, license, harbour, index, test]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -214,7 +235,7 @@ jobs:
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          echo "guard=${{ needs.guard.result }} plan=${{ needs.plan.result }} harbour=${{ needs.harbour.result }} index=${{ needs.index.result }} test=${{ needs.test.result }}"
+          echo "guard=${{ needs.guard.result }} plan=${{ needs.plan.result }} license=${{ needs.license.result }} harbour=${{ needs.harbour.result }} index=${{ needs.index.result }} test=${{ needs.test.result }}"
           case " $RESULTS " in
             *" failure "* | *" cancelled "*) exit 1 ;;
           esac

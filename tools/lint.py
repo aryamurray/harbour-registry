@@ -8,7 +8,8 @@ What it checks (each is a rule a bot-authored change must not be able to slip pa
 
   package.toml    schema (unknown keys are errors), SPDX license (allowlist + expression
                   grammar), https-only URLs without credentials, semver versions, 64-hex
-                  sha256 / 40-hex rev, `upstream_version` consistent with `version`,
+                  sha256 / 40-hex rev, `license_sha256` on the newest release (format only;
+                  the PR workflow re-derives it), `upstream_version` consistent with `version`,
                   `[test]` present and coherent with the manifest's `supports`.
   Harbour.toml    parses; name, version and license agree with package.toml; the
                   newest release is the one it describes.
@@ -236,6 +237,14 @@ class Linter:
                 self.err(name, f"{where}: sha256 must be 64 lowercase hex digits", ptoml)
             if r.rev is not None and not REV_RE.match(r.rev):
                 self.err(name, f"{where}: rev must be a full 40-digit commit id", ptoml)
+            if r.license_sha256 is not None and not (isinstance(r.license_sha256, str) and SHA256_RE.match(r.license_sha256)):
+                self.err(name, f"{where}: license_sha256 must be 64 lowercase hex digits", ptoml)
+            if r is pkg.newest and r.license_sha256 is None:
+                # Format only: lint has no network. The PR workflow's `License digests` job re-derives
+                # the value from the pinned source for every release a pull request adds.
+                self.err(name, f"{where}: the newest release must record `license_sha256`, the digest of upstream's "
+                               f"license files that the next bump is compared with (`python3 tools/watch.py "
+                               f"license-digest {name} --write` computes and adds it)", ptoml)
             if r.upstream_version is not None:
                 try:
                     want = rt.normalize_version(r.upstream_version, up.get("scheme", "semver"))

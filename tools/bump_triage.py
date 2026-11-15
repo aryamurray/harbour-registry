@@ -52,6 +52,8 @@ LABELS = {
     "bump": ("0e8a16", "An upstream version bump written by tools/watch.py"),
     "needs-repair": ("fbca04", "The gate failed on a bump; the repair step may propose a manifest rewrite"),
     "needs-human": ("d93f0b", "Automation has given up on this bump; a person must look"),
+    watch.LICENSE_CHANGED_LABEL: ("b60205", "Upstream's license files changed in this bump; a person must check `license`"),
+    watch.KEEP_LABEL: ("c5def5", "Applied by a person: the watcher must not close this bump PR as superseded"),
 }
 ATTEMPT_LABEL = re.compile(r"^repair-attempt-(\d+)$")
 TAIL_LINES = 80

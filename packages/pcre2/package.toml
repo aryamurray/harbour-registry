@@ -14,6 +14,7 @@ strip_prefix = "pcre2-{version}"
 version = "10.49.0"
 upstream_version = "10.49"
 sha256 = "929f0b20e62879252a15886b06c89f1edef61a363cbd5826fb041080a5e557ae"
+license_sha256 = "d69fae0d6a44c1c90d57089d0ed3c680e296a510af80fb24af6dbcf8befc5997"
 
 [test]
 platforms = ["linux", "macos", "windows"]

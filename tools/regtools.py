@@ -35,7 +35,7 @@ UPSTREAM_KEYS = {"git", "tag", "url", "strip_prefix", "scheme", "watch", "max_bu
 # that changes any of them, so a bot cannot widen what it is allowed to bump.
 WATCH_POLICY_KEYS = ("watch", "max_bump", "prereleases")
 MAX_BUMP_VALUES = ("patch", "minor", "major")
-RELEASE_KEYS = {"version", "upstream_version", "sha256", "rev", "url", "strip_prefix", "republish"}
+RELEASE_KEYS = {"version", "upstream_version", "sha256", "rev", "url", "strip_prefix", "republish", "license_sha256"}
 TEST_KEYS = {"platforms", "objects", "needs", "timeout", "verify"}
 REVIEW_KEYS = {"generators"}
 TOP_KEYS = {"package", "upstream", "release", "test", "review"}
@@ -145,6 +145,8 @@ class Release:
     url: str | None
     strip_prefix: str | None
     republish: str | None
+    # Digest of upstream's top-level license files at this release (tools/watch.py, "LICENSE DRIFT").
+    license_sha256: str | None = None
 
     @property
     def raw_version(self) -> str:
@@ -250,6 +252,7 @@ def load_package(name: str, *, root: Path | None = None) -> Package:
             version=r["version"], upstream_version=r.get("upstream_version"),
             sha256=r.get("sha256"), rev=r.get("rev"), url=r.get("url"),
             strip_prefix=r.get("strip_prefix"), republish=r.get("republish"),
+            license_sha256=r.get("license_sha256"),
         ))
     seen = set()
     for r in releases:

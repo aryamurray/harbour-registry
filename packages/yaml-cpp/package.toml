@@ -11,6 +11,7 @@ tag = "yaml-cpp-{version}"
 [[release]]
 version = "0.9.0"
 rev = "56e3bb550c91fd7005566f19c079cb7a503223cf"
+license_sha256 = "3bd1ec8d48df65a321365912ab3c4c3c50a691252992945fe9b628f011790181"
 republish = "gains Windows (MSVC) support; Linux and macOS build unchanged"
 
 [test]

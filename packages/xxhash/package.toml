@@ -11,6 +11,7 @@ tag = "v{version}"
 [[release]]
 version = "0.8.4"
 rev = "c87183a77d67f7d37e3d2d1b7eaac5e7c695e4f0"
+license_sha256 = "b81cce593fb6120db4de3b6d38d371e8db4447ae78d3758f7612f9b70ccd4468"
 
 [test]
 platforms = ["linux", "macos", "windows"]
