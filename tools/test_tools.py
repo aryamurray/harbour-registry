@@ -1414,7 +1414,7 @@ class LicenseDigest(unittest.TestCase):
                     p.write_bytes(make_archive(files, kind=kind))
                     self.assertEqual(watch.license_texts_of(p, "zlib-1.3.2"), {"LICENSE": MIT, "LICENSES/GPL-2.0.txt": b"GPL"})
                     self.assertEqual(watch.license_texts_of(p, None), {})         # the top level holds one directory
-                    self.assertEqual(os.listdir(tmp), [f"a.{kind}"] if kind == "tar" else sorted(["a.tar", "a.zip"]))
+                    self.assertEqual(sorted(os.listdir(tmp)), [f"a.{kind}"] if kind == "tar" else sorted(["a.tar", "a.zip"]))
             flat = Path(tmp) / "flat.tar"
             flat.write_bytes(make_archive({"./COPYING": b"c", "./x.c": b"x"}, links={"./LICENSE": "docs/LICENSE.md"}))
             self.assertEqual(watch.license_texts_of(flat, None), {"COPYING": b"c", "LICENSE": b"-> docs/LICENSE.md"})
