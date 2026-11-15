@@ -11,13 +11,3 @@ libpng = "*"
 [targets.libpng-test]
 kind = "exe"
 sources = ["src/main.c"]
-
-# KNOWN DEFECT in the published libpng 1.6.50 manifest, worked around here and
-# nowhere else: libpng's png.c calls floor() and pow(), but the manifest puts no
-# `system_libs = ["m"]` on its public link surface (cjson's does), so on Linux
-# any consumer fails to link with "undefined reference to `floor'" unless it
-# adds libm itself. Fixing it means changing the manifest, hence the patch, hence
-# the sha256 users' lockfiles pin: a deliberate republish, not something this
-# test may do quietly. When libpng is republished with the fix, delete the table.
-[targets.libpng-test.private]
-system_libs = ["m"]

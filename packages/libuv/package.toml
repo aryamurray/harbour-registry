@@ -13,7 +13,9 @@ strip_prefix = "libuv-{tag}"
 [[release]]
 version = "1.51.0"
 sha256 = "5f0557b90b1106de71951a3c3931de5e0430d78da1d9a10287ebc7a3f78ef8eb"
+republish = "1.51.0 gains Windows (MSVC) support: src/win sources replace src/unix, plus the Windows system libraries and defines"
 
 [test]
-platforms = ["linux", "macos"]
-objects = { default = 37, linux = 35 }
+platforms = ["linux", "macos", "windows"]
+objects = { default = 37, linux = 35, windows = 37 }   # windows: 12 portable + 25 src/win, no src/unix
+verify = true

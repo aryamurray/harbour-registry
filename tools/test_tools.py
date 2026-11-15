@@ -364,7 +364,8 @@ class OnACopy(unittest.TestCase):
             "bad license": (lambda: self.edit(pt, lambda s: s.replace('license = "Zlib"', 'license = "Proprietary"')), "allowlist"),
             "unknown key": (lambda: self.edit(pt, lambda s: s + "\n[test.extra]\nx = 1\n"), "unknown"),
             "no objects": (lambda: self.edit(pt, lambda s: s.replace("objects = 15\n", "")), "objects"),
-            "windows without support": (lambda: self.edit("packages/cjson/package.toml", lambda s: s.replace('["linux", "macos"]', '["linux", "macos", "windows"]')), "supports"),
+            "windows without support": (lambda: self.edit("packages/redis/package.toml", lambda s: s.replace('["linux", "macos"]', '["linux", "macos", "windows"]')), "supports"),
+            "verify is a boolean": (lambda: self.edit(pt, lambda s: s.replace("verify = true", 'verify = "yes"')), "verify must be true or false"),
             "version mismatch": (lambda: self.edit(pt, lambda s: s.replace('version = "1.3.1"', 'version = "1.3.2"', 1)), "must move together"),
             "secret": (lambda: (self.root / "packages/zlib/overlay").mkdir() or (self.root / "packages/zlib/overlay/k.txt").write_text(
                 "-----BEGIN RSA PRIVATE KEY-----\n"), "private key"),
@@ -380,6 +381,33 @@ class OnACopy(unittest.TestCase):
                 run(["git", "checkout", "-q", "--", "."], self.root)
                 run(["git", "clean", "-qfd"], self.root)
                 self.lint_fails(mutate, needle)
+
+
+class Republish(unittest.TestCase):
+    """`republish` exempts exactly one version, in exactly the PR that adds the marker."""
+
+    def test_a_file_belongs_to_the_longest_exactly_matching_version(self):
+        import render
+        versions = ["1.7.1", "1.7.18", "1.7.1-rc.1"]
+        self.assertEqual(render.owning_version("1.7.18.patch", versions), "1.7.18")
+        self.assertEqual(render.owning_version("1.7.18.toml", versions), "1.7.18")
+        self.assertEqual(render.owning_version("1.7.1.patch", versions), "1.7.1")
+        self.assertEqual(render.owning_version("1.7.1-fix.patch", versions), "1.7.1")
+        self.assertEqual(render.owning_version("1.7.1-rc.1.toml", versions), "1.7.1-rc.1")
+        self.assertIsNone(render.owning_version("2.0.0.toml", versions))
+
+    def test_a_marker_exempts_only_where_it_is_new_or_changed(self):
+        import render
+        from types import SimpleNamespace as NS
+        pkg = NS(releases=[NS(version="1.0.0", republish="fix link"), NS(version="0.9.0", republish=None)])
+        base_without = b'[[release]]\nversion = "1.0.0"\nsha256 = "x"\n'
+        base_same = b'[[release]]\nversion = "1.0.0"\nsha256 = "x"\nrepublish = "fix link"\n'
+        base_other = b'[[release]]\nversion = "1.0.0"\nsha256 = "x"\nrepublish = "older reason"\n'
+        self.assertEqual(render.newly_republished(pkg, None), {"1.0.0"})          # package new in this PR
+        self.assertEqual(render.newly_republished(pkg, base_without), {"1.0.0"})  # marker added here
+        self.assertEqual(render.newly_republished(pkg, base_other), {"1.0.0"})    # a second, acknowledged rewrite
+        self.assertEqual(render.newly_republished(pkg, base_same), set())         # already spent
+        self.assertEqual(render.newly_republished(pkg, b"not toml ["), {"1.0.0"})
 
 
 class Env(unittest.TestCase):

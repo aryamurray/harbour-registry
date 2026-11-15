@@ -26,7 +26,7 @@ case "$(uname -s)" in
 esac
 
 cp -R "$REGISTRY_TEST_DIR/consumer" "$work/consumer"
-(cd "$work/consumer" && "$HARBOUR" build)
+(cd "$work/consumer" && "$HARBOUR" build --strict-sources)
 
 bin="$work/consumer/.harbour/target/debug/deps/redis-$REGISTRY_TEST_VERSION/bin"
 for exe in redis-server redis-cli redis-benchmark; do

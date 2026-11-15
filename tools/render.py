@@ -34,6 +34,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 
 import regtools as rt
@@ -193,6 +194,37 @@ def git_show(ref: str, path: str) -> bytes | None:
     return proc.stdout if proc.returncode == 0 else None
 
 
+def owning_version(fname: str, versions: list[str]) -> str | None:
+    """Which release an index file belongs to: `<version>.toml`, `<version>.patch` or
+    `<version>-<suffix>.patch`.
+
+    The LONGEST matching version wins, and the match is exact up to the separator. A plain
+    prefix test let `republish` on 1.7.1 exempt 1.7.18's files as well, and would let 1.7.1
+    claim the files of a pre-release 1.7.1-rc.1.
+    """
+    owners = [v for v in versions if fname in (v + ".toml", v + ".patch") or fname.startswith(v + "-")]
+    return max(owners, key=len) if owners else None
+
+
+def newly_republished(pkg: rt.Package, base_package_toml: bytes | None) -> set[str]:
+    """Versions whose `republish` marker is new or changed relative to the base.
+
+    The marker acknowledges ONE rewrite, in the pull request that adds it. It stays in
+    package.toml afterwards as a record, and must not keep exempting that version: otherwise
+    the first republish of a version would leave it permanently mutable.
+    """
+    before: dict[str, str | None] = {}
+    if base_package_toml is not None:
+        try:
+            data = tomllib.loads(base_package_toml.decode("utf-8"))
+        except (UnicodeDecodeError, tomllib.TOMLDecodeError):
+            data = {}
+        for rel in data.get("release", []):
+            if isinstance(rel, dict) and isinstance(rel.get("version"), str):
+                before[rel["version"]] = rel.get("republish")
+    return {r.version for r in pkg.releases if r.republish and before.get(r.version) != r.republish}
+
+
 def check_append_only(ref: str, pkgs: list[rt.Package], want: dict[str, bytes]) -> list[str]:
     """A published version's shim and patches must be byte-identical to what `ref` had.
 
@@ -206,7 +238,8 @@ def check_append_only(ref: str, pkgs: list[rt.Package], want: dict[str, bytes]) 
         raise RegistryError(f"--base {ref}: not a commit in this checkout (is the history fetched?)")
     listing = subprocess.run(["git", "-C", str(rt.ROOT), "ls-tree", "-r", "--name-only", ref, "index/"],
                              capture_output=True, text=True, check=True).stdout.split("\n")
-    exempt = {(p.name, r.version) for p in pkgs for r in p.releases if r.republish}
+    by_name = {p.name: p for p in pkgs}
+    exempt = {(p.name, v) for p in pkgs for v in newly_republished(p, git_show(ref, f"packages/{p.name}/package.toml"))}
     problems = []
     for path in filter(None, listing):
         if path.endswith(".idx"):
@@ -215,8 +248,9 @@ def check_append_only(ref: str, pkgs: list[rt.Package], want: dict[str, bytes]) 
         if len(parts) != 4:
             continue
         name, fname = parts[2], parts[3]
-        version = next((v for (n, v) in exempt if n == name and fname.startswith(v)), None)
-        if version is not None:
+        pkg = by_name.get(name)
+        owner = owning_version(fname, [r.version for r in pkg.releases]) if pkg else None
+        if owner is not None and (name, owner) in exempt:
             continue
         now = want.get(path[len("index/"):])
         if now is None:
