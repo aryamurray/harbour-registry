@@ -290,7 +290,8 @@ def upstream_diff(run: Gh, pkg: rt.Package, version: str,
     try:
         q = lambda t: urllib.parse.quote(t, safe="")  # noqa: E731
         out = run("api", f"repos/{slug}/compare/{q(old_tag)}...{q(new_tag)}", "--jq",
-                  "{html_url, total_commits, files: [.files[]? | {filename, status, additions, deletions}]}", timeout=90)
+                  "{html_url, total_commits, files: [.files[]? | {filename, status, additions, deletions, previous_filename}]}",
+                  timeout=90)
         return json.loads(out), ""
     except (TriageError, subprocess.TimeoutExpired, json.JSONDecodeError) as e:
         return None, f"the compare API failed ({str(e)[:100]})"

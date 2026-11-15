@@ -13,7 +13,8 @@ name: Watch
 #            checks: an automated PR may not touch tests, tools or workflows (tools/guard.py).
 #   triage   when the gate finishes on a bump PR: label it, post ONE failure summary, and decide whether
 #            the repair step gets another attempt or a human is needed.
-#   repair   the seam for an LLM that proposes a rewritten manifest. NOT BUILT: see tools/repair.py.
+#   repair   a language model proposes a rewritten manifest (tools/repair.py); the proposal is committed
+#            to the same branch and judged by the same unchanged gate. Off until configured.
 #
 # MERGING IS NOT DONE HERE. Branch protection (require `PR result`, require Code Owners review where a
 # human is wanted) plus GitHub auto-merge merge a green bump; this workflow only turns auto-merge on, and
@@ -26,9 +27,17 @@ name: Watch
 #                                  repository only, with Contents: read and write, Pull requests: read
 #                                  and write, Issues: read and write (labels). Required, see below.
 #   variable  REGISTRY_AUTO_MERGE  `true` to enable auto-merge on bump PRs. Default off.
-#   variable  REGISTRY_REPAIR_ENABLED   `true` once tools/repair.py has a model behind it. Default off:
+#   variable  REGISTRY_REPAIR_ENABLED   `true` once the three REPAIR_* settings below exist. Default off:
 #                                  a failed bump then goes straight to `needs-human`.
 #   variable  REGISTRY_REPAIR_ATTEMPTS  repair attempts per bump PR before `needs-human`. Default 2.
+#   secret    REPAIR_API_KEY       the key of the model endpoint the repair step uses. Scope it to that
+#                                  one use; only the `Propose a repaired manifest` step sees it.
+#   variable  REPAIR_API_BASE      base URL of an OpenAI-compatible API (https), e.g.
+#                                  https://api.example.com/v1 ; tools/repair.py POSTs to
+#                                  {base}/chat/completions and to nothing else.
+#   variable  REPAIR_MODEL         the model name that endpoint expects.
+#   variable  REPAIR_TEMPERATURE, REPAIR_MAX_TOKENS, REPAIR_TIMEOUT, REPAIR_MAX_PROMPT_CHARS
+#                                  optional tuning; defaults and meaning in tools/repair.py's docstring.
 #   labels    bot, bump, needs-repair, needs-human, license-changed, keep (and repair-attempt-N):
 #             created by this workflow when missing (`tools/bump_triage.py ensure-labels`), nothing to
 #             do by hand. `keep` is the one a PERSON applies: a bump PR carrying it is never closed as
@@ -412,32 +421,71 @@ jobs:
           path: ${{ runner.temp }}/repair-input
           retention-days: 3
 
-  # THE SEAM FOR THE LLM STEP. Not built: tools/repair.py is a stub that exits "not configured" (so
-  # with REGISTRY_REPAIR_ENABLED=true and no model wired in, this job fails loudly, and the attempt label
-  # the triage job added has already been spent). The contract (input, allowed output paths, budget, how
-  # the model must treat untrusted text) is the docstring of tools/repair.py and the README.
+  # THE REPAIR STEP: a language model proposes a rewritten manifest; the unchanged gate judges it.
+  # The contract (input, allowed output paths, reply protocol, budget, how the model must treat untrusted
+  # text) is the docstring of tools/repair.py and the README.
   #
-  # When it is built, this job must keep the shape of `triage`: default branch checked out, the PR's
-  # files fetched as DATA into a separate directory and never executed, no secret in the model process
-  # except its own scoped key. The one write it makes is a commit to the SAME bump branch, touching only
-  # packages/<pkg>/Harbour.toml, overlay/ and patches/ (tools/repair.py validate_output), pushed with
-  # REGISTRY_BOT_TOKEN so that pr.yml judges it again, unchanged.
+  # SECURITY OF THIS JOB. It keeps the shape of `triage` (same `workflow_run` context), and adds:
+  #   * The workspace is the DEFAULT branch, and every tool that runs comes from it. The bump branch is
+  #     fetched as DATA: `git archive` of packages/<pkg>/ into a plain directory for the model's prompt,
+  #     and a detached worktree for the commit, whose own tools/ is replaced by the default branch's copy
+  #     before render.py runs there. Nothing from the branch is executed, built or imported.
+  #   * Three steps, three sets of credentials, never mixed:
+  #       propose   the ONLY step with the model key. It has no GitHub token; the process is started with
+  #                 an emptied environment (`env -i`) holding PATH and the REPAIR_* settings, and
+  #                 `python -I`. The model has no tools: one HTTPS request to REPAIR_API_BASE, one text
+  #                 reply, which repair.py turns into files under the three allowed output forms or refuses.
+  #       apply     no secret at all. Re-verifies the files (repair.py --verify-only), copies them over
+  #                 the branch's package directory, renders, commits, then checks the commit with
+  #                 `git diff --name-only` against an allow-list AND with tools/guard.py.
+  #       push      the only step with REGISTRY_BOT_TOKEN. A plain (non-force) push of that one commit to
+  #                 the same branch, so pr.yml judges it again; it fails if the branch moved meanwhile.
+  #   * Strings that originate in the PR (branch, package, version) arrive through `env:` and are
+  #     validated against strict patterns in the first step; none is interpolated into a `run:`.
+  #   * If no proposal is pushed (no model configured, endpoint down, reply refused, guard refusal), the
+  #     last step hands the PR to a human (`needs-human` label and issue) with the job's own token:
+  #     nothing else would ever look at the PR again, because no new commit means no new gate run.
   repair:
     name: Repair ${{ needs.triage.outputs.package }} ${{ needs.triage.outputs.version }} (attempt ${{ needs.triage.outputs.attempt }})
     needs: triage
     if: needs.triage.outputs.repair == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
-      contents: read
+      contents: read         # fetch the bump branch (the push uses REGISTRY_BOT_TOKEN, not this token)
+      pull-requests: write   # the last step only: labels and one comment when a human is needed
+      issues: write          # the last step only: the needs-human issue
+    concurrency:
+      group: watch-repair-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: false
     defaults:
       run:
         shell: bash
+    env:
+      PKG: ${{ needs.triage.outputs.package }}
+      VERSION: ${{ needs.triage.outputs.version }}
+      ATTEMPT: ${{ needs.triage.outputs.attempt }}
+      PR: ${{ needs.triage.outputs.pr }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      GH_REPO: ${{ github.repository }}
     steps:
+      - name: Validate what came from the pull request
+        run: |
+          bad() { echo "::error title=Refused::$1 does not look right"; exit 1; }
+          [[ "$PKG" =~ ^[a-z][a-z0-9_-]{0,63}$ ]] || bad "the package name"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || bad "the version"
+          [[ "$ATTEMPT" =~ ^[0-9]{1,2}$ ]] || bad "the attempt number"
+          [[ "$PR" =~ ^[0-9]{1,9}$ ]] || bad "the pull request number"
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || bad "the head commit"
+          [ "$BRANCH" = "bot/bump-$PKG-$VERSION" ] || bad "the branch name"
+
+      # Full history: the guard below needs the merge base of the bump branch and the default branch.
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -445,11 +493,153 @@ jobs:
         with:
           name: repair-input
           path: ${{ runner.temp }}/repair-input
-      - name: Propose a repaired manifest
+
+      # The branch's files as data. If the branch has moved since the run that was triaged, this
+      # attempt is about a commit that no longer matters: stop quietly, the newer run gets its own triage.
+      - name: Fetch the bump branch as data
+        id: fetch
         env:
-          PKG: ${{ needs.triage.outputs.package }}
-          ATTEMPT: ${{ needs.triage.outputs.attempt }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')"
+          echo "::add-mask::$auth"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            fetch -q --no-tags origin "+refs/heads/$BRANCH:refs/remotes/origin/repair-candidate"
+          tip="$(git rev-parse refs/remotes/origin/repair-candidate)"
+          if [ "$tip" != "$HEAD_SHA" ]; then
+            echo "::notice title=Skipped::$BRANCH has moved on since the run that was triaged"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/candidate"
+          git archive --format=tar "$HEAD_SHA" -- "packages/$PKG" | tar -x -C "$RUNNER_TEMP/candidate"
+          echo "go=true" >> "$GITHUB_OUTPUT"
+
+      # THE ONLY STEP THAT HOLDS THE MODEL KEY, and it holds nothing else. `env -i` drops every other
+      # variable of the runner before the process starts; `python -I` ignores PYTHON* variables and the
+      # user site. The reply is not printed (a job log interprets `::command::` lines): it goes to the
+      # transcript file, which is kept as an artifact for whoever reviews the PR.
+      - name: Propose a repaired manifest
+        if: steps.fetch.outputs.go == 'true'
+        env:
+          REPAIR_API_BASE: ${{ vars.REPAIR_API_BASE }}
+          REPAIR_API_KEY: ${{ secrets.REPAIR_API_KEY }}
+          REPAIR_MODEL: ${{ vars.REPAIR_MODEL }}
+          REPAIR_TEMPERATURE: ${{ vars.REPAIR_TEMPERATURE }}
+          REPAIR_MAX_TOKENS: ${{ vars.REPAIR_MAX_TOKENS }}
+          REPAIR_TIMEOUT: ${{ vars.REPAIR_TIMEOUT }}
+          REPAIR_MAX_PROMPT_CHARS: ${{ vars.REPAIR_MAX_PROMPT_CHARS }}
         run: |
           mkdir -p "$RUNNER_TEMP/out"
-          python tools/repair.py --package "$PKG" --attempt "$ATTEMPT" \
-            --input-dir "$RUNNER_TEMP/repair-input" --out-dir "$RUNNER_TEMP/out"
+          keep=("PATH=$PATH" "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}")
+          for v in REPAIR_API_BASE REPAIR_API_KEY REPAIR_MODEL REPAIR_TEMPERATURE REPAIR_MAX_TOKENS \
+                   REPAIR_TIMEOUT REPAIR_MAX_PROMPT_CHARS; do
+            if [ -n "${!v:-}" ]; then keep+=("$v=${!v}"); fi
+          done
+          env -i "${keep[@]}" python -I tools/repair.py --package "$PKG" --attempt "$ATTEMPT" \
+            --input-dir "$RUNNER_TEMP/repair-input" --candidate-dir "$RUNNER_TEMP/candidate" \
+            --out-dir "$RUNNER_TEMP/out" --transcript "$RUNNER_TEMP/repair-transcript.json"
+
+      - name: Keep the transcript
+        if: always() && steps.fetch.outputs.go == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: repair-transcript
+          path: ${{ runner.temp }}/repair-transcript.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # No secret here. The files are checked again, applied as file content, rendered with the DEFAULT
+      # branch's tools, committed, and the commit is checked twice before anything can push it.
+      - name: Apply, render and commit
+        id: commit
+        if: steps.fetch.outputs.go == 'true'
+        run: |
+          python -I tools/repair.py --package "$PKG" --verify-only \
+            --candidate-dir "$RUNNER_TEMP/candidate" --out-dir "$RUNNER_TEMP/out"
+          main_sha="$(git rev-parse HEAD)"
+          wt="$RUNNER_TEMP/branch"
+          git worktree add -q --detach "$wt" "$HEAD_SHA"
+          # The branch's tree, but the default branch's tools: render.py works on the checkout it sits in.
+          rm -rf "$wt/tools"
+          cp -R tools "$wt/tools"
+          cp -R "$RUNNER_TEMP/out/." "$wt/packages/$PKG/"
+          cd "$wt"
+          python tools/render.py "$PKG"
+
+          # Nothing but the package and index/ may have changed (tools/ is the swapped-in copy and is
+          # never staged).
+          stray="$(git status --porcelain -- . ':(exclude)tools' ':(exclude)packages' ':(exclude)index')"
+          if [ -n "$stray" ]; then
+            echo "::error title=Refused::rendering changed files outside packages/ and index/"; echo "$stray"; exit 1
+          fi
+          git add -A -- "packages/$PKG" index
+          if git diff --cached --quiet; then
+            echo "::error title=Nothing to commit::the proposal renders to exactly what the branch already has"; exit 1
+          fi
+          git -c user.name="harbour-registry-watch" -c user.email="harbour-registry-watch@users.noreply.github.com" \
+            commit -q -m "Repair $PKG $VERSION (attempt $ATTEMPT)" \
+            -m "Proposed by tools/repair.py (a language model) from the gate's failure summary and the upstream file changes; applied as file content only. The PR gate judges it unchanged."
+
+          # Check 1: the allow-list, on the commit itself. PKG is [a-z0-9_-] only, so it is literal here.
+          [ "$(git rev-parse HEAD^)" = "$HEAD_SHA" ] || { echo "::error::the commit is not on top of the triaged commit"; exit 1; }
+          allow="^(packages/$PKG/(Harbour\.toml|overlay/.+|patches/[^/]+\.patch)|index/[^/]+/$PKG(\.idx|/[^/]+))$"
+          refused=0
+          while IFS= read -r path; do
+            if ! [[ "$path" =~ $allow ]]; then
+              echo "::error title=Refused::the repair commit touches a path outside its allow-list"
+              printf 'refused: %q\n' "$path"
+              refused=1
+            fi
+          done < <(git diff --name-only --no-renames "$HEAD_SHA" HEAD)
+          [ "$refused" = 0 ] || exit 1
+          # Check 2: the automated-PR guard, as pr.yml will run it, over the whole branch.
+          base="$(git merge-base "$main_sha" HEAD)"
+          python tools/guard.py --base "$base" --head HEAD --author harbour-registry-watch --labels bot \
+            --head-ref "$BRANCH"
+          git diff --stat "$HEAD_SHA" HEAD
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Repair of $PKG $VERSION, attempt $ATTEMPT"
+            echo
+            echo '```'
+            git diff --stat "$HEAD_SHA" HEAD
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The only step with the bot token; the model process ended two steps ago. Not a force push: if
+      # the branch moved, this fails and the newer commit's own gate run decides what happens next.
+      - name: Push the repair to the bump branch
+        if: steps.commit.outputs.sha != ''
+        env:
+          TOKEN: ${{ secrets.REGISTRY_BOT_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error title=REGISTRY_BOT_TOKEN is not set::The repair commit must be pushed with it so that the PR workflow runs again."
+            exit 1
+          fi
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')"
+          echo "::add-mask::$auth"
+          git -C "$RUNNER_TEMP/branch" -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push origin "HEAD:refs/heads/$BRANCH"
+
+      # Without a pushed commit there is no new gate run, so nothing would triage this PR again: say so
+      # and stop the loop here. (The attempt label was already spent by triage.)
+      - name: Hand over to a human if nothing was pushed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [[ "$PR" =~ ^[0-9]{1,9}$ && "$PKG" =~ ^[a-z][a-z0-9_-]{0,63}$ && "$VERSION" =~ ^[0-9A-Za-z.-]{1,64}$ ]] || exit 0
+          if [ -f tools/bump_triage.py ]; then python tools/bump_triage.py ensure-labels --repo "$GH_REPO" || true; fi
+          gh api --method POST "repos/$GH_REPO/issues/$PR/labels" -f "labels[]=needs-human" > /dev/null
+          gh api --method DELETE "repos/$GH_REPO/issues/$PR/labels/needs-repair" > /dev/null 2>&1 || true
+          gh api --method POST "repos/$GH_REPO/issues/$PR/comments" \
+            -f "body=Repair attempt $ATTEMPT did not produce a commit (no model configured, the endpoint failed, or the proposal was refused): $RUN_URL. **A human is needed.**" > /dev/null
+          title="needs-human: $PKG $VERSION"
+          open="$(gh api --paginate "repos/$GH_REPO/issues?state=open&labels=needs-human&per_page=100" --jq '.[] | select(.pull_request | not) | .title')"
+          if ! grep -Fxq -- "$title" <<< "$open"; then
+            gh api --method POST "repos/$GH_REPO/issues" -f "title=$title" -f "labels[]=needs-human" \
+              -f "body=The repair step could not propose a fix for the bump of \`$PKG\` to \`$VERSION\` (pull request #$PR, run $RUN_URL). The watcher will not open another PR for this version while this issue is open. Fix the PR, or close the PR and this issue." > /dev/null
+          fi

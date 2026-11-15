@@ -218,7 +218,7 @@ All are Python 3.11+, standard library only, and run on Linux, macOS and Windows
 | `tools/watch.py verify-license --base REF` | re-derive every `license_sha256` a change adds or alters (network; the PR workflow's `License digests` job) |
 | `tools/watch.py supersede --package P --version V` | close the open bump PRs that the open bump PR for `V` replaces |
 | `tools/bump_triage.py` | what happens when the gate finishes on a bump PR (labels, one failure summary, repair budget) |
-| `tools/repair.py` | the repair step's contract, and a stub: the model call is not built |
+| `tools/repair.py` | the repair step: asks a language model (any OpenAI-compatible endpoint, `REPAIR_*` settings) for a rewritten manifest and accepts only files inside its output contract. `--print-prompt` shows what would be sent without sending it |
 | `python3 -m unittest discover -s tools -p "test_*.py"` | tests of the tools (the patch renderer against real `git diff`, the guard against real git history, lint and render against mutated copies of this checkout) |
 
 ### Rendering is byte-exact
@@ -308,16 +308,16 @@ guard's script is therefore fetched from the base commit.
 ## Keeping packages current
 
 The loop: **detect** an upstream release, **bump** the entry, let **the PR gate** (everything above) judge it,
-**merge**. When the carried-forward manifest no longer builds, a **repair** step is meant to propose a rewritten
-one, judged by the same unchanged gate. Detection, the candidate and the plumbing around a failed bump are
-built; the model call is not.
+**merge**. When the carried-forward manifest no longer builds, a **repair** step asks a language model to propose
+a rewritten one, which is committed to the same PR and judged by the same unchanged gate. The repair step is off
+until you give it a model endpoint (below); it has not yet been run against a real model or on GitHub.
 
 ```
 watch.yml  detect --> bump (one PR per package, newest version) --> pr.yml gate --> merge
                                                                         |  red
                                                   triage: label, ONE summary comment, attempt counter
                                                                         |
-                                              repair (STUB) --commit to the same branch--> pr.yml again
+                                       repair (model proposal) --commit to the same branch--> pr.yml again
                                                                         |  budget spent
                                                               `needs-human` label + issue, stop
 ```
@@ -498,8 +498,12 @@ What to create:
 | --- | --- |
 | secret `REGISTRY_BOT_TOKEN` | a fine-grained PAT (or GitHub App installation token) scoped to this repository only: Contents read+write, Pull requests read+write, Issues read+write (for labels). Only the push, label, PR, supersede (comment on, close and delete the branch of a bump PR that a newer one replaces) and auto-merge steps see it; keep that account **out of the branch-protection bypass list** |
 | variable `REGISTRY_AUTO_MERGE` | `true` to run `gh pr merge --auto --squash` on each bump PR, **except one whose upstream license files changed** (never requested for those). Default off. Needs "Allow auto-merge" in the repository settings and `PR result` required by branch protection; otherwise it is a warning and the PR waits for a human. **Nothing in the workflow merges anything itself.** Flip it once you trust the gate |
-| variable `REGISTRY_REPAIR_ENABLED` | `true` once `tools/repair.py` has a model behind it. Default off: a failed bump then goes straight to `needs-human` |
+| variable `REGISTRY_REPAIR_ENABLED` | `true` once the three `REPAIR_*` settings below exist. Default off: a failed bump then goes straight to `needs-human` |
 | variable `REGISTRY_REPAIR_ATTEMPTS` | repair attempts per bump PR, default `2` |
+| secret `REPAIR_API_KEY` | the key of the model endpoint, sent as `Authorization: Bearer <key>`. Only the one step that calls the model sees it |
+| variable `REPAIR_API_BASE` | base URL of an OpenAI-compatible API, https, for example `https://api.example.com/v1`. The repair step POSTs to `<base>/chat/completions` and contacts nothing else |
+| variable `REPAIR_MODEL` | the model name that endpoint expects |
+| variables `REPAIR_TEMPERATURE`, `REPAIR_MAX_TOKENS`, `REPAIR_TIMEOUT`, `REPAIR_MAX_PROMPT_CHARS` | optional; see below |
 | labels `bot`, `bump`, `needs-repair`, `needs-human`, `license-changed`, `keep`, `repair-attempt-N` | created by the workflow when missing. `keep` is the one a person applies (a bump PR carrying it is never closed as superseded) |
 
 Branch protection that makes this safe (already required by the guard section above): require `PR result`,
@@ -523,20 +527,92 @@ against a strict regex and quotes log text in a code fence the text cannot close
 non-`pull_request` events; uses the job's own token (labels, comments, issues; no contents write); and approves or
 merges nothing.
 
-**The repair contract** (`tools/repair.py`, a stub that exits "not configured"; `validate_output` is real):
+**The repair contract** (`tools/repair.py`; its docstring is the full text):
 
-* *input:* the failure summary, the upstream compare/file listing diff, the run context, and the bump branch's
-  files fetched as data into a directory (never executed);
-* *output:* files for `packages/<pkg>/Harbour.toml`, `overlay/**`, `patches/*.patch`, nothing else, committed to the
-  **same** bump branch with `REGISTRY_BOT_TOKEN` so `pr.yml` judges it again unchanged;
-* *budget:* `REGISTRY_REPAIR_ATTEMPTS`, then `needs-human`;
-* *the model* treats upstream source, changelogs and logs as untrusted data, runs with no secret but its own scoped
-  key, has no tool that executes the candidate, and its output is only ever applied as file content inside the
-  allowed paths. The judge (tests, `[test]`, tools, workflows) is outside those paths and CODEOWNERS-protected.
+* *input:* the failure summary, the upstream added/removed/renamed file listing, the run context, and the bump
+  branch's `packages/<pkg>/` fetched as data into a directory (never executed);
+* *output:* files for `packages/<pkg>/Harbour.toml`, `overlay/**`, `patches/*.patch`, nothing else (files can be
+  added or rewritten, not deleted), committed to the **same** bump branch with `REGISTRY_BOT_TOKEN` so `pr.yml`
+  judges it again unchanged. `validate_output` is the single authority on paths, size and encoding; the manifest
+  must also parse as TOML, keep its `[package] name` and `version`, and differ from what the branch has;
+* *budget:* `REGISTRY_REPAIR_ATTEMPTS`, then `needs-human`. Inside one attempt the model is called at most three
+  times: a refused reply is sent back with the reasons twice, then the attempt fails;
+* *the model* is told that upstream source, changelogs and logs are untrusted data, runs with no secret but its own
+  scoped key, has no tools (one request, one text reply; nothing is executed), and its output is only ever applied
+  as file content inside the allowed paths. The judge (tests, `[test]`, tools, workflows) is outside those paths
+  and CODEOWNERS-protected. This is what bounds a prompt injection: the worst a hostile changelog can obtain is a
+  wrong manifest, which the gate then refuses.
+
+**What the model is sent.** One system message (the task, the manifest concepts it needs, the rules, the reply
+format) and one user message with five delimited data blocks: the carried-forward `Harbour.toml` (never cut),
+`package.toml` (reference only), the failure summary, the upstream file changes, and the package's overlay and
+patch files. The upstream listing is pre-digested: files the manifest names that upstream removed or renamed come
+first, then new files in directories whose sources the manifest lists one by one. Each block's delimiter carries a
+tag derived from the content, so text inside a block cannot close it. Sizes are capped; anything trimmed is
+trimmed the same way every time and the prompt says so. To read exactly what would be sent, without sending it:
+
+```
+python3 tools/repair.py --package PKG --input-dir DIR --candidate-dir DIR --print-prompt [FILE]
+```
+
+**What the model must answer.** Marker lines, alone on their line, with paths relative to `packages/<pkg>/`; text
+outside the blocks is ignored, any other `=== ... ===` line or an unterminated block refuses the whole reply:
+
+```
+=== EDIT: Harbour.toml ===              exact search/replace on an existing file (preferred: small, and the
+<<<<<<< SEARCH                          rest of the file cannot be damaged). SEARCH must match exactly one
+    "lib/old_name.c",                   run of whole lines.
+=======
+    "lib/new_name.c",
+>>>>>>> REPLACE
+=== END ===
+
+=== FILE: overlay/config/extra.h ===    or the complete content of a file
+...
+=== END ===
+
+=== CANNOT REPAIR: one line saying why ===
+```
+
+**Pointing it at a provider.** Any service or local server that implements the OpenAI chat-completions request
+(`POST <base>/chat/completions` with `model` and `messages`, the reply in `choices[0].message.content`) works; no
+vendor SDK is involved and nothing but the Python standard library is used.
+
+1. Create an API key at the provider, scoped as narrowly as it allows, and store it as the Actions **secret**
+   `REPAIR_API_KEY`.
+2. Set the Actions **variables** `REPAIR_API_BASE` (the URL up to and including the version segment, usually
+   ending in `/v1`; https only) and `REPAIR_MODEL` (the provider's model identifier).
+3. Optional variables: `REPAIR_TEMPERATURE` (default `0`), `REPAIR_MAX_TOKENS` (reply tokens, default `8192`;
+   either accepts `omit` for providers that reject the field), `REPAIR_TIMEOUT` (seconds, default `300`),
+   `REPAIR_MAX_PROMPT_CHARS` (default `150000`; lower it for a model with a small context window. A prompt is
+   about a quarter as many tokens as characters; curl's is about 32,000 characters).
+4. Set `REGISTRY_REPAIR_ENABLED` to `true`.
+
+With `REGISTRY_REPAIR_ENABLED=true` and a setting missing, the repair job fails with "not configured: set ...",
+and the PR is handed to a human. To try a provider before enabling anything, export the three variables in a
+shell and run `tools/repair.py` on a directory laid out as above; `http://localhost` is accepted as a base for a
+local model server.
+
+**The `repair` job.** Default branch checked out; the bump branch fetched as data (and skipped if it has moved
+since the triaged run). Then three steps that never share credentials: *propose* (the only step with the model
+key; no GitHub token; the process starts from an emptied environment), *apply* (no secret: re-verifies the output,
+copies it over the branch's package, runs the **default branch's** `render.py`, commits as the bot, and refuses
+the commit unless `git diff --name-only` stays inside `packages/<pkg>/Harbour.toml`, `overlay/**`,
+`patches/*.patch` and that package's `index/` files, and `tools/guard.py` passes), and *push* (the only step with
+`REGISTRY_BOT_TOKEN`; not a force push). The model's replies are kept as the `repair-transcript` artifact, not
+printed. If nothing is pushed, the job labels the PR `needs-human` and opens the issue itself, because without a
+new commit there is no new gate run to triage.
+
+**What repair cannot fix, by design.** `package.toml` and `test/` are the judge. When a release changes the number
+of translation units (`[test] objects`) or the behaviour the consumer test asserts, the best possible manifest
+still fails the gate and the PR ends at `needs-human` with the manifest already corrected. curl 8.22.0 -> 8.23.0 is
+such a case: three sources removed, two renamed and two added makes 195 objects against a declared 196.
 
 ### Not built
 
-* The model call in `tools/repair.py`, and the `repair` job's commit/push step (the job runs the stub).
+* The repair step has never run against a real model or on GitHub Actions: the model call is tested against a
+  local fake endpoint and the `repair` job's scripts were run by hand. It cannot delete files, and it sees the
+  upstream file *listing*, not upstream file contents (GitHub's compare lists at most 300 files).
 * Verifying upstream **signatures** (`.asc`, `.sig`, sigstore). The sha256 cross-check covers published digests
   only, and for hosts that publish none (python.org, download.redis.io, dist.libuv.org today) a bump still records
   the hash of what was downloaded and says "not cross-checked".
