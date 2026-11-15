@@ -2,7 +2,7 @@
 name = "googletest"
 version = "1.18.0"
 license = "BSD-3-Clause"
-supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
 default_target = "gtest"
 
 # Four libraries, one translation unit each, as upstream's googletest/CMakeLists.txt and
@@ -19,7 +19,19 @@ default_target = "gtest"
 #     others reach it through their `local` edges). It is the value the header would pick by itself here.
 #   * gtest_main PUBLIC-links gtest, gmock PUBLIC-links gtest, gmock_main PUBLIC-links gmock:
 #     `local = true` edges, so a consumer naming only gmock still links gtest.
-# Not carried over: the Windows/MinGW/HP/QNX branches, the shared-library defines
+#   * Windows (MSVC): cmake/internal_utils.cmake sets GTEST_HAS_PTHREAD only when find_package(Threads)
+#     finds pthreads (CMAKE_USE_PTHREADS_INIT), which is never so with cl: gtest-port.h then uses the
+#     Windows threading primitives (death tests spawn the test binary), so the define is Unix-only here
+#     (surface.when blocks below; `pthread` itself in system_libs is skipped by Harbour under cl).
+#     Upstream's cxx_base_flags for MSVC (config_compiler_and_linker) are applied to every library:
+#     -utf-8 and -DWIN32 -D_UNICODE -DUNICODE -DSTRICT -DWIN32_LEAN_AND_MEAN, in the msvc `when` blocks
+#     (-EHsc is cl's exception model here, -GS is cl's default, -W4/-wd* are warning policy).
+#   * gtest_main and gmock_main hold `main`, and cl's linker only looks for an entry point in the
+#     objects named on its command line, never in a library member (LNK1561 otherwise). CMake always
+#     passes /SUBSYSTEM:CONSOLE for an executable, which makes it use mainCRTStartup and so pull `main`
+#     out of the archive; Harbour passes no /SUBSYSTEM, so the two *_main targets carry it publicly
+#     (surface.when below).
+# Not carried over: the MinGW/HP/QNX branches, the shared-library defines
 # (GTEST_CREATE_SHARED_LIBRARY, GTEST_LINKED_AS_SHARED_LIBRARY), GTEST_HAS_ABSL (off by default).
 [targets.gtest]
 kind = "staticlib"
@@ -30,8 +42,17 @@ public_headers = ["googletest/include/gtest/**/*.h"]
 
 [targets.gtest.public]
 include_dirs = ["googletest/include"]
-defines = ["GTEST_HAS_PTHREAD=1"]
 system_libs = ["pthread"]
+
+[[targets.gtest.surface.when]]
+os = "linux"
+[targets.gtest.surface.when."compile.public"]
+defines = ["GTEST_HAS_PTHREAD=1"]
+
+[[targets.gtest.surface.when]]
+os = "macos"
+[targets.gtest.surface.when."compile.public"]
+defines = ["GTEST_HAS_PTHREAD=1"]
 
 [targets.gtest.private]
 include_dirs = ["googletest"]
@@ -69,3 +90,35 @@ sources = ["googlemock/src/gmock_main.cc"]
 
 [targets.gmock_main.deps]
 gmock = { local = true }
+
+# Windows (MSVC): upstream's per-library compile flags, see the header comment.
+
+[[targets.gtest.when]]
+compiler = "msvc"
+cflags = ["/utf-8"]
+defines = ["WIN32", "_UNICODE", "UNICODE", "STRICT", "WIN32_LEAN_AND_MEAN"]
+
+[[targets.gtest_main.when]]
+compiler = "msvc"
+cflags = ["/utf-8"]
+defines = ["WIN32", "_UNICODE", "UNICODE", "STRICT", "WIN32_LEAN_AND_MEAN"]
+
+[[targets.gmock.when]]
+compiler = "msvc"
+cflags = ["/utf-8"]
+defines = ["WIN32", "_UNICODE", "UNICODE", "STRICT", "WIN32_LEAN_AND_MEAN"]
+
+[[targets.gmock_main.when]]
+compiler = "msvc"
+cflags = ["/utf-8"]
+defines = ["WIN32", "_UNICODE", "UNICODE", "STRICT", "WIN32_LEAN_AND_MEAN"]
+
+[[targets.gtest_main.surface.when]]
+compiler = "msvc"
+[targets.gtest_main.surface.when."link.public"]
+ldflags = ["/SUBSYSTEM:CONSOLE"]
+
+[[targets.gmock_main.surface.when]]
+compiler = "msvc"
+[targets.gmock_main.surface.when."link.public"]
+ldflags = ["/SUBSYSTEM:CONSOLE"]

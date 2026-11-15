@@ -28,7 +28,12 @@ int main() {
     }
 
     // The consumer asked for C++20: yaml-cpp must have been compiled with the same standard.
+    // (cl reports 199711L in __cplusplus unless /Zc:__cplusplus is given; _MSVC_LANG is its spelling.)
+#ifdef _MSVC_LANG
+    CHECK(_MSVC_LANG >= 202002L);
+#else
     CHECK(__cplusplus >= 202002L);
+#endif
 
     YAML::Node doc = YAML::Load(
         "name: city\n"

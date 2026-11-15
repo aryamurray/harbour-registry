@@ -1,9 +1,9 @@
 diff --git a/Harbour.toml b/Harbour.toml
 new file mode 100644
-index 0000000..4cd6861
+index 0000000..16f9325
 --- /dev/null
 +++ b/Harbour.toml
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,119 @@
 +# snappy 1.2.1, shimmed for Harbour.
 +#
 +# A C++ library whose own build asks a dozen compile-snippet questions.
@@ -47,6 +47,15 @@ index 0000000..4cd6861
 +#                                    on x86_64.
 +#   * `cxx_compiler_flag` (6)     -> warning suppressions; not needed.
 +#
++# Windows (MSVC): the same four sources. Every probe answers no there (no sys/mman.h, sys/resource.h,
++# sys/time.h, sys/uio.h, unistd.h, mmap, sysconf), which is what upstream's configure answers for cl, and
++# none of the gcc/clang compile-snippet facts apply (the `when` blocks below are gcc and clang only; the
++# sources use _BitScanForward and __forceinline under _MSC_VER). Upstream's MSVC branch also sets
++# /W4, /EHs-c-, /GR- and _HAS_EXCEPTIONS=0: warning level and an exception/RTTI policy that the Linux
++# build here does not carry over either (-fno-exceptions/-fno-rtti are not set), so not set for cl.
++# The /arch:AVX flags are only added for the opt-in SNAPPY_REQUIRE_AVX options. The only Windows-specific
++# input is <sys/uio.h>: see the overlay header.
++#
 +# `snappy-stubs-public.h` is the instantiation of `snappy-stubs-public.h.in`
 +# for a target with <sys/uio.h>; `overlay/` carries it because Harbour has no
 +# template-expansion step (the generator-less way to do this would be a
@@ -59,7 +68,7 @@ index 0000000..4cd6861
 +license = "BSD-3-Clause"
 +homepage = "https://github.com/google/snappy"
 +requires = "hosted"
-+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
 +
 +[targets.snappy]
 +kind = "staticlib"
@@ -116,10 +125,10 @@ index 0000000..4cd6861
 +defines = ["SNAPPY_HAVE_NEON=1"]
 diff --git a/snappy-stubs-public.h b/snappy-stubs-public.h
 new file mode 100644
-index 0000000..4c2b79c
+index 0000000..d54b459
 --- /dev/null
 +++ b/snappy-stubs-public.h
-@@ -0,0 +1,70 @@
+@@ -0,0 +1,69 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
 +// Redistribution and use in source and binary forms, with or without
@@ -150,9 +159,8 @@ index 0000000..4c2b79c
 +// NOTE (Harbour canary overlay): this is snappy-stubs-public.h.in as cmake
 +// instantiates it for snappy 1.2.1 on a target that has <sys/uio.h> (macOS and
 +// Linux). The three `${...}` substitutions are replaced and nothing else is
-+// changed. A target without <sys/uio.h> (Windows) needs the other value; the
-+// shim's `supports` list leaves it out, so this file is not asked to be right
-+// for it.
++// changed. Windows has no <sys/uio.h>, where upstream's configure answers
++// HAVE_SYS_UIO_H as 0, so both conditionals are keyed on _WIN32 here.
 +//
 +//
 +// Various type stubs for the open-source version of Snappy.
@@ -166,7 +174,7 @@ index 0000000..4c2b79c
 +
 +#include <cstddef>
 +
-+#if 1  // HAVE_SYS_UIO_H
++#if !defined(_WIN32)  // HAVE_SYS_UIO_H (no <sys/uio.h> on Windows)
 +#include <sys/uio.h>
 +#endif  // HAVE_SYS_UIO_H
 +
@@ -178,7 +186,7 @@ index 0000000..4c2b79c
 +
 +namespace snappy {
 +
-+#if !1  // !HAVE_SYS_UIO_H
++#if defined(_WIN32)  // !HAVE_SYS_UIO_H
 +// Windows does not have an iovec type, yet the concept is universally useful.
 +// It is simple to define it ourselves, so we put it inside our own namespace.
 +struct iovec {

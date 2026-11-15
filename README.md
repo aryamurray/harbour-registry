@@ -14,17 +14,17 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [c-ares](packages/c-ares) | 1.34.9 | `MIT` | linux, macos, windows | Asynchronous DNS resolver library, configured by Harbour probes |
 | [cjson](packages/cjson) | 1.7.18 | `MIT` | linux, macos, windows | Ultralightweight JSON parser in ANSI C |
 | [cpython](packages/cpython) | 3.14.9 | `PSF-2.0` | linux, macos | The Python interpreter, built from its generated sources |
-| [crc32c](packages/crc32c) | 1.1.0 | `BSD-3-Clause` | linux, macos | CRC32C implementation with support for CPU-specific acceleration instructions |
+| [crc32c](packages/crc32c) | 1.1.0 | `BSD-3-Clause` | linux, macos, windows | CRC32C implementation with support for CPU-specific acceleration instructions |
 | [curl](packages/curl) | 8.22.0 | `curl` | linux, macos, windows | Command-line tool and library for transferring data with URLs, configured by Harbour probes |
-| [expat](packages/expat) | 2.10.0 | `MIT` | linux, macos | Stream-oriented XML parser library, configured by Harbour probes |
-| [fmt](packages/fmt) | 11.2.0 | `MIT` | linux, macos | A modern formatting library |
+| [expat](packages/expat) | 2.10.0 | `MIT` | linux, macos, windows | Stream-oriented XML parser library, configured by Harbour probes |
+| [fmt](packages/fmt) | 11.2.0 | `MIT` | linux, macos, windows | A modern formatting library |
 | [freetype](packages/freetype) | 2.14.3 | `FTL OR GPL-2.0-or-later` | linux, macos, windows | Font rasterisation library (TrueType, OpenType, Type 1, bitmap fonts) |
-| [googletest](packages/googletest) | 1.18.0 | `BSD-3-Clause` | linux, macos | Google's C++ testing (gtest) and mocking (gmock) framework |
+| [googletest](packages/googletest) | 1.18.0 | `BSD-3-Clause` | linux, macos, windows | Google's C++ testing (gtest) and mocking (gmock) framework |
 | [harfbuzz](packages/harfbuzz) | 15.0.0 | `MIT` | linux, macos | OpenType text shaping engine |
-| [jsoncpp](packages/jsoncpp) | 1.9.8 | `MIT` | linux, macos | C++ library for reading, writing and manipulating JSON |
+| [jsoncpp](packages/jsoncpp) | 1.9.8 | `MIT` | linux, macos, windows | C++ library for reading, writing and manipulating JSON |
 | [libdeflate](packages/libdeflate) | 1.26.0 | `MIT` | linux, macos, windows | Fast whole-buffer DEFLATE, zlib and gzip compression and decompression |
 | [libjpeg-turbo](packages/libjpeg-turbo) | 3.2.1 | `IJG AND BSD-3-Clause AND Zlib` | linux, macos, windows | JPEG image codec: the libjpeg and TurboJPEG APIs, built without SIMD |
-| [libpng](packages/libpng) | 1.6.50 | `libpng-2.0` | linux, macos | Reference implementation of the PNG image format |
+| [libpng](packages/libpng) | 1.6.50 | `libpng-2.0` | linux, macos, windows | Reference implementation of the PNG image format |
 | [libuv](packages/libuv) | 1.51.0 | `MIT` | linux, macos, windows | Cross-platform asynchronous I/O |
 | [libwebp](packages/libwebp) | 1.6.0 | `BSD-3-Clause` | linux, macos, windows | WebP image codec: encoder, decoder, sharp YUV conversion, demux and mux libraries |
 | [luajit](packages/luajit) | 2.1.1792588164 | `MIT` | linux, macos, windows | Just-in-time compiler and interpreter for the Lua language |
@@ -37,11 +37,11 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [protobuf](packages/protobuf) | 36.2.0 | `BSD-3-Clause AND MIT` | linux, macos | Protocol Buffers C++ runtime (lite and full libraries); no protoc |
 | [pugixml](packages/pugixml) | 1.16.0 | `MIT` | linux, macos, windows | Light-weight, fast C++ XML parser with a DOM-like interface and XPath 1.0 |
 | [redis](packages/redis) | 7.2.16 | `BSD-3-Clause` | linux, macos | In-memory data structure store |
-| [snappy](packages/snappy) | 1.2.1 | `BSD-3-Clause` | linux, macos | A fast compressor/decompressor |
+| [snappy](packages/snappy) | 1.2.1 | `BSD-3-Clause` | linux, macos, windows | A fast compressor/decompressor |
 | [spdlog](packages/spdlog) | 1.17.0 | `MIT` | linux, macos | Fast C++ logging library, built in compiled mode against the registry's fmt |
 | [tinyxml2](packages/tinyxml2) | 11.0.0 | `Zlib` | linux, macos, windows | Simple, small, efficient C++ XML parser (DOM-style) |
 | [xxhash](packages/xxhash) | 0.8.4 | `BSD-2-Clause` | linux, macos, windows | Extremely fast non-cryptographic hash algorithm: XXH32, XXH64, XXH3 and XXH128 |
-| [yaml-cpp](packages/yaml-cpp) | 0.9.0 | `MIT` | linux, macos | YAML 1.2 parser and emitter in C++ |
+| [yaml-cpp](packages/yaml-cpp) | 0.9.0 | `MIT` | linux, macos, windows | YAML 1.2 parser and emitter in C++ |
 | [zlib](packages/zlib) | 1.3.1 | `Zlib` | linux, macos, windows | General-purpose lossless compression library (deflate/inflate, gzip, crc32, adler32) |
 | [zstd](packages/zstd) | 1.5.7 | `BSD-3-Clause OR GPL-2.0-only` | linux, macos, windows | Zstandard, fast real-time compression |
 <!-- packages:end -->

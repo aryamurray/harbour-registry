@@ -41,6 +41,15 @@
 #                                    on x86_64.
 #   * `cxx_compiler_flag` (6)     -> warning suppressions; not needed.
 #
+# Windows (MSVC): the same four sources. Every probe answers no there (no sys/mman.h, sys/resource.h,
+# sys/time.h, sys/uio.h, unistd.h, mmap, sysconf), which is what upstream's configure answers for cl, and
+# none of the gcc/clang compile-snippet facts apply (the `when` blocks below are gcc and clang only; the
+# sources use _BitScanForward and __forceinline under _MSC_VER). Upstream's MSVC branch also sets
+# /W4, /EHs-c-, /GR- and _HAS_EXCEPTIONS=0: warning level and an exception/RTTI policy that the Linux
+# build here does not carry over either (-fno-exceptions/-fno-rtti are not set), so not set for cl.
+# The /arch:AVX flags are only added for the opt-in SNAPPY_REQUIRE_AVX options. The only Windows-specific
+# input is <sys/uio.h>: see the overlay header.
+#
 # `snappy-stubs-public.h` is the instantiation of `snappy-stubs-public.h.in`
 # for a target with <sys/uio.h>; `overlay/` carries it because Harbour has no
 # template-expansion step (the generator-less way to do this would be a
@@ -53,7 +62,7 @@ description = "A fast compressor/decompressor"
 license = "BSD-3-Clause"
 homepage = "https://github.com/google/snappy"
 requires = "hosted"
-supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
 
 [targets.snappy]
 kind = "staticlib"

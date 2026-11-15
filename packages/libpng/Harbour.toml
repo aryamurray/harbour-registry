@@ -27,3 +27,12 @@ defines = ["PNG_ARM_NEON_OPT=0", "PNG_INTEL_SSE_OPT=0", "PNG_MIPS_MSA_OPT=0", "P
 # exactly as it does for cjson's `m`.
 [targets.png.surface.link.public]
 libs = ["m"]
+
+# Windows (MSVC): the same fifteen sources, scripts/pnglibconf.h.prebuilt (the overlay header) and no
+# libm (see above). Upstream's CMakeLists.txt adds, for `WIN32 AND compiler MSVC|Intel|Clang`:
+#   add_definitions(-D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_SECURE_NO_DEPRECATE)
+# silencing the CRT's deprecation warnings for the POSIX-named functions libpng calls (fopen, strdup...).
+[[targets.png.when]]
+os = "windows"
+compiler = "msvc"
+defines = ["_CRT_NONSTDC_NO_DEPRECATE", "_CRT_SECURE_NO_DEPRECATE"]

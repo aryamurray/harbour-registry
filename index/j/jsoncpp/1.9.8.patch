@@ -1,14 +1,14 @@
 diff --git a/Harbour.toml b/Harbour.toml
 new file mode 100644
-index 0000000..5213eab
+index 0000000..b48d9ee
 --- /dev/null
 +++ b/Harbour.toml
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,28 @@
 +[package]
 +name = "jsoncpp"
 +version = "1.9.8"
 +license = "MIT"
-+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
 +
 +# Read from upstream 1.9.8's src/lib_json/CMakeLists.txt:
 +#   JSONCPP_SOURCES = json_tool.h json_reader.cpp json_valueiterator.inl json_value.cpp json_writer.cpp
@@ -18,6 +18,8 @@ index 0000000..5213eab
 +# Defines: none. JSONCPP_NO_LOCALE_SUPPORT is added by upstream's CMake only when a configure-time
 +# check finds no <clocale>/lconv::decimal_point, which every glibc/musl/macOS system has; JSON_DLL_BUILD
 +# is for a shared library; JSON_USE_EXCEPTION already defaults to 1 in include/json/config.h.
++# Windows (MSVC): upstream's CMake adds only /W4 and /WX (Debug) and, for a shared build, the DLL
++# defines; nothing a static library needs, so no `when` block (config.h handles _MSC_VER itself).
 +# Not carried over: -Werror=strict-aliasing (GCC only, a warning policy).
 +# License: LICENSE says the user may take it as Public Domain or under the MIT license (text follows).
 +# Public Domain has no SPDX identifier, so the MIT choice is recorded.

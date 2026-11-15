@@ -93,8 +93,13 @@ int main() {
   // The C translation unit, called through extern "C".
   CHECK(legacy_triple(14) == 42);
 
-  // C++20 is in effect for this program (the graph's standard).
+  // C++20 is in effect for this program (the graph's standard). cl reports 199711L in __cplusplus
+  // unless /Zc:__cplusplus is given; _MSVC_LANG is its always-correct spelling.
+#ifdef _MSVC_LANG
+  CHECK(_MSVC_LANG >= 202002L);
+#else
   CHECK(__cplusplus >= 202002L);
+#endif
 
   std::vector<int> v{1, 2, 3};
   CHECK(fmt::format("{}", v) == "[1, 2, 3]");

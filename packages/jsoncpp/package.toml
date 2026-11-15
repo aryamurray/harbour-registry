@@ -11,8 +11,9 @@ tag = "{version}"
 [[release]]
 version = "1.9.8"
 rev = "8519b8381f3c741ad1421f88237b1deda0b11412"
+republish = "gains Windows (MSVC) support; Linux and macOS build unchanged"
 
 [test]
-platforms = ["linux", "macos"]
+platforms = ["linux", "macos", "windows"]
 objects = 3
 verify = true

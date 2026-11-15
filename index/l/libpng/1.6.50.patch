@@ -1,9 +1,9 @@
 diff --git a/Harbour.toml b/Harbour.toml
 new file mode 100644
-index 0000000..c073c52
+index 0000000..0b0d11f
 --- /dev/null
 +++ b/Harbour.toml
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,38 @@
 +[package]
 +name = "libpng"
 +version = "1.6.50"
@@ -33,6 +33,15 @@ index 0000000..c073c52
 +# exactly as it does for cjson's `m`.
 +[targets.png.surface.link.public]
 +libs = ["m"]
++
++# Windows (MSVC): the same fifteen sources, scripts/pnglibconf.h.prebuilt (the overlay header) and no
++# libm (see above). Upstream's CMakeLists.txt adds, for `WIN32 AND compiler MSVC|Intel|Clang`:
++#   add_definitions(-D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_SECURE_NO_DEPRECATE)
++# silencing the CRT's deprecation warnings for the POSIX-named functions libpng calls (fopen, strdup...).
++[[targets.png.when]]
++os = "windows"
++compiler = "msvc"
++defines = ["_CRT_NONSTDC_NO_DEPRECATE", "_CRT_SECURE_NO_DEPRECATE"]
 diff --git a/pnglibconf.h b/pnglibconf.h
 new file mode 100644
 index 0000000..f15fc16
