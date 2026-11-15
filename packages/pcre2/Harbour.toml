@@ -1,0 +1,81 @@
+# PCRE2 10.49, the 8-bit library (upstream's `pcre2-8` static library).
+#
+# Source list: PCRE2_SOURCES in upstream's CMakeLists.txt, all 30 .c files, with
+# pcre2_chartables.c taken from overlay/harbour/ (CMake copies src/pcre2_chartables.c.dist to
+# <build>/src/pcre2_chartables.c; the overlay file #includes the .dist file). pcre2_jit_compile.c
+# is compiled (CMake does) and, with SUPPORT_JIT undefined, is the stub that makes
+# pcre2_jit_compile() return PCRE2_ERROR_JIT_BADOPTION. pcre2_dftables.c, the test programs, pcre2grep and
+# pcre2posix.c (the separate `pcre2-posix` library) are not built.
+#
+# Configuration is upstream's CMake defaults for a one-width build: Unicode and UTF support ON,
+# JIT OFF (it needs the sljit sources, per-architecture, and a probe for executable memory),
+# LF newlines, link size 2, match limit 10000000, heap limit 20000000, parentheses nest limit 250.
+# config.h, pcre2.h (pcre2.h.generic is what CMake's pcre2.h.in yields at these defaults) and the
+# character tables are in overlay/harbour/. PCRE2_STATIC is public, as CMake makes it for a static
+# library, so that pcre2.h does not mark the API dllimport on Windows.
+[package]
+name = "pcre2"
+version = "10.49.0"
+description = "Perl-compatible regular expressions, the 8-bit library (UTF-8 and Unicode properties, no JIT)"
+license = "BSD-3-Clause"
+homepage = "https://github.com/PCRE2Project/pcre2"
+requires = "hosted"
+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
+
+[targets.pcre2-8]
+kind = "staticlib"
+lang = "c"
+sources = [
+  "src/pcre2_auto_possess.c",
+  "harbour/pcre2_chartables.c",
+  "src/pcre2_chkdint.c",
+  "src/pcre2_compile.c",
+  "src/pcre2_compile_cgroup.c",
+  "src/pcre2_compile_class.c",
+  "src/pcre2_config.c",
+  "src/pcre2_context.c",
+  "src/pcre2_convert.c",
+  "src/pcre2_dfa_match.c",
+  "src/pcre2_error.c",
+  "src/pcre2_extuni.c",
+  "src/pcre2_find_bracket.c",
+  "src/pcre2_jit_compile.c",
+  "src/pcre2_maketables.c",
+  "src/pcre2_match.c",
+  "src/pcre2_match_data.c",
+  "src/pcre2_match_next.c",
+  "src/pcre2_newline.c",
+  "src/pcre2_ord2utf.c",
+  "src/pcre2_pattern_info.c",
+  "src/pcre2_script_run.c",
+  "src/pcre2_serialize.c",
+  "src/pcre2_string_utils.c",
+  "src/pcre2_study.c",
+  "src/pcre2_substitute.c",
+  "src/pcre2_substring.c",
+  "src/pcre2_tables.c",
+  "src/pcre2_ucd.c",
+  "src/pcre2_valid_utf.c",
+  "src/pcre2_xclass.c",
+]
+public_headers = ["harbour/pcre2.h"]
+
+# The library is compiled with PCRE2_CODE_UNIT_WIDTH=8 (a target property in CMake) and
+# HAVE_CONFIG_H (add_compile_definitions). `src` is private: pcre2_internal.h and friends.
+# (PCRE2_CODE_UNIT_WIDTH is also public, below.)
+[targets.pcre2-8.private]
+include_dirs = ["harbour", "src"]
+defines = ["HAVE_CONFIG_H"]
+
+# pcre2.h is an #error until PCRE2_CODE_UNIT_WIDTH is defined, which upstream leaves to every
+# consumer. This package ships only the 8-bit library, so the width is public here: `#include
+# <pcre2.h>` works as it stands, and a consumer's own `#define PCRE2_CODE_UNIT_WIDTH 8` is the
+# same definition (no redefinition warning).
+[targets.pcre2-8.public]
+include_dirs = ["harbour"]
+defines = ["PCRE2_STATIC", "PCRE2_CODE_UNIT_WIDTH=8"]
+
+# CMakeLists.txt: `if(MSVC) add_compile_definitions(_CRT_SECURE_NO_DEPRECATE _CRT_SECURE_NO_WARNINGS)`.
+[[targets.pcre2-8.when]]
+compiler = "msvc"
+defines = ["_CRT_SECURE_NO_DEPRECATE", "_CRT_SECURE_NO_WARNINGS"]

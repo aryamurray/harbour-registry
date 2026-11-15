@@ -1,0 +1,15 @@
+# Consumer test for libwebp, through the registry (see ../../zlib/test/Harbour.toml).
+# Selects all four libraries with `targets = [...]`.
+[package]
+name = "libwebp-test"
+version = "0.1.0"
+
+[dependencies]
+libwebp = "*"
+
+[targets.libwebp-test]
+kind = "exe"
+sources = ["src/main.c"]
+
+[targets.libwebp-test.deps]
+libwebp = { targets = ["webp", "webpdemux", "webpmux", "sharpyuv"] }
