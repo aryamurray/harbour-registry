@@ -12,4 +12,4 @@ upstream_url = "https://github.com/open-source-parsers/jsoncpp.git"
 
 [[patches]]
 file = "1.9.8.patch"
-sha256 = "59dd40757b5bb7d560293a2126ab6a03da9e515f9505bdf8fcb7a6fcc2c05a32"
+sha256 = "cb263e606cda1c3df7c03b3a72959bb011584e337c8aca9aa656af231aec603a"

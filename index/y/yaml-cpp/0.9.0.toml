@@ -12,4 +12,4 @@ upstream_url = "https://github.com/jbeder/yaml-cpp.git"
 
 [[patches]]
 file = "0.9.0.patch"
-sha256 = "5d62f38f5bf97b7faeefdb3e65b4844b0930aca1f311368b7d5a29daaad85d0e"
+sha256 = "85b19a63900111c6d54a502ba53757513a8390f39c7f4bc710a405ce2f6c1d26"

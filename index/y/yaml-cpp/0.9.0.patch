@@ -1,14 +1,14 @@
 diff --git a/Harbour.toml b/Harbour.toml
 new file mode 100644
-index 0000000..56a0d05
+index 0000000..d24bf86
 --- /dev/null
 +++ b/Harbour.toml
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,32 @@
 +[package]
 +name = "yaml-cpp"
 +version = "0.9.0"
 +license = "MIT"
-+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
 +
 +# Read from upstream 0.9.0's CMakeLists.txt, which this mirrors:
 +#   file(GLOB src/*.cpp) + file(GLOB src/contrib/*.cpp)      -> the two source patterns below: 30 + 2 = 32
@@ -18,8 +18,10 @@ index 0000000..56a0d05
 +#   PUBLIC YAML_CPP_STATIC_DEFINE (when not a shared build)   -> empties include/yaml-cpp/dll.h's
 +#       YAML_CPP_API, i.e. no dllexport/dllimport: it must be public so consumers see the same;
 +#   CXX_STANDARD 11, CXX_STANDARD_REQUIRED ON                 -> cpp_std = "11" (a minimum).
++# Windows (MSVC): the same 32 sources; upstream's CMake adds only /W3 /wd4127 /wd4355 (warning policy)
++# and the runtime-library choice (/MT or /MD, which Harbour makes), and YAML_CPP_DLL for a shared build.
 +# Not carried over: the -Wall/-pedantic options (only set when yaml-cpp is the main project), the MSVC
-+# warning suppressions, and the YAML_CPP_DLL define of a Windows shared build. Windows is not claimed.
++# warning suppressions, and the YAML_CPP_DLL define of a Windows shared build.
 +# yaml-cpp throws (YAML::Exception) and does not build with -fno-exceptions.
 +[targets.yaml-cpp]
 +kind = "staticlib"
