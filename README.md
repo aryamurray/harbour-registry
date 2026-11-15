@@ -20,7 +20,7 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [fmt](packages/fmt) | 11.2.0 | `MIT` | linux, macos, windows | A modern formatting library |
 | [freetype](packages/freetype) | 2.14.3 | `FTL OR GPL-2.0-or-later` | linux, macos, windows | Font rasterisation library (TrueType, OpenType, Type 1, bitmap fonts) |
 | [googletest](packages/googletest) | 1.18.0 | `BSD-3-Clause` | linux, macos, windows | Google's C++ testing (gtest) and mocking (gmock) framework |
-| [harfbuzz](packages/harfbuzz) | 15.0.0 | `MIT` | linux, macos | OpenType text shaping engine |
+| [harfbuzz](packages/harfbuzz) | 15.0.0 | `MIT` | linux, macos, windows | OpenType text shaping engine |
 | [jsoncpp](packages/jsoncpp) | 1.9.8 | `MIT` | linux, macos, windows | C++ library for reading, writing and manipulating JSON |
 | [libdeflate](packages/libdeflate) | 1.26.0 | `MIT` | linux, macos, windows | Fast whole-buffer DEFLATE, zlib and gzip compression and decompression |
 | [libjpeg-turbo](packages/libjpeg-turbo) | 3.2.1 | `IJG AND BSD-3-Clause AND Zlib` | linux, macos, windows | JPEG image codec: the libjpeg and TurboJPEG APIs, built without SIMD |
@@ -31,7 +31,7 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [lz4](packages/lz4) | 1.11.1 | `BSD-2-Clause` | linux, macos, windows | Extremely fast lossless compression: LZ4 blocks, high-compression mode and the frame format |
 | [mbedtls](packages/mbedtls) | 3.6.7 | `Apache-2.0 OR GPL-2.0-or-later` | linux, macos, windows | Mbed TLS (3.6 LTS): the crypto, X.509 and TLS libraries as three targets |
 | [nghttp2](packages/nghttp2) | 1.71.0 | `MIT` | linux, macos, windows | HTTP/2 C library: frames, sessions, streams and HPACK (libnghttp2 only) |
-| [nlohmann-json](packages/nlohmann-json) | 3.12.0 | `MIT` | linux, macos | JSON for Modern C++: a header-only JSON library with an STL-like interface |
+| [nlohmann-json](packages/nlohmann-json) | 3.12.0 | `MIT` | linux, macos, windows | JSON for Modern C++: a header-only JSON library with an STL-like interface |
 | [openssl](packages/openssl) | 3.5.4 | `Apache-2.0` | linux, macos, windows | OpenSSL SHA-2 and AES primitives (a slice of libcrypto, generated sources) |
 | [pcre2](packages/pcre2) | 10.49.0 | `BSD-3-Clause` | linux, macos, windows | Perl-compatible regular expressions, the 8-bit library (UTF-8 and Unicode properties, no JIT) |
 | [protobuf](packages/protobuf) | 36.2.0 | `BSD-3-Clause AND MIT` | linux, macos | Protocol Buffers C++ runtime (lite and full libraries); no protoc |
