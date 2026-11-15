@@ -12,4 +12,4 @@ license = "BSD-3-Clause OR GPL-2.0-only"
 
 [[patches]]
 file = "1.5.7.patch"
-sha256 = "3edc078e69555e3d9ee8d722732072ccf825b3881ce4ee79e9404efcee8da84c"
+sha256 = "cf7c03e152a833fa1fac3f84599343c919bd98d9efa096eeb5e79c8eab3f3ed2"
