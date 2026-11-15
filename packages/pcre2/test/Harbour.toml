@@ -1,0 +1,12 @@
+# Consumer test for pcre2, through the registry (see ../../zlib/test/Harbour.toml).
+# PCRE2_CODE_UNIT_WIDTH comes from the package's public surface.
+[package]
+name = "pcre2-test"
+version = "0.1.0"
+
+[dependencies]
+pcre2 = "*"
+
+[targets.pcre2-test]
+kind = "exe"
+sources = ["src/main.c"]

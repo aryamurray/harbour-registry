@@ -1,0 +1,21 @@
+[package]
+name = "pcre2"
+description = "Perl-compatible regular expressions, the 8-bit library (UTF-8 and Unicode properties, no JIT)"
+license = "BSD-3-Clause"
+homepage = "https://github.com/PCRE2Project/pcre2"
+
+[upstream]
+git = "https://github.com/PCRE2Project/pcre2"
+tag = "pcre2-{version}"
+url = "https://github.com/PCRE2Project/pcre2/releases/download/{tag}/pcre2-{version}.tar.gz"
+strip_prefix = "pcre2-{version}"
+
+[[release]]
+version = "10.49.0"
+upstream_version = "10.49"
+sha256 = "929f0b20e62879252a15886b06c89f1edef61a363cbd5826fb041080a5e557ae"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 31
+verify = true

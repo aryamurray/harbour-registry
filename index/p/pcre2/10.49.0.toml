@@ -1,0 +1,15 @@
+[package]
+name = "pcre2"
+version = "10.49.0"
+
+[source.tarball]
+url = "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.49/pcre2-10.49.tar.gz"
+sha256 = "929f0b20e62879252a15886b06c89f1edef61a363cbd5826fb041080a5e557ae"
+strip_prefix = "pcre2-10.49"
+
+[metadata]
+license = "BSD-3-Clause"
+
+[[patches]]
+file = "10.49.0.patch"
+sha256 = "de38df70c4e1ad3120fa96d77fc3a9b81219bde47eabbb4f985f730c44ce0c61"

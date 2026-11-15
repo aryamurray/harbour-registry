@@ -1,0 +1,15 @@
+[package]
+name = "nghttp2"
+version = "1.71.0"
+
+[source.tarball]
+url = "https://github.com/nghttp2/nghttp2/releases/download/v1.71.0/nghttp2-1.71.0.tar.gz"
+sha256 = "0cdd35ecec77919b4b7b245f87fe8d2216e3d62da854eb0838c594ff058042fc"
+strip_prefix = "nghttp2-1.71.0"
+
+[metadata]
+license = "MIT"
+
+[[patches]]
+file = "1.71.0.patch"
+sha256 = "cfbf15c35eb81c9c620857f901f2220a11e18f1cb8bf5cbbbbfdc843b5174505"

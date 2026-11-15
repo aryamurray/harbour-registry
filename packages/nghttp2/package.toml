@@ -1,0 +1,20 @@
+[package]
+name = "nghttp2"
+description = "HTTP/2 C library: frames, sessions, streams and HPACK (libnghttp2 only)"
+license = "MIT"
+homepage = "https://nghttp2.org"
+
+[upstream]
+git = "https://github.com/nghttp2/nghttp2"
+tag = "v{version}"
+url = "https://github.com/nghttp2/nghttp2/releases/download/{tag}/nghttp2-{version}.tar.gz"
+strip_prefix = "nghttp2-{version}"
+
+[[release]]
+version = "1.71.0"
+sha256 = "0cdd35ecec77919b4b7b245f87fe8d2216e3d62da854eb0838c594ff058042fc"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 26
+verify = true

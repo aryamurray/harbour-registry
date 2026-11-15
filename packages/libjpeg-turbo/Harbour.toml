@@ -1,0 +1,166 @@
+# libjpeg-turbo 3.2.1, C-only (upstream's WITH_SIMD=0): two libraries, `jpeg` (the libjpeg API,
+# libjpeg-turbo's `jpeg-static`) and `turbojpeg` (the TurboJPEG API, `turbojpeg-static`).
+#
+# What is built and what is not
+# - libjpeg API, v6.2 ABI emulation (WITH_JPEG7=0, WITH_JPEG8=0), with arithmetic coding in both
+#   directions (WITH_ARITH_ENC=1, WITH_ARITH_DEC=1), in-memory source/destination managers, and
+#   the 8-, 12- and 16-bit-per-sample (lossy 8/12, lossless 2..16) entry points: JPEG_SOURCES in
+#   CMakeLists.txt, all 101 files.
+# - TurboJPEG API (WITH_TURBOJPEG=1): turbojpeg.c, transupp.c, jdatadst-tj.c, jdatasrc-tj.c and
+#   the BMP/PPM/PNG readers and writers its `tj3LoadImage*`/`tj3SaveImage*` use, with libspng
+#   and its bundled zlib (WITH_SYSTEM_ZLIB=0, WITH_SYSTEM_SPNG=0) as the private `spng` target.
+# - NOT built: the SIMD extensions (NASM assembly, and the C intrinsics for Arm/MIPS/PowerPC are
+#   in simd/ and need CMake's per-architecture probing); the command-line tools (cjpeg, djpeg,
+#   jpegtran, tjbench), the shared libraries, tests, the JNA/Java bindings. Without SIMD the
+#   forward/inverse DCT, colour conversion, upsampling and Huffman encoding run the portable C
+#   paths: correct and bit-identical in output to the SIMD ones, but several times slower.
+#
+# 12- and 16-bit precision: upstream compiles one source several times at different
+# BITS_IN_JSAMPLE, but not with per-file flags. It ships those compilations as real files,
+# src/wrapper/<name>-8.c, -12.c and -16.c, each a `#define BITS_IN_JSAMPLE N` followed by an
+# `#include` of the template (cmakescripts/GenerateWrappers.cmake regenerates them; they are
+# committed). They are listed individually below, so every precision is present.
+#
+# Generated headers (CMake `configure_file`): jconfig.h, jconfigint.h and jversion.h are in
+# overlay/harbour/, written for the C-only configuration. The facts CMake measures with
+# check_c_source_compiles / try_run (inline keyword, hidden visibility, thread-local storage,
+# __builtin_ctzl, intrin.h, signed right shift) are `#if` on the compiler there, answered as
+# upstream's probes answer them on GCC, Clang and MSVC.
+[package]
+name = "libjpeg-turbo"
+version = "3.2.1"
+description = "JPEG image codec: the libjpeg and TurboJPEG APIs, built without SIMD"
+license = "IJG AND BSD-3-Clause AND Zlib"
+homepage = "https://libjpeg-turbo.org"
+requires = "hosted"
+default_target = "jpeg"
+supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
+
+# ---- the libjpeg API ------------------------------------------------------------------------
+[targets.jpeg]
+kind = "staticlib"
+lang = "c"
+sources = [
+  "src/jcapimin.c", "src/wrapper/jcapistd-8.c", "src/wrapper/jcapistd-12.c",
+  "src/wrapper/jcapistd-16.c", "src/wrapper/jccoefct-8.c", "src/wrapper/jccoefct-12.c",
+  "src/wrapper/jccolor-8.c", "src/wrapper/jccolor-12.c", "src/wrapper/jccolor-16.c",
+  "src/wrapper/jcdctmgr-8.c", "src/wrapper/jcdctmgr-12.c", "src/wrapper/jcdiffct-8.c",
+  "src/wrapper/jcdiffct-12.c", "src/wrapper/jcdiffct-16.c", "src/jchuff.c", "src/jcicc.c",
+  "src/jcinit.c", "src/jclhuff.c", "src/wrapper/jclossls-8.c", "src/wrapper/jclossls-12.c",
+  "src/wrapper/jclossls-16.c", "src/wrapper/jcmainct-8.c", "src/wrapper/jcmainct-12.c",
+  "src/wrapper/jcmainct-16.c", "src/jcmarker.c", "src/jcmaster.c", "src/jcomapi.c",
+  "src/jcparam.c", "src/jcphuff.c", "src/wrapper/jcprepct-8.c", "src/wrapper/jcprepct-12.c",
+  "src/wrapper/jcprepct-16.c", "src/wrapper/jcsample-8.c", "src/wrapper/jcsample-12.c",
+  "src/wrapper/jcsample-16.c", "src/jctrans.c", "src/jdapimin.c", "src/wrapper/jdapistd-8.c",
+  "src/wrapper/jdapistd-12.c", "src/wrapper/jdapistd-16.c", "src/jdatadst.c", "src/jdatasrc.c",
+  "src/wrapper/jdcoefct-8.c", "src/wrapper/jdcoefct-12.c", "src/wrapper/jdcolor-8.c",
+  "src/wrapper/jdcolor-12.c", "src/wrapper/jdcolor-16.c", "src/wrapper/jddctmgr-8.c",
+  "src/wrapper/jddctmgr-12.c", "src/wrapper/jddiffct-8.c", "src/wrapper/jddiffct-12.c",
+  "src/wrapper/jddiffct-16.c", "src/jdhuff.c", "src/jdicc.c", "src/jdinput.c", "src/jdlhuff.c",
+  "src/wrapper/jdlossls-8.c", "src/wrapper/jdlossls-12.c", "src/wrapper/jdlossls-16.c",
+  "src/wrapper/jdmainct-8.c", "src/wrapper/jdmainct-12.c", "src/wrapper/jdmainct-16.c",
+  "src/jdmarker.c", "src/jdmaster.c", "src/wrapper/jdmerge-8.c", "src/wrapper/jdmerge-12.c",
+  "src/jdphuff.c", "src/wrapper/jdpostct-8.c", "src/wrapper/jdpostct-12.c",
+  "src/wrapper/jdpostct-16.c", "src/wrapper/jdsample-8.c", "src/wrapper/jdsample-12.c",
+  "src/wrapper/jdsample-16.c", "src/jdtrans.c", "src/jerror.c", "src/jfdctflt.c",
+  "src/wrapper/jfdctfst-8.c", "src/wrapper/jfdctfst-12.c", "src/wrapper/jfdctint-8.c",
+  "src/wrapper/jfdctint-12.c", "src/wrapper/jidctflt-8.c", "src/wrapper/jidctflt-12.c",
+  "src/wrapper/jidctfst-8.c", "src/wrapper/jidctfst-12.c", "src/wrapper/jidctint-8.c",
+  "src/wrapper/jidctint-12.c", "src/wrapper/jidctred-8.c", "src/wrapper/jidctred-12.c",
+  "src/jmemmgr.c", "src/jmemnobs.c", "src/jpeg_nbits.c", "src/wrapper/jquant1-8.c",
+  "src/wrapper/jquant1-12.c", "src/wrapper/jquant2-8.c", "src/wrapper/jquant2-12.c",
+  "src/wrapper/jutils-8.c", "src/wrapper/jutils-12.c", "src/wrapper/jutils-16.c", "src/jaricom.c",
+  "src/jcarith.c", "src/jdarith.c",
+]
+public_headers = ["src/jpeglib.h", "src/jerror.h", "src/jmorecfg.h", "harbour/jconfig.h"]
+
+# `#include <jpeglib.h>` needs src/ (jpeglib.h, jmorecfg.h, jerror.h) and harbour/ (jconfig.h).
+[targets.jpeg.public]
+include_dirs = ["src", "harbour"]
+
+# jconfigint.h and jversion.h are private; they are found through the public directories too.
+
+# ---- libspng with its bundled zlib, for TurboJPEG's PNG support --------------------------------
+# src/spng/CMakeLists.txt: -DSPNG_STATIC on spng; -DZ_PREFIX on spng and on the bundled zlib so
+# that its symbols are z_-prefixed and cannot clash with a zlib the application links; warnings
+# off (-w) and -fvisibility=hidden on GCC/Clang, the latter not on Windows. spng.c calls pow().
+[targets.spng]
+kind = "staticlib"
+lang = "c"
+sources = [
+  "src/spng/spng.c", "src/spng/zlib/adler32.c", "src/spng/zlib/compress.c",
+  "src/spng/zlib/crc32.c", "src/spng/zlib/deflate.c", "src/spng/zlib/inffast.c",
+  "src/spng/zlib/inflate.c", "src/spng/zlib/inftrees.c", "src/spng/zlib/trees.c",
+  "src/spng/zlib/zutil.c",
+]
+
+[targets.spng.private]
+include_dirs = ["src/spng", "src/spng/zlib"]
+defines = ["SPNG_STATIC", "Z_PREFIX"]
+
+[targets.spng.public]
+system_libs = ["m"]
+
+[[targets.spng.when]]
+compiler = "gcc"
+cflags = ["-w"]
+
+[[targets.spng.when]]
+compiler = "clang"
+cflags = ["-w"]
+
+[[targets.spng.when]]
+compiler = "gcc"
+os = "linux"
+cflags = ["-fvisibility=hidden"]
+
+[[targets.spng.when]]
+compiler = "clang"
+os = "linux"
+cflags = ["-fvisibility=hidden"]
+
+[[targets.spng.when]]
+compiler = "clang"
+os = "macos"
+cflags = ["-fvisibility=hidden"]
+
+# ---- the TurboJPEG API ----------------------------------------------------------------------
+# CMake compiles every turbojpeg source with
+#   -DBMP_SUPPORTED -DPNG_SUPPORTED -DSPNG_STATIC -DPPM_SUPPORTED
+# (the libjpeg sources it also compiles do not read them). The libjpeg sources are not compiled a
+# second time here: `turbojpeg` links the `jpeg` and `spng` archives as `local` siblings.
+[targets.turbojpeg]
+kind = "staticlib"
+lang = "c"
+sources = [
+  "src/turbojpeg.c", "src/transupp.c", "src/jdatadst-tj.c", "src/jdatasrc-tj.c", "src/rdbmp.c",
+  "src/wrapper/rdpng-8.c", "src/wrapper/rdpng-12.c", "src/wrapper/rdpng-16.c",
+  "src/wrapper/rdppm-8.c", "src/wrapper/rdppm-12.c", "src/wrapper/rdppm-16.c", "src/wrbmp.c",
+  "src/wrapper/wrpng-8.c", "src/wrapper/wrpng-12.c", "src/wrapper/wrpng-16.c",
+  "src/wrapper/wrppm-8.c", "src/wrapper/wrppm-12.c", "src/wrapper/wrppm-16.c",
+]
+public_headers = ["src/turbojpeg.h"]
+
+[targets.turbojpeg.public]
+include_dirs = ["src"]
+
+[targets.turbojpeg.private]
+include_dirs = ["src", "harbour", "src/spng"]
+defines = ["BMP_SUPPORTED", "PNG_SUPPORTED", "SPNG_STATIC", "PPM_SUPPORTED"]
+
+[targets.turbojpeg.deps]
+jpeg = { local = true }
+spng = { local = true }
+
+# CMakeLists.txt, `if(MSVC_LIKE) add_definitions(-D_CRT_NONSTDC_NO_WARNINGS)`, for everything.
+[[targets.jpeg.when]]
+compiler = "msvc"
+defines = ["_CRT_NONSTDC_NO_WARNINGS"]
+
+[[targets.spng.when]]
+compiler = "msvc"
+defines = ["_CRT_NONSTDC_NO_WARNINGS"]
+
+[[targets.turbojpeg.when]]
+compiler = "msvc"
+defines = ["_CRT_NONSTDC_NO_WARNINGS"]

@@ -1,0 +1,15 @@
+# Consumer test for libjpeg-turbo, through the registry (see ../../zlib/test/Harbour.toml).
+# Selects both libraries with `targets = [...]`: the libjpeg API and the TurboJPEG API.
+[package]
+name = "libjpeg-turbo-test"
+version = "0.1.0"
+
+[dependencies]
+libjpeg-turbo = "*"
+
+[targets.libjpeg-turbo-test]
+kind = "exe"
+sources = ["src/main.c"]
+
+[targets.libjpeg-turbo-test.deps]
+libjpeg-turbo = { targets = ["jpeg", "turbojpeg"] }
