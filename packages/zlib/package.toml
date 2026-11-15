@@ -13,6 +13,7 @@ strip_prefix = "zlib-{version}"
 [[release]]
 version = "1.3.1"
 sha256 = "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
+republish = "1.3.1 build unchanged (same 15 translation units, flags and defines); the source list is now expressed as the pattern `*.c` instead of 15 file names"
 
 [test]
 platforms = ["linux", "macos", "windows"]
