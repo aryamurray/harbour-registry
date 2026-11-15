@@ -28,9 +28,8 @@
 // NOTE (Harbour canary overlay): this is snappy-stubs-public.h.in as cmake
 // instantiates it for snappy 1.2.1 on a target that has <sys/uio.h> (macOS and
 // Linux). The three `${...}` substitutions are replaced and nothing else is
-// changed. A target without <sys/uio.h> (Windows) needs the other value; the
-// shim's `supports` list leaves it out, so this file is not asked to be right
-// for it.
+// changed. Windows has no <sys/uio.h>, where upstream's configure answers
+// HAVE_SYS_UIO_H as 0, so both conditionals are keyed on _WIN32 here.
 //
 //
 // Various type stubs for the open-source version of Snappy.
@@ -44,7 +43,7 @@
 
 #include <cstddef>
 
-#if 1  // HAVE_SYS_UIO_H
+#if !defined(_WIN32)  // HAVE_SYS_UIO_H (no <sys/uio.h> on Windows)
 #include <sys/uio.h>
 #endif  // HAVE_SYS_UIO_H
 
@@ -56,7 +55,7 @@
 
 namespace snappy {
 
-#if !1  // !HAVE_SYS_UIO_H
+#if defined(_WIN32)  // !HAVE_SYS_UIO_H
 // Windows does not have an iovec type, yet the concept is universally useful.
 // It is simple to define it ourselves, so we put it inside our own namespace.
 struct iovec {

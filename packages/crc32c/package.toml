@@ -13,9 +13,10 @@ tag = "{version}"
 [[release]]
 version = "1.1.0"
 rev = "83c31e797274a5b26e9e4a5355ba394cd0cabc10"
+republish = "gains Windows (MSVC) support; Linux and macOS build unchanged"
 
 [test]
-platforms = ["linux", "macos"]
+platforms = ["linux", "macos", "windows"]
 # Four translation units on every architecture: the dispatcher, the portable code and the two ISA
 # groups, one of which is empty (each ISA source is `#if`-guarded to an empty unit on the other arch).
 objects = 4

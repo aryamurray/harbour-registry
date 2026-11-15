@@ -12,4 +12,4 @@ upstream_url = "https://github.com/google/crc32c"
 
 [[patches]]
 file = "1.1.0.patch"
-sha256 = "648ce14d0ff2ba3d2cf428e13b49314aeef740efdc34d61257d67fd6a1d8099f"
+sha256 = "a4fbde766aefcede315eb49c707467337b689a03b45f79101a28c8f9dc2d4703"
