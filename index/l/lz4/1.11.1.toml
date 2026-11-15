@@ -12,4 +12,4 @@ license = "BSD-2-Clause"
 
 [[patches]]
 file = "1.11.1.patch"
-sha256 = "6f24b5e9751562b730667a961b86d93c435f0cf3e105a35ccc4cb5fe0a9c6865"
+sha256 = "9c8169aafc945b67c5bd811a6d24d76c83377f8963507fc6045834f270fb6b46"

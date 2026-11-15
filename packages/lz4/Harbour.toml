@@ -24,11 +24,20 @@ sources = [
   "lib/lz4hc.c",
   "lib/xxhash.c",
 ]
-public_headers = ["lib/lz4.h", "lib/lz4hc.h", "lib/lz4frame.h", "lib/lz4file.h"]
+public_headers = [
+  "include/lz4.h",
+  "include/lz4file.h",
+  "include/lz4frame.h",
+  "include/lz4frame_static.h",
+  "include/lz4hc.h",
+]
 
-# Consumers write `#include <lz4.h>`; the headers sit in lib/.
+# Consumers write `#include <lz4.h>`. They get include/ (overlay/include: one forwarding header per
+# header lib/Makefile installs), not lib/ itself: lib/ also holds the private xxhash.h, an older copy
+# without XXH3, and with lib/ public it shadowed the registry's `xxhash` package for any consumer
+# that lists lz4 first. The library's own sources include each other with quotes, from lib/.
 [targets.lz4.public]
-include_dirs = ["lib"]
+include_dirs = ["include"]
 
 # lib/Makefile: `MCM_CPPFLAGS += -DXXH_NAMESPACE=LZ4_`. lib/xxhash.c is a private copy of xxHash; the
 # namespace prefixes its symbols (LZ4_XXH32, ...) so that it cannot collide with the registry's

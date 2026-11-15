@@ -11,6 +11,14 @@
 #include <lz4frame.h>
 #include <lz4file.h>
 
+/* lib/xxhash.h is lz4's private copy (namespaced LZ4_XXH*, no XXH3). Exposed, it
+ * shadowed the registry's xxhash package for a consumer listing lz4 first. */
+#if defined(__has_include)
+#  if __has_include(<xxhash.h>)
+#    error "lz4 exposes its private xxhash.h to consumers"
+#  endif
+#endif
+
 /* tools/test.py exports the upstream version that package.toml declares. The
  * library under test must report exactly that. */
 static int version_is_declared(const char *what, const char *got) {
