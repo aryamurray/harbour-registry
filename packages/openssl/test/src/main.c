@@ -102,7 +102,7 @@ int aes_v8_set_encrypt_key(const unsigned char *user_key, int bits, AES_KEY *key
 void aes_v8_encrypt(const unsigned char *in, unsigned char *out, const AES_KEY *key);
 #define ARMV8_AES_BIT (1u << 2)
 #define ARMV8_SHA256_BIT (1u << 4)
-#elif defined(__x86_64__) || defined(_M_X64)
+#elif (defined(__x86_64__) || defined(_M_X64)) && !defined(_WIN32)  /* Windows x86_64 is the no-asm baseline */
 extern unsigned int OPENSSL_ia32cap_P[4];
 #endif
 
@@ -348,7 +348,7 @@ static void architecture_specific(void) {
         expect("aesv8-armx: aes_v8_set_encrypt_key address resolved",
                (void *)aes_v8_set_encrypt_key != NULL);
     }
-#elif defined(__x86_64__) || defined(_M_X64)
+#elif (defined(__x86_64__) || defined(_M_X64)) && !defined(_WIN32)  /* Windows x86_64 is the no-asm baseline */
     snprintf(report, sizeof(report),
              "     x86_64: OPENSSL_ia32cap_P = 0x%08x%08x\n"
              "     AES_encrypt came from aes-x86_64.s, not aes_core.c (excluded)\n",
