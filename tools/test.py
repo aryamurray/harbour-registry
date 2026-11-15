@@ -120,7 +120,11 @@ class Runner:
         self.plat = args.platform or current_platform()
         self.arch = current_arch()
         self.harbour = self.find_harbour()
-        self.tmp = Path(tempfile.mkdtemp(prefix="registry-test-"))
+        # Windows paths are capped at 260 characters unless long paths are enabled, and the
+        # registry snapshot's path becomes part of a cache directory name. RUNNER_TEMP is short
+        # (`D:\\a\\_temp`); the per-user temp directory is not.
+        base = os.environ.get("RUNNER_TEMP") if current_platform() == "windows" else None
+        self.tmp = Path(tempfile.mkdtemp(prefix="rt-", dir=base or None))
         self.snapshot = self.make_snapshot(Path(args.registry) if args.registry else rt.ROOT)
         self.home = self.tmp / "home"
         self.env = self.make_env()
@@ -159,7 +163,14 @@ class Runner:
         (self.home / ".harbour" / "config.toml").write_text(
             f'[[registries]]\nname = "checkout"\nurl = "{url}"\npriority = 0\n', encoding="utf-8")
         env["HOME"] = str(self.home)
-        env["USERPROFILE"] = str(self.home)
+        # Not on Windows. With USERPROFILE redirected, the first Windows run had Harbour using a
+        # RELATIVE `.harbour` cache (its last-resort fallback when it cannot find the profile's
+        # folders) and handing `git apply` a relative patch path from another working directory:
+        # "can't open patch ... Filename too long". Redirecting it buys nothing there anyway --
+        # Harbour asks the OS, not the environment, for the home directory -- and the registry is
+        # selected by HARBOUR_TEST_REGISTRY_URL below instead.
+        if current_platform() != "windows":
+            env["USERPROFILE"] = str(self.home)
         env["XDG_CACHE_HOME"] = str(self.home / ".cache")
         env["XDG_CONFIG_HOME"] = str(self.home / ".config")
         env["HARBOUR"] = self.harbour
