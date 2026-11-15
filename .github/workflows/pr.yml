@@ -61,6 +61,13 @@ jobs:
           AUTHOR: ${{ github.event.pull_request.user.login }}
           USER_TYPE: ${{ github.event.pull_request.user.type }}
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          # The watcher's branches (`bot/bump-<package>-<version>`) are automated whatever the author
+          # or labels say: the `labels` above are the ones the PR had when this event fired, and a PR
+          # opened through the API and labelled a moment later (how tools/watch.py's PRs are made) is
+          # seen unlabelled by its first run. Passed by environment (a branch name is attacker-
+          # controlled text and must never be interpolated into the script), and read by guard.py as
+          # $GUARD_HEAD_REF, which a guard that predates it simply ignores.
+          GUARD_HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           # The merge commit's first parent is the current tip of the base branch, so
           # `HEAD^1..HEAD` is exactly what merging this PR would change.

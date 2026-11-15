@@ -81,7 +81,7 @@ packages/zlib/                          packages/cpython/
 | table | keys |
 | --- | --- |
 | `[package]` | `name` (= directory), `description`, `license` (SPDX, the upstream's), `homepage` |
-| `[upstream]` | `git` (where tags are listed; the clone url for `rev` releases), `tag` (template), `url` (tarball template), `strip_prefix` (template), `scheme` |
+| `[upstream]` | `git` (where tags are listed; the clone url for `rev` releases), `tag` (template), `url` (tarball template), `strip_prefix` (template), `scheme`; the watcher's policy `watch`, `max_bump`, `prereleases` (see [Keeping packages current](#keeping-packages-current)) |
 | `[[release]]` | `version` (semver), exactly one of `sha256` (tarball) or `rev` (git commit), optional `upstream_version`, `url`, `strip_prefix`, `republish` |
 | `[test]` | `platforms` (`linux`/`macos`/`windows`), `objects` (exact translation-unit count: an integer, or `{ default = N, linux = N, "linux-x86_64" = N }`), optional `needs`, `timeout` |
 | `[review]` | `generators = true`, required when the build runs code (see below) |
@@ -181,6 +181,9 @@ All are Python 3.11+, standard library only, and run on Linux, macOS and Windows
 | `tools/plan.py --base REF \| --all` | affected packages (changed + reverse dependencies from the `.idx` files; everything if `tools/`, `.github/`, `.harbour-version` etc. changed) and the CI matrix |
 | `tools/guard.py` | the automated-PR guard |
 | `tools/rot_issues.py` | the nightly workflow's issue bookkeeping |
+| `tools/watch.py list\|report\|bump` | the release watcher: find newer upstream versions, write the candidate bump |
+| `tools/bump_triage.py` | what happens when the gate finishes on a bump PR (labels, one failure summary, repair budget) |
+| `tools/repair.py` | the repair step's contract, and a stub: the model call is not built |
 | `python3 -m unittest discover -s tools -p "test_*.py"` | tests of the tools (the patch renderer against real `git diff`, the guard against real git history, lint and render against mutated copies of this checkout) |
 
 ### Rendering is byte-exact
@@ -219,6 +222,8 @@ The runner then applies the same last-line and object-count checks.
   `plan` (tool self-tests, lint, `render.py --check --base`, affected set and matrix), `harbour` (build and cache
   Harbour per runner image), `index` (the authoritative `harbour registry index` check), `test` (one leg per
   affected package and platform), and **`PR result`**, the one check to require in branch protection.
+* **`watch.yml`** (every 6 hours, manual, and `workflow_run` of `PR`): the release watcher and what follows a
+  failed bump PR; see [Keeping packages current](#keeping-packages-current).
 * **`nightly.yml`** (weekly and manual): every package on every platform; a failure opens or comments on ONE
   `rot` issue per package, and the issue closes when the package passes again.
 * Harbour comes from `.harbour-version` (a commit SHA), built with `cargo build --release --locked` and cached per
@@ -227,11 +232,14 @@ The runner then applies the same last-line and object-count checks.
 ### The bot-PR guard
 
 This is the safety property of the autonomous loop the registry is built for: **the judge cannot be modified by
-the judged.** A PR is automated if its author login ends in `[bot]`, its user type is Bot, or it carries the
-`bot` label. An automated PR may change only `packages/*/package.toml`, `packages/*/Harbour.toml`,
+the judged.** A PR is automated if its author login ends in `[bot]`, its user type is Bot, it carries the
+`bot` label, or its head branch starts with `bot/` (the watcher's `bot/bump-<package>-<version>`; the branch is
+needed because a `pull_request` event carries the labels the PR had when it fired, and a PR opened through the
+API and labelled a moment later is seen by its first run as unlabelled). An automated PR may change only `packages/*/package.toml`, `packages/*/Harbour.toml`,
 `packages/*/overlay/**`, `packages/*/patches/**` and `index/**` (plus the generated README table). It may not
 touch `packages/*/test/**`, `tools/**`, `.github/**`, `.harbour-version` or `CODEOWNERS`; may not change a
-`package.toml`'s `[test]`, `[review]`, `name` or `license`; may not add a package; and may only *add* version
+`package.toml`'s `[test]`, `[review]`, `name`, `license`, the watcher's policy keys (`[upstream] watch`,
+`max_bump`, `prereleases`) or a release's `republish`; may not add a package; and may only *add* version
 files under `index/` (a published version is immutable). `tools/guard.py` implements it and is tested against real
 git history.
 
@@ -241,12 +249,139 @@ the `PR result` check, and keep the bot account out of the bypass list. A `pull_
 PR's own copy of itself, so a PR that deletes the guard job is only stopped by that branch protection; the
 guard's script is therefore fetched from the base commit.
 
-## Not built yet
+## Keeping packages current
 
-* **The upstream release detector.** It will read each package's `[upstream] git`/`tag`, find a tag newer than
-  the newest `[[release]]`, and open a PR that changes only `package.toml` (a new `[[release]]` with the hash),
-  the `Harbour.toml` `version`, and the re-rendered `index/`. The guard already allows exactly that.
-* **The repair step.** When a bump no longer builds, an LLM may rewrite `Harbour.toml` / `overlay/` / `patches/`
-  in the same PR, using the failing `tools/test.py` log. It may not touch `test/`, `[test]`, `tools/` or
-  `.github/`: CI is the merge gate and the guard makes that structural, not a convention.
+The loop: **detect** an upstream release, **bump** the entry, let **the PR gate** (everything above) judge it,
+**merge**. When the carried-forward manifest no longer builds, a **repair** step is meant to propose a rewritten
+one, judged by the same unchanged gate. Detection, the candidate and the plumbing around a failed bump are
+built; the model call is not.
+
+```
+watch.yml  detect --> bump (one PR per package, newest version) --> pr.yml gate --> merge
+                                                                        |  red
+                                                  triage: label, ONE summary comment, attempt counter
+                                                                        |
+                                              repair (STUB) --commit to the same branch--> pr.yml again
+                                                                        |  budget spent
+                                                              `needs-human` label + issue, stop
+```
+
+### How detection works
+
+`tools/watch.py list` prints, per package, the newest `[[release]]` and the newest upstream stable version;
+`report` is the same as JSON (the workflow's matrix). Nothing needs a token or the GitHub API:
+
+* `[upstream] git` is asked for its tags with `git ls-remote --tags` (https only, no prompts, a timeout).
+* `[upstream] tag` is the template the registry already uses to build a release's tag. It is **inverted**:
+  `v{version}`, `{version}`, `curl-{major}_{minor}_{patch}`, `VER-{major}-{minor}-{patch}`... become a regular
+  expression, and every tag that matches is normalised to semver with the same `normalize_version` the lint uses
+  (so `2024-12-28`, `2.10` and a package's `scheme = "four-part"` work). A tag is only accepted if expanding the
+  template with the version derived from it gives back **exactly that tag**: a version the registry could not
+  reproduce is reported, never invented (`zlib`'s `v1.3.1.2` is the example).
+* Ordering is semver precedence, not text. Pre-releases (`rc`, `alpha`, `beta`) are skipped unless
+  `prereleases = true`. A package whose upstream is *older* than the registry is never downgraded.
+* Packages pinned by git `rev` (libpng, freetype, harfbuzz) resolve the tag to its **commit**. `ls-remote` is run
+  *without* `--refs` for this reason: an annotated tag's own id is the tag object, and the commit is only on the
+  peeled `refs/tags/X^{}` line (harfbuzz's `15.0.0` is annotated; the registry's `rev` is the peeled one).
+* A package with no `[upstream] git` or `tag`, with `watch = false`, or a tarball release with no
+  `[upstream] url`, is reported as `not watchable: <why>`; an unreachable host is an `error` row. Neither stops
+  the others.
+
+**Policy** (keys of `[upstream]`; **human-owned**: `tools/guard.py` refuses a bot PR that changes them):
+
+| key | effect |
+| --- | --- |
+| `watch = false` | opt the package out entirely |
+| `max_bump = "patch"` / `"minor"` / `"major"` | the biggest jump the watcher follows from the current version: patch releases of the current minor, minor and patch releases of the current major, or (default) any newer stable version. A version held back is reported, not bumped |
+| `prereleases = true` | also follow rc/alpha/beta tags |
+
+One PR is one package and one version: the newest allowed, not every intermediate one. **Note:** the default
+follows major versions too, so a first run will propose redis 7 -> 8, openssl 3 -> 4 and cpython 3.14 -> 3.15; set
+`max_bump = "minor"` on the packages where that is not wanted *before* switching the schedule on.
+
+### The candidate: `watch.py bump PKG [--to VERSION]`
+
+* **tarball packages:** builds the URL from the templates, downloads it (https only, redirects must stay https,
+  256 MiB cap, timeout, hashed while streaming; the archive is only *listed*, never extracted), records the
+  `sha256`, and checks the archive's top-level directory against `strip_prefix` after templating. A wrong prefix
+  fails with what the archive actually contains.
+* **git-rev packages:** sets `rev` to the commit the tag points at.
+* Adds a `[[release]]` at the top of `package.toml` by **textual insertion** (comments and layout are untouched;
+  the result is re-parsed and compared with the old file plus exactly one release), changes only the
+  `[package] version` line of `Harbour.toml` the same way, and leaves `overlay/` and `patches/` byte-identical.
+  `upstream_version` is added when upstream's spelling is not the semver. Then `render.py` runs for the package.
+* Self-check before it finishes: the result is judged by `tools/guard.py` as a bot PR, by `lint.py`, and by a
+  stricter rule (only `package.toml`, `Harbour.toml`, the README table and that package's `index/` may differ).
+  If anything fails the working tree is rolled back. The tree must be clean when it starts.
+* Per-release `url` / `strip_prefix` overrides on the previous release are not carried forward (the templates
+  are used); the prefix check catches a mismatch.
+
+### The workflow, and the token you must create
+
+`.github/workflows/watch.yml`: `detect` (read-only) -> `bump` matrix (`max-parallel: 2`; fast checks, guard, push
+`bot/bump-<package>-<version>`, open a PR labelled `bot` + `bump` that states the package, old -> new, the
+upstream compare URL when upstream is on GitHub, the new sha256 or rev, and "manifest carried forward
+unchanged") -> `triage` and `repair` for a failed gate. Manual runs take a `package` and a `dry-run` input
+(dry-run writes and checks the candidate and pushes nothing). A package that already has an open bump PR (any
+version) or an open `needs-human: <package> <version>` issue is skipped; a leftover branch is not reused.
+
+**The token problem.** A PR opened with the default `GITHUB_TOKEN` does not trigger `pull_request` workflows, so
+the gate would never run on it. Two designs were weighed:
+
+1. **Built:** the PAT/app token. `secrets.REGISTRY_BOT_TOKEN` pushes the branch and opens the PR, so `pr.yml` runs
+   normally and `PR result` appears as a real check that branch protection and auto-merge can use.
+2. **Not built:** open with `GITHUB_TOKEN` and `workflow_dispatch` `pr.yml` on the branch. It would need `pr.yml`
+   to get its author, labels and base from dispatch inputs, which are exactly what the guard judges with, set by
+   whoever dispatches; and the results would be runs on the branch, not PR checks, so required-check branch
+   protection and auto-merge could not wait on them. That is a weaker, more complex gate.
+
+Without the secret the `bump` job **fails immediately**, with instructions. Detection and dry runs need no secret.
+
+What to create:
+
+| what | value |
+| --- | --- |
+| secret `REGISTRY_BOT_TOKEN` | a fine-grained PAT (or GitHub App installation token) scoped to this repository only: Contents read+write, Pull requests read+write, Issues read+write (for labels). Only the push, label, PR and auto-merge steps see it; keep that account **out of the branch-protection bypass list** |
+| variable `REGISTRY_AUTO_MERGE` | `true` to run `gh pr merge --auto --squash` on each bump PR. Default off. Needs "Allow auto-merge" in the repository settings and `PR result` required by branch protection; otherwise it is a warning and the PR waits for a human. **Nothing in the workflow merges anything itself.** Flip it once you trust the gate |
+| variable `REGISTRY_REPAIR_ENABLED` | `true` once `tools/repair.py` has a model behind it. Default off: a failed bump then goes straight to `needs-human` |
+| variable `REGISTRY_REPAIR_ATTEMPTS` | repair attempts per bump PR, default `2` |
+| labels `bot`, `bump`, `needs-repair`, `needs-human`, `repair-attempt-N` | created by the workflow when missing |
+
+Branch protection that makes this safe (already required by the guard section above): require `PR result`,
+require Code Owners review, and `bot/**` is treated as automated by the guard (`bot` label or a `bot/` head branch).
+
+### When the gate fails: triage and the repair seam
+
+On `workflow_run` of `PR` completing for a `bot/bump-*` branch of this repository, the `triage` job
+(`tools/bump_triage.py`) labels the PR `needs-repair`, posts or edits **one** comment (which package x platform
+jobs failed, the log lines leading up to each failure, the upstream compare stat and added/removed/renamed files
+when upstream is on GitHub), and counts attempts in `repair-attempt-<n>` labels, incremented *before* the repair
+job starts so a crashed repair still spends its attempt. A green run removes `needs-repair`/`needs-human`. When
+repair is not enabled or the budget is spent: label `needs-human`, drop `needs-repair`, open the issue
+`needs-human: <package> <version>`, stop.
+
+**Security of that job.** `workflow_run` runs the default branch's workflow in the base repository with write
+permissions, after a workflow that executed PR code. So it checks out the default branch only and never the PR's
+sha or ref; runs only `tools/` from that checkout; reads run metadata and logs through the API; takes every string
+that came from the PR through environment variables (never `${{ }}` inside a `run:`), validates the branch name
+against a strict regex and quotes log text in a code fence the text cannot close; ignores runs from forks and
+non-`pull_request` events; uses the job's own token (labels, comments, issues; no contents write); and approves or
+merges nothing.
+
+**The repair contract** (`tools/repair.py`, a stub that exits "not configured"; `validate_output` is real):
+
+* *input:* the failure summary, the upstream compare/file listing diff, the run context, and the bump branch's
+  files fetched as data into a directory (never executed);
+* *output:* files for `packages/<pkg>/Harbour.toml`, `overlay/**`, `patches/*.patch`, nothing else, committed to the
+  **same** bump branch with `REGISTRY_BOT_TOKEN` so `pr.yml` judges it again unchanged;
+* *budget:* `REGISTRY_REPAIR_ATTEMPTS`, then `needs-human`;
+* *the model* treats upstream source, changelogs and logs as untrusted data, runs with no secret but its own scoped
+  key, has no tool that executes the candidate, and its output is only ever applied as file content inside the
+  allowed paths. The judge (tests, `[test]`, tools, workflows) is outside those paths and CODEOWNERS-protected.
+
+### Not built
+
+* The model call in `tools/repair.py`, and the `repair` job's commit/push step (the job runs the stub).
+* Closing a bump PR that a newer upstream release has superseded (the watcher waits until it merges or is closed).
+* Cross-checking upstream's published checksums or signatures (a bump records the hash of what was downloaded).
 * Binary overlay files and `.idx` yanking are not supported by the tools yet.
