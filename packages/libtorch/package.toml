@@ -1,0 +1,60 @@
+[package]
+name = "libtorch"
+description = "PyTorch's C++ library (LibTorch), CPU build: upstream's official prebuilt binaries, not built from source"
+# PyTorch's own license (LICENSE at the v2.15.0 tag of pytorch/pytorch: the 3-clause BSD text). The binary
+# archives contain NO license or notice file at all (checked: no LICENSE*/NOTICE*/COPYING* anywhere in any of
+# the three), so this is what upstream's source repository states, not something the archives say. They do
+# bundle third-party code under other terms that this expression does not describe: linked into torch_cpu
+# (oneDNN, protobuf, fmt, sleef, ...; upstream's NOTICE and third_party/ list them) and shipped beside it
+# (GNU libgomp and libgfortran on Linux, LLVM libomp on macOS, Intel libiomp5md and libuv on Windows).
+license = "BSD-3-Clause"
+homepage = "https://pytorch.org/cppdocs/"
+
+[upstream]
+git = "https://github.com/pytorch/pytorch"
+tag = "v{version}"
+# A PREBUILT package (README "Prebuilt packages"): each release is upstream's official CPU archive per
+# platform, as listed at https://download.pytorch.org/libtorch/cpu/ . 2.15.0 has four there: these three
+# and libtorch-win-arm64-shared-with-deps (Windows on Arm, which this registry has no runner for). There is
+# no Linux aarch64 and no macOS x86_64 archive, so those are not offered.
+# `%2B` is the `+` of upstream's local version label (`2.15.0+cpu`), percent-encoded as the listing links it.
+# The watcher does not bump prebuilt packages; a new version is a human's: see README "Bump a prebuilt package".
+watch = false
+
+[[upstream.archive]]
+os = "linux"
+arch = "x86_64"
+url = "https://download.pytorch.org/libtorch/cpu/libtorch-shared-with-deps-{version}%2Bcpu.zip"
+strip_prefix = "libtorch"
+
+[[upstream.archive]]
+os = "macos"
+arch = "aarch64"
+url = "https://download.pytorch.org/libtorch/cpu/libtorch-macos-arm64-{version}.zip"
+strip_prefix = "libtorch"
+
+[[upstream.archive]]
+os = "windows"
+arch = "x86_64"
+url = "https://download.pytorch.org/libtorch/cpu/libtorch-win-shared-with-deps-{version}%2Bcpu.zip"
+strip_prefix = "libtorch"
+
+[[release]]
+version = "2.15.0"
+# license_sha256 is the digest of an empty list: no archive has a license file at its top level (see above).
+license_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+# sha256 of each platform's archive (129 MB, 114 MB, 204 MB). build-hash inside all three:
+# d0f2af8b66b20da4baa50644c0cd3f887a2eae2e, which is the commit of upstream's tag v2.15.0-rc10 (the tag v2.15.0
+# itself is commit 31a77fc9c0a7c6fff15a1ff58c743f53b1a9d457).
+[release.archives]
+linux-x86_64 = "f26d7550019005bac238fec4ae316b220b006cfcca29b40d7313c50f26875f60"
+macos-aarch64 = "9fb883c4defb251733a068c6776bc9937e5a20543ed9d5d9c88a395c287a6b70"
+windows-x86_64 = "390bdedd984c71c6b8120a99f7179269f8c17c4d53a3b00c76c73915eba5412f"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 0                            # prebuilt: nothing is compiled for the package
+timeout = 2700                         # the download (100-200 MB) and a C++20 compile of <torch/torch.h>
+
+[review]
+prebuilt = "libtorch cannot be built from a manifest (generated sources, dozens of vendored dependencies, hours); upstream's official binaries are what every package manager ships"

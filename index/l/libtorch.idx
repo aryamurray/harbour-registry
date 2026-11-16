@@ -1,0 +1,1 @@
+{"format_version":2,"name":"libtorch","version":"2.15.0","yanked":false,"deps":[],"checksum":"archives-sha256:7513359138ec321d7877177963c28741d107a3c260e73492c6c2b34e65ef5e66","license":"BSD-3-Clause","shim":"l/libtorch/2.15.0.toml"}

@@ -59,6 +59,11 @@ digest), so the gate is red until a human takes the bump over. The digest a PR r
 from the pinned source by `verify-license` in the PR workflow, so it cannot simply be copied forward.
 A package whose newest release has no digest is not watchable until a human records one.
 
+PREBUILT PACKAGES (a release with per-platform `archives`; README "Prebuilt packages") are never
+bumped: `list`/`report` show them as not watchable and `bump` refuses. `license-digest` and
+`verify-license` do handle them: the digest covers every platform's archive (files listed as
+`<os>-<arch>/<path>`), each downloaded and required to hash to its pinned sha256.
+
 CROSS-CHECK. The recorded sha256 is the hash of what was downloaded. Where upstream publishes one,
 `bump` compares: the `digest` GitHub's releases API reports for the asset (strongest: another host
 and path, though still the uploader's bytes), checksum assets of the same release, and
@@ -320,6 +325,11 @@ class Finding:
         }
 
 
+def kind_of(pkg: rt.Package) -> str:
+    """How the newest release is pinned: `git` (a rev), `archives` (prebuilt, per platform) or `tarball`."""
+    return "git" if pkg.newest.rev else "archives" if pkg.newest.archives is not None else "tarball"
+
+
 def not_watchable(pkg: rt.Package) -> str | None:
     """Why the watcher cannot follow this package, or None."""
     up = pkg.upstream
@@ -329,6 +339,12 @@ def not_watchable(pkg: rt.Package) -> str | None:
         return str(e)
     if not policy.watch:
         return "opted out: [upstream] watch = false"
+    if pkg.newest.archives is not None or pkg.upstream.get("archive"):
+        # A prebuilt release is one archive and one sha256 PER PLATFORM, each to be downloaded, checked
+        # and cross-checked, and a new upstream binary is a new thing to trust. The watcher does none of
+        # that, and must not write a release that silently pins only some of it.
+        return ("a prebuilt package (per-platform archives): the watcher does not bump these; a human adds "
+                "the release (README, \"Bump a prebuilt package\")")
     if not up.get("git"):
         return "no [upstream] git (nowhere to list tags)"
     if not up.get("tag"):
@@ -347,7 +363,7 @@ def not_watchable(pkg: rt.Package) -> str | None:
 
 def analyze(pkg: rt.Package, tags: dict[str, TagRef]) -> Finding:
     """What is newer upstream than the registry's newest release? Pure: `tags` is already fetched."""
-    f = Finding(package=pkg.name, kind="git" if pkg.newest.rev else "tarball",
+    f = Finding(package=pkg.name, kind=kind_of(pkg),
                 current=pkg.newest.version)
     up = pkg.upstream
     f.current_tag = rt.release_tag(pkg, pkg.newest)
@@ -446,12 +462,12 @@ def scan(names: list[str], *, ls_remote: LsRemote = real_ls_remote, packages_dir
         why = not_watchable(pkg)
         if why:
             out.append(Finding(package=n, status="not-watchable", reason=why, current=pkg.newest.version,
-                               kind="git" if pkg.newest.rev else "tarball"))
+                               kind=kind_of(pkg)))
             continue
         tags, err = listed[pkg.upstream["git"]]
         if tags is None:
             out.append(Finding(package=n, status="error", reason=err, current=pkg.newest.version,
-                               kind="git" if pkg.newest.rev else "tarball"))
+                               kind=kind_of(pkg)))
             continue
         out.append(analyze(pkg, tags))
     return out
@@ -983,6 +999,22 @@ def release_license(pkg: rt.Package, release: rt.Release, *, fetch: Callable[...
     src = rt.release_source(pkg, release)
     if src.kind == "git":
         return license_info((tree or git_license_texts)(src.url, src.rev, rt.release_tag(pkg, release)))
+    if src.kind == "archives":
+        # A prebuilt release has one archive per platform and they need not carry the same files, so
+        # the digest covers ALL of them: each archive's license files, listed as `<os>-<arch>/<path>`.
+        # Every archive is downloaded and must hash to its pinned sha256 (so this is also where each
+        # platform's sha256 is checked without building anything).
+        texts: dict[str, bytes] = {}
+        for a in src.archives:
+            arc = (fetch or fetch_archive)(a.url, strip_prefix=a.strip_prefix)
+            if arc.sha256 != a.sha256:
+                raise WatchError(f"{pkg.name} {release.version}: the {a.key} archive {a.url} hashes to {arc.sha256}, "
+                                 f"not the pinned {a.sha256}")
+            problem = check_strip_prefix(arc.entries, a.strip_prefix)
+            if problem:
+                raise WatchError(f"{pkg.name} {release.version}: {a.key}: {problem}")
+            texts.update({f"{a.key}/{path}": data for path, data in arc.texts.items()})
+        return license_info(texts)
     arc = (fetch or fetch_archive)(src.url, strip_prefix=src.strip_prefix)
     if arc.sha256 != src.sha256:
         raise WatchError(f"{pkg.name} {release.version}: {src.url} hashes to {arc.sha256}, not the pinned {src.sha256}")
@@ -1210,7 +1242,11 @@ def set_release_field(text: str, version: str, key: str, value: str, *, replace:
             return "".join(lines)
         at = max((s + 1 + i for i, l in enumerate(block) if re.match(r"^\s*(sha256|rev)\s*=", l)), default=None)
         if at is None:
-            raise WatchError(f"release {version} has no sha256 or rev line to put `{key}` after")
+            # A prebuilt release has neither: its pins are in the `[release.archives]` sub-table that
+            # ends this block. The key goes after `version`, which keeps it in the release's own table.
+            at = next((s + 1 + i for i, l in enumerate(block) if re.match(r"^\s*version\s*=", l)), None)
+        if at is None:
+            raise WatchError(f"release {version} has no sha256, rev or version line to put `{key}` after")
         if not lines[at].endswith(("\n", "\r")):
             lines[at] += nl
         lines.insert(at + 1, f'{key} = "{value}"{nl}')
@@ -1599,7 +1635,8 @@ def releases_to_verify(pkg: rt.Package, base_text: bytes | None) -> list[rt.Rele
     out = []
     for r in pkg.releases:
         was = old.get(r.version)
-        if r.license_sha256 and (was is None or any(was.get(k) != getattr(r, k) for k in ("license_sha256", "sha256", "rev"))):
+        if r.license_sha256 and (was is None or any(was.get(k) != getattr(r, k)
+                                                    for k in ("license_sha256", "sha256", "rev", "archives"))):
             out.append(r)
     return out
 
