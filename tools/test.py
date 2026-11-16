@@ -307,7 +307,9 @@ class Runner:
                     raise Failure(f"needs `{tool}` on PATH ([test] needs), and it is not there")
             newest = pkg.newest
             want_objects = expected_objects(pkg, self.plat, self.arch)
-            archive = platform_archive(pkg, self.plat, self.arch)
+            # The machine's own platform, not `--platform` (which only decides what is skipped): the
+            # archive Harbour fetches is the one for the machine it runs on.
+            archive = platform_archive(pkg, current_platform(), self.arch)
             work = self.tmp / f"work-{pkg.name}"
             work.mkdir()
             test_dir = pkg.dir / "test"
@@ -340,7 +342,7 @@ class Runner:
             if archive is not None:
                 extra = ", " + self.prebuilt(pkg, archive, work, log)
             if pkg.test.get("verify"):
-                extra = ", " + self.verify(pkg, env, left, log)
+                extra += ", " + self.verify(pkg, env, left, log)
         except Failure as err:
             return False, f"{err}\n\n" + "\n".join(log)
         except (RegistryError, OSError, subprocess.SubprocessError) as err:
