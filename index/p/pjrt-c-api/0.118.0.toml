@@ -1,0 +1,15 @@
+[package]
+name = "pjrt-c-api"
+version = "0.118.0"
+
+[source.git]
+url = "https://github.com/openxla/xla.git"
+rev = "45c7aaa287a6ae052dbd5a2230befecfe301bce7"
+
+[metadata]
+license = "Apache-2.0"
+upstream_url = "https://github.com/openxla/xla.git"
+
+[[patches]]
+file = "0.118.0.patch"
+sha256 = "2a75c5124554665dd8af0c480bc1b699033f5955c5d80ab0900706046f113947"

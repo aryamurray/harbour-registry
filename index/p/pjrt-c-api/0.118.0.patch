@@ -1,0 +1,62 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..7c777c0
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,56 @@
++[package]
++name = "pjrt-c-api"
++version = "0.118.0"
++license = "Apache-2.0"
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
++
++# A header-only C target: nothing is compiled or linked. The upstream source is the whole openxla/xla
++# repository at the pinned commit (a git `rev` clones the repository; a patch-added manifest cannot narrow
++# that), and this package uses only xla/pjrt/c/*.h plus the one header they reach outside that directory.
++#
++# Include root: the repository root ("."), because upstream spells every include
++# `#include "xla/pjrt/c/pjrt_c_api.h"` (its extension headers include each other the same way, and
++# pjrt_c_api_profiler_extension.h also includes "xla/backends/profiler/plugin/profiler_c_api.h", a pure C
++# header outside xla/pjrt/c that is reachable but deliberately not listed as public). The root makes the rest
++# of the xla tree includable by path, but `public_headers` below names only the C API headers.
++#
++# public_headers: every xla/pjrt/c header that compiles on its own as C (checked with
++# `gcc -x c -std=c11 -Wall -Wextra -pedantic -fsyntax-only -I<repo root> <header>` at the pinned commit).
++# Left out on purpose:
++#   * pjrt_c_api_callback_extension.h, pjrt_c_api_collectives_extension.h, pjrt_c_api_megascale_extension.h:
++#     they declare `enum PJRT_Callback_Type { ... };` and then use the bare name `PJRT_Callback_Type`
++#     (likewise PJRT_Collectives_*, PJRT_Megascale_*), which is C++-only; a C compiler rejects them
++#     ("unknown type name"). Upstream's BUILD says nothing of C. A C++ consumer can still include them by path.
++#   * pjrt_c_api_cpu.h, pjrt_c_api_gpu.h, pjrt_c_api_tpu.h: these declare `GetPjrtApi()`, the entry point of
++#     the in-tree plugins (and tpu.h a global variable); there is nothing to call it on in this package, which
++#     carries no plugin. pjrt_c_api_tpu_constants.h is C++ (namespace, constexpr).
++#   * the *_internal.h, *_helpers.h, *_status_utils.h, *_wrapper_impl.h, *_test*.h, *_external.h and
++#     *_abi_version_helpers.h headers: XLA's own C++ implementation of the API (they include absl, <memory>,
++#     the rest of XLA), not the interface.
++[targets.pjrt-c-api]
++kind = "header-only"
++lang = "c"
++public_headers = [
++  "xla/pjrt/c/pjrt_c_api.h",
++  "xla/pjrt/c/pjrt_c_api_macros.h",
++  "xla/pjrt/c/pjrt_c_api_abi_version_extension.h",
++  "xla/pjrt/c/pjrt_c_api_custom_partitioner_extension.h",
++  "xla/pjrt/c/pjrt_c_api_device_event.h",
++  "xla/pjrt/c/pjrt_c_api_ffi_extension.h",
++  "xla/pjrt/c/pjrt_c_api_gpu_extension.h",
++  "xla/pjrt/c/pjrt_c_api_layouts_extension.h",
++  "xla/pjrt/c/pjrt_c_api_memory_descriptions_extension.h",
++  "xla/pjrt/c/pjrt_c_api_multi_slice_extension.h",
++  "xla/pjrt/c/pjrt_c_api_phase_compile_extension.h",
++  "xla/pjrt/c/pjrt_c_api_profiler_extension.h",
++  "xla/pjrt/c/pjrt_c_api_raw_buffer_extension.h",
++  "xla/pjrt/c/pjrt_c_api_raw_client.h",
++  "xla/pjrt/c/pjrt_c_api_shardings_extension.h",
++  "xla/pjrt/c/pjrt_c_api_stream_extension.h",
++  "xla/pjrt/c/pjrt_c_api_tpu_executable_extension.h",
++  "xla/pjrt/c/pjrt_c_api_tpu_topology_extension.h",
++  "xla/pjrt/c/pjrt_c_api_xla_transform_extension.h",
++]
++
++[targets.pjrt-c-api.public]
++include_dirs = ["."]
