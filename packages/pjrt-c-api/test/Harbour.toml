@@ -1,0 +1,16 @@
+# Consumer test for pjrt-c-api, through the registry (see ../../zlib/test/Harbour.toml).
+# The package is header-only C: its headers are compiled INTO this C program. No plugin is loaded.
+[package]
+name = "pjrt-c-api-test"
+version = "0.1.0"
+
+[dependencies]
+pjrt-c-api = "*"
+
+[targets.pjrt-c-api-test]
+kind = "exe"
+lang = "c"
+sources = ["src/main.c"]
+
+[targets.pjrt-c-api-test.deps]
+pjrt-c-api = "pjrt-c-api"
