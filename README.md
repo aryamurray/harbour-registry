@@ -1,7 +1,8 @@
 # Harbour registry
 
 A [Harbour](https://github.com/aryamurray/harbour) registry: a git repository holding real C and C++
-packages as **pins and patches** (no upstream source is vendored). It is built to be maintained by
+packages as **pins and patches** (no upstream source is vendored). Packages are built from upstream's source
+by a manifest written here; the one reviewed exception is a [prebuilt package](#prebuilt-packages). It is built to be maintained by
 machines as well as by people, so everything a package is, and everything a package is judged by, is a
 plain file in this repository, and the index Harbour reads is rendered from those files and checked.
 
@@ -80,7 +81,8 @@ packages/<name>/
   test/            the consumer test: Harbour.toml + src/..., or run.sh for packages needing a custom driver
 index/             rendered; never edited by hand
   <l>/<name>.idx                  tier-1 index: one JSON line per version (deps, checksum, license, shim path)
-  <l>/<name>/<version>.toml       tier-2 shim: the source pin (tarball url + sha256 + strip_prefix, or git rev) and its patches
+  <l>/<name>/<version>.toml       tier-2 shim: the source pin (tarball url + sha256 + strip_prefix, or git rev;
+                                  for a prebuilt package one archive url + sha256 per platform) and its patches
   <l>/<name>/<version>.patch      git patch that ADDS Harbour.toml and the overlay files to the upstream tree
   <l>/<name>/<version>-<fix>.patch   one per patches/*.patch, applied first
 tools/             render, lint, test, plan, guard (Python 3.11+ standard library only)
@@ -107,13 +109,95 @@ packages/zlib/                          packages/cpython/
 | table | keys |
 | --- | --- |
 | `[package]` | `name` (= directory), `description`, `license` (SPDX, the upstream's), `homepage` |
-| `[upstream]` | `git` (where tags are listed; the clone url for `rev` releases), `tag` (template), `url` (tarball template), `strip_prefix` (template), `scheme`; the watcher's policy `watch`, `max_bump`, `prereleases` (see [Keeping packages current](#keeping-packages-current)) |
-| `[[release]]` | `version` (semver), exactly one of `sha256` (tarball) or `rev` (git commit), `license_sha256` (the digest of upstream's license files at that release, required on the newest release; see [License drift](#license-drift)), optional `upstream_version`, `url`, `strip_prefix`, `republish` |
-| `[test]` | `platforms` (`linux`/`macos`/`windows`), `objects` (exact translation-unit count: an integer, or `{ default = N, linux = N, "linux-x86_64" = N }`), optional `needs`, `timeout`, `verify` |
-| `[review]` | `generators = true`, required when the build runs code (see below) |
+| `[upstream]` | `git` (where tags are listed; the clone url for `rev` releases), `tag` (template), `url` (tarball template), `strip_prefix` (template), `scheme`; the watcher's policy `watch`, `max_bump`, `prereleases` (see [Keeping packages current](#keeping-packages-current)). A prebuilt package has `[[upstream.archive]]` entries instead of `url`/`strip_prefix` (see [Prebuilt packages](#prebuilt-packages)) |
+| `[[release]]` | `version` (semver), exactly one of `sha256` (tarball), `rev` (git commit) or `archives` (prebuilt: a table of one sha256 per platform), `license_sha256` (the digest of upstream's license files at that release, required on the newest release; see [License drift](#license-drift)), optional `upstream_version`, `url`, `strip_prefix`, `republish` |
+| `[test]` | `platforms` (`linux`/`macos`/`windows`), `objects` (exact translation-unit count: an integer, or `{ default = N, linux = N, "linux-x86_64" = N }`; `0` for a header-only or prebuilt package), optional `needs`, `timeout`, `verify` |
+| `[review]` | `generators = true`, required when the build runs code (see below); `prebuilt = "<reason>"`, required when the package links upstream's binary instead of building upstream's source |
 
 Templates expand `{version}` (upstream's spelling), `{major}`, `{minor}`, `{patch}` (from the semver) and,
 in `url`/`strip_prefix`, `{tag}`. Unknown keys and placeholders are errors.
+
+### Prebuilt packages
+
+The registry's rule is that a package is **built from upstream's source** by a manifest written here. Some
+libraries cannot sensibly be: libtorch's build generates most of its own sources, vendors dozens of
+dependencies and takes hours, and upstream publishes official binaries per platform that every other package
+manager consumes. Harbour links such a library as a `kind = "prebuilt"` target (its `MANIFEST.md`, "Prebuilt
+Libraries"), and a registry entry for one carries **one archive per platform**, of which a build downloads only
+its own.
+
+**The trust rule.** A prebuilt package *trusts upstream's binary, pinned by sha256*. Nothing here compiles it,
+so nothing here can say what is in it: the pin only guarantees that every user gets the bytes that were
+reviewed. It is therefore allowed only as a deliberate, reviewed exception:
+
+* `package.toml` must say `[review] prebuilt = "<why this cannot be built from source>"`. `lint.py` refuses a
+  release with `archives`, or a manifest with a `prebuilt` target (`prebuilt_libs`/`runtime_libs`), without it,
+  and refuses the flag on a package that has nothing prebuilt. `[review]` is a table an automated PR may never
+  change, and CODEOWNERS can route it.
+* **Every prebuilt release is a human's.** `tools/guard.py` refuses an automated PR that adds, changes or
+  removes `archives` on any release (and `[[upstream.archive]]`, being part of `[upstream]`), and the watcher
+  does not bump prebuilt packages at all.
+
+**The schema.** Where the binaries come from is stated once, per platform, as templates (the same placeholders
+as a tarball's `url`); each release then pins one sha256 per platform:
+
+```toml
+[upstream]
+git = "https://github.com/pytorch/pytorch"     # optional, informational: the watcher does not follow it
+tag = "v{version}"
+watch = false
+
+[[upstream.archive]]                            # one per platform upstream publishes a binary for
+os = "linux"                                    # linux | macos | windows
+arch = "x86_64"                                 # x86_64 | aarch64
+url = "https://download.pytorch.org/libtorch/cpu/libtorch-shared-with-deps-{version}%2Bcpu.zip"
+strip_prefix = "libtorch"                       # optional: the archive's single top-level directory
+
+[[upstream.archive]]
+os = "macos"
+arch = "aarch64"
+url = "https://download.pytorch.org/libtorch/cpu/libtorch-macos-arm64-{version}.zip"
+strip_prefix = "libtorch"
+
+[[release]]
+version = "2.15.0"
+license_sha256 = "..."                          # written by `watch.py license-digest`, as for any release
+[release.archives]                              # "<os>-<arch>" = sha256 of that platform's archive
+linux-x86_64 = "f26d7550..."
+macos-aarch64 = "9fb883c4..."
+
+[test]
+platforms = ["linux", "macos"]
+objects = 0                                     # nothing is compiled for the package
+
+[review]
+prebuilt = "cannot be built from a manifest; upstream's official binaries are what everyone ships"
+```
+
+`render.py` turns that into a shim with one `[[source.archive]]` per platform (`os`, `arch`, `url`, `sha256`,
+`strip_prefix`, in `[[upstream.archive]]` order) and an `.idx` record with `format_version` 2, which a Harbour
+from before prebuilt packages refuses by name. The record's checksum is `archives-sha256:<hex>`, one digest
+over every platform's entry and the patches, so a lockfile written on Linux pins the macOS archive too. The
+archive format is told from the URL's file name (`.zip`, `.tar.gz`, `.tgz`, `.tar.xz`, `.tar.bz2`, `.tar`). The
+manifest (`Harbour.toml`, added by the patch as for any package) is the same for every platform: its
+`[[targets.NAME.when]]` blocks name each platform's `prebuilt_libs` and `runtime_libs`, and it must be derived
+from what upstream ships *inside the archives* (their CMake package, their libraries' own dependency tables),
+not from memory.
+
+What `lint.py` requires of a prebuilt release: an archive for **every platform in `[test] platforms`**, for the
+architecture CI tests that platform on (`CI_ARCH` in `tools/regtools.py`: linux x86_64, macos aarch64, windows
+x86_64), so a platform is claimed only where upstream publishes a binary; a 64-hex sha256 each; https URLs that
+name the version; no platform and no URL twice; none of a source release's fields (`sha256`, `rev`, `url`,
+`strip_prefix`, `[upstream] url`); every target `prebuilt` (or header-only) and `[test] objects = 0`. An archive
+for a platform that is not claimed may stay listed (users on it can still install the package; CI just does not
+test it).
+
+**Bump a prebuilt package** (by hand; there is no bot path): add a `[[release]]` above the old one with the new
+`version` and a `[release.archives]` table holding the sha256 of each platform's archive (`curl -fsSL <url> |
+sha256sum`, the URL being the template with the new version), run `python3 tools/watch.py license-digest <name>
+--write` (it downloads every archive and checks each against its pin), set `[package] version` in
+`Harbour.toml`, and **re-derive the manifest's library lists from the new archives** (list each one's `lib/`;
+upstream adds and drops bundled libraries between releases). Then render, lint and test as usual.
 
 ### Several versions of one package
 
@@ -157,6 +241,8 @@ shape is refused until `normalize_version()` in `tools/regtools.py` is extended 
 1. `cp -r packages/_template packages/<name>` and replace every `example`.
 2. **`package.toml`**: name, description, the upstream's SPDX `license`, `[upstream]` templates, one
    `[[release]]` with its `sha256` (of the exact tarball: `curl -fsSL <url> | sha256sum`) or a git `rev`.
+   (A library that cannot be built from source at all is a [prebuilt package](#prebuilt-packages): per-platform
+   archives instead, and `[review] prebuilt`. It is the exception; try a manifest first.)
    Then `python3 tools/watch.py license-digest <name> --write` adds the release's `license_sha256` (it downloads
    the pinned source, checks the hash, and digests upstream's license files; do not write it by hand).
 3. **`Harbour.toml`**: the manifest. Name every source file (a source list that silently shrinks still
@@ -188,17 +274,23 @@ A package is in the registry when, on every platform in its `[test] platforms`:
 
 * its **license** is an SPDX expression on the allowlist (`tools/lint.py`; `LicenseRef-*` is allowed for
   licenses SPDX has no identifier for), and it equals the `Harbour.toml` license;
-* its source is **pinned by hash** (tarball `sha256`, or full git `rev`) over https;
+* its source is **pinned by hash** (tarball `sha256`, or full git `rev`) over https, and the package is
+  **built from that source**. A [prebuilt package](#prebuilt-packages) is the reviewed exception: upstream's
+  binary for each platform, each pinned by `sha256`, behind `[review] prebuilt = "<reason>"`;
 * its newest release records **`license_sha256`**, re-derived from the pinned source by CI, so the next bump can
   tell whether upstream's license files changed;
 * it **builds** through the registry with every source pattern matching a file (`--strict-sources`), a second build recompiles nothing, and the consumer **runs and prints `OK`
   as its last line** after asserting real behaviour (round trips, known answers, a server answering commands),
   including that the library reports the version `package.toml` declares;
 * it compiles **exactly `[test] objects` translation units**, because a source list that silently shrinks still
-  links and still passes.
+  links and still passes. (A prebuilt package compiles none: `objects = 0`, its consumer still builds and runs
+  on every claimed platform, and the test checks that the archive fetched is that platform's and that the
+  lockfile carries the release's `archives-sha256:` checksum.)
 
 Code that runs during the build (`prebuild`/`postbuild`/`recipe`, `host = true` targets, scripts in `overlay/`,
 patches that add scripts) is allowed only with `[review] generators = true`, so a human sees the flag flip.
+A binary that is linked instead of built (`archives` on a release, a `prebuilt` target) is allowed only with
+`[review] prebuilt = "<reason>"`, for the same reason.
 `lint.py` also refuses non-https URLs, credentials and secret-looking strings anywhere in a package, symlinks,
 CRLF or binary overlay files, and a `[test] platforms` entry the manifest's `supports` excludes.
 
@@ -242,6 +334,11 @@ matches nothing is an error rather than a library that quietly shrank; a pattern
 platform belongs in a `when` block for the platforms where it matches.
 It requires exit 0, last non-empty line `OK` or `OK ...`, and the dependency's object count (excluding
 probes and host tools) to equal `[test] objects` for the platform (`<os>-<arch>`, then `<os>`, then `default`).
+For a prebuilt package (and a header-only one) that count is 0: nothing is compiled for the dependency, the
+consumer's own sources still are, and the lockfile must pin the package from the registry. A prebuilt package
+must additionally have an archive for this platform and architecture (none is a failure, not a skip), its
+lockfile checksum must be the index record's `archives-sha256:` one, and the build output must name this
+platform's archive as the one downloaded and no other platform's.
 The consumer reads `REGISTRY_TEST_UPSTREAM_VERSION` and must check the library reports it.
 A package not listing the current platform is skipped with a message. On failure the full log is printed.
 (Windows cannot isolate `HOME`: Harbour asks the OS, not the environment, for the home directory, so there the
@@ -290,7 +387,9 @@ API and labelled a moment later is seen by its first run as unlabelled). An auto
 `packages/*/overlay/**`, `packages/*/patches/**` and `index/**` (plus the generated README table). It may not
 touch `packages/*/test/**`, `tools/**`, `.github/**`, `.harbour-version` or `CODEOWNERS`; may not change a
 `package.toml`'s `[test]`, `[review]`, `name`, `license`, anything in `[upstream]` (where the source comes
-from, and the watcher's policy `watch`, `max_bump`, `prereleases`) or a release's `republish`; may not add a package; and may only *add* version
+from, and the watcher's policy `watch`, `max_bump`, `prereleases`) or a release's `republish`; may not add,
+change or remove the `archives` of any release (the pinned binaries of a [prebuilt package](#prebuilt-packages);
+their URLs are in `[upstream]`); may not add a package; and may only *add* version
 files under `index/` (a published version is immutable). `tools/guard.py` implements it and is tested against real
 git history.
 
@@ -340,7 +439,8 @@ watch.yml  detect --> bump (one PR per package, newest version) --> pr.yml gate 
 * Packages pinned by git `rev` (libpng, freetype, harfbuzz) resolve the tag to its **commit**. `ls-remote` is run
   *without* `--refs` for this reason: an annotated tag's own id is the tag object, and the commit is only on the
   peeled `refs/tags/X^{}` line (harfbuzz's `15.0.0` is annotated; the registry's `rev` is the peeled one).
-* A package with no `[upstream] git` or `tag`, with `watch = false`, or a tarball release with no
+* A package with no `[upstream] git` or `tag`, with `watch = false`, a [prebuilt package](#prebuilt-packages)
+  (per-platform archives: never bumped by the watcher, whatever `watch` says), or a tarball release with no
   `[upstream] url`, is reported as `not watchable: <why>`; an unreachable host is an `error` row. Neither stops
   the others.
 
@@ -401,6 +501,12 @@ license_sha256 = "3cb8e028..."     # digest of upstream's license files at this 
   re-wrapped paragraph or CRLF endings change nothing; any change of wording, and any license file added, removed
   or renamed, changes the digest. A link is recorded as its target, not followed. `tools/watch.py license-digest
   PKG` prints the files and the digest.
+* **A prebuilt release** is digested over **all** of its archives: each one's top-level license files, listed
+  as `<os>-<arch>/<path>`. Computing or verifying it downloads every platform's archive and requires each to
+  hash to its pin, so the `License digests` job is also where all of a prebuilt release's sha256s are checked
+  (a test job only ever downloads its own platform's). Official binary archives often carry no license file
+  at all (libtorch's do not); the digest is then that of the empty list, which can only show one appearing.
+  `license` for such a package is what upstream's *source* repository states; say so in `package.toml`.
 * **How it is read.** From the tarball's members, in memory (1 MiB per file, 64 files; nothing is extracted), or,
   for a git-pinned release, from the tag's tree, fetched into a throw-away bare repository (https only, no hooks,
   no checkout) and read with `git cat-file`.
@@ -622,3 +728,7 @@ such a case: three sources removed, two renamed and two added makes 195 objects 
   list are known; the previous release's per-file hashes are not stored).
 * Closing the `needs-human: <package> <version>` issue of a bump PR that was closed as superseded.
 * Binary overlay files and `.idx` yanking are not supported by the tools yet.
+* Automatic bumps of prebuilt packages (a new version means one new archive and sha256 per platform, each
+  downloaded and cross-checked, and a manifest re-derived from the new archives); `env` (`gnu`/`musl`/`msvc`)
+  and `format` on an archive entry, which Harbour's shim accepts and `package.toml` cannot yet say; and license
+  drift for binaries whose archives carry no license file (see [License drift](#license-drift)).

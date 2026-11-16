@@ -22,6 +22,10 @@ What is rendered, per package (see README.md, "Layout"):
     checked: shim present, pin matches package.toml, patch hashes consistent.
   * `<name>.idx`, listing every version; an older version's record is carried over.
 
+A PREBUILT release (package.toml `[release.archives]`, README "Prebuilt packages") renders to a shim
+with one `[[source.archive]]` per platform instead of `[source.tarball]`/`[source.git]`, and its
+`.idx` record has `format_version` 2 and an `archives-sha256:` checksum over all of them.
+
 Exit status: 0 ok / rendered, 1 the checkout is stale or inconsistent, 2 usage.
 """
 from __future__ import annotations
@@ -104,7 +108,13 @@ def check_old_release(pkg: rt.Package, rel_: rt.Release, shim: dict, d: Path) ->
     if shim.get("package", {}).get("name") != pkg.name or shim.get("package", {}).get("version") != rel_.version:
         problems.append(f"{who}: the shim names {shim.get('package')} (expected this package and version)")
     src = shim.get("source", {})
-    if rel_.sha256 is not None:
+    if rel_.archives is not None:
+        # A prebuilt release: every platform's sha256 in package.toml must be the one published, and
+        # the published shim may not carry an archive package.toml does not list.
+        published = {f"{a.get('os')}-{a.get('arch')}": a.get("sha256") for a in src.get("archive", [])}
+        if published != rel_.archives:
+            problems.append(f"{who}: package.toml pins the archives {rel_.archives} but the published shim pins {published}")
+    elif rel_.sha256 is not None:
         if src.get("tarball", {}).get("sha256") != rel_.sha256:
             problems.append(f"{who}: package.toml pins sha256 {rel_.sha256} but the published shim pins "
                             f"{src.get('tarball', {}).get('sha256')}")

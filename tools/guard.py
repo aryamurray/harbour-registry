@@ -34,6 +34,13 @@ A PR is also treated as automated when its head branch starts with `bot/` (the w
 payloads carry the labels as they were when the event fired, and a PR opened through the API and
 labelled a moment later is seen by the first run as unlabelled.
 
+PREBUILT RELEASES. A release of a prebuilt package pins one archive per platform: the URL templates
+are `[[upstream.archive]]` entries (so they are inside `[upstream]`, which a bot may not change) and
+the sha256s are the release's `archives` table. An automated PR may not add, change or remove
+`archives` on ANY release, existing or new: a new upstream binary is a new thing to trust, and the
+exception that lets a package ship binaries at all (`[review] prebuilt`) was a human's decision about
+the binaries that human looked at. (tools/watch.py does not bump prebuilt packages either.)
+
 LICENSE DRIFT. A bot may not change `[package] license`, so a bump carries it forward; an upstream
 relicense would otherwise merge unseen. Each release therefore records `license_sha256`, a digest
 of upstream's license files at that release (computed by tools/watch.py, re-derived from the pinned
@@ -144,6 +151,25 @@ def license_digest_violations(path: str, a: dict, b: dict) -> list[str]:
     return bad
 
 
+def archive_violations(path: str, a: dict, b: dict) -> list[str]:
+    """The PREBUILT RELEASES rule of the module docstring, for one package.toml (old `a`, new `b`)."""
+    def table(data: dict) -> dict:
+        out = {}
+        for r in data.get("release", []) if isinstance(data.get("release"), list) else []:
+            if isinstance(r, dict) and "archives" in r:
+                out[str(r.get("version"))] = r["archives"]
+        return out
+
+    old, new = table(a), table(b)
+    bad = []
+    for v in sorted(set(old) | set(new)):
+        if old.get(v) != new.get(v):
+            what = "added" if v not in old else "removed" if v not in new else "changed"
+            bad.append(f"{path}: release {v} `archives` {what}; the sha256 of a prebuilt binary is what the registry "
+                       "trusts instead of building from source, so only a human may pin one")
+    return bad
+
+
 def is_bot(author: str, labels: list[str], user_type: str, head_ref: str = "") -> tuple[bool, str]:
     if head_ref.startswith(BOT_BRANCH_PREFIX):
         return True, f"the head branch `{head_ref}` is in the `{BOT_BRANCH_PREFIX}` namespace"
@@ -211,7 +237,7 @@ def package_toml_violations(base: str, head: str, path: str) -> list[str]:
     for r in b.get("release", []):
         if isinstance(r, dict) and r.get("republish") != old_re.get(r.get("version")):
             bad.append(f"{path}: release {r.get('version')} `republish` changed; rewriting a published version is a human's decision")
-    return bad + license_digest_violations(path, a, b)
+    return bad + archive_violations(path, a, b) + license_digest_violations(path, a, b)
 
 
 def violations(base: str, head: str) -> list[str]:

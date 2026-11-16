@@ -30,17 +30,25 @@ NON_PACKAGES = {"_template"}
 # The only package.toml keys we know. Anything else is an error: a typo in a
 # key that a tool silently ignores is how a gate stops gating.
 PACKAGE_KEYS = {"name", "description", "license", "homepage"}
-UPSTREAM_KEYS = {"git", "tag", "url", "strip_prefix", "scheme", "watch", "max_bump", "prereleases"}
+UPSTREAM_KEYS = {"git", "tag", "url", "strip_prefix", "scheme", "watch", "max_bump", "prereleases", "archive"}
+# One `[[upstream.archive]]` per platform of a PREBUILT package (see README, "Prebuilt packages").
+UPSTREAM_ARCHIVE_KEYS = {"os", "arch", "url", "strip_prefix"}
 # The watcher's policy knobs (tools/watch.py). Human-owned: tools/guard.py refuses an automated PR
 # that changes any of them, so a bot cannot widen what it is allowed to bump.
 WATCH_POLICY_KEYS = ("watch", "max_bump", "prereleases")
 MAX_BUMP_VALUES = ("patch", "minor", "major")
-RELEASE_KEYS = {"version", "upstream_version", "sha256", "rev", "url", "strip_prefix", "republish", "license_sha256"}
+RELEASE_KEYS = {"version", "upstream_version", "sha256", "rev", "url", "strip_prefix", "republish", "license_sha256",
+                "archives"}
 TEST_KEYS = {"platforms", "objects", "needs", "timeout", "verify"}
-REVIEW_KEYS = {"generators"}
+REVIEW_KEYS = {"generators", "prebuilt"}
 TOP_KEYS = {"package", "upstream", "release", "test", "review"}
 
 PLATFORMS = ("linux", "macos", "windows")
+ARCHES = ("x86_64", "aarch64")
+# The architecture CI tests each platform on (the runner images are in tools/plan.py RUNNERS). A
+# prebuilt package can only be tested where upstream publishes a binary, so a platform it lists in
+# `[test] platforms` needs an archive for exactly this architecture.
+CI_ARCH = {"linux": "x86_64", "macos": "aarch64", "windows": "x86_64"}
 
 
 class RegistryError(Exception):
@@ -147,6 +155,8 @@ class Release:
     republish: str | None
     # Digest of upstream's top-level license files at this release (tools/watch.py, "LICENSE DRIFT").
     license_sha256: str | None = None
+    # A prebuilt release: {"<os>-<arch>": sha256 of that platform's archive}. Instead of sha256/rev.
+    archives: dict | None = None
 
     @property
     def raw_version(self) -> str:
@@ -203,6 +213,36 @@ def read_toml(path: Path) -> dict:
         raise RegistryError(f"{rel(path)}: not valid UTF-8") from None
 
 
+def is_prebuilt(manifest: dict) -> bool:
+    """True when a parsed Harbour.toml compiles nothing because its library is a downloaded binary:
+    every target is `kind = "prebuilt"` or `header-only`, and at least one is prebuilt.
+
+    Like a header-only package, such a package leaves no `deps/<name>-<version>/` directory behind and
+    its `[test] objects` is exactly 0. A package that mixes a prebuilt target with compiled ones is
+    not this: it compiles something, and its objects are counted as usual."""
+    targets = manifest.get("targets")
+    if not isinstance(targets, dict) or not targets or not all(isinstance(t, dict) for t in targets.values()):
+        return False
+    kinds = [t.get("kind") for t in targets.values()]
+    return "prebuilt" in kinds and all(k in ("prebuilt", "header-only") for k in kinds)
+
+
+def has_prebuilt_target(manifest: dict) -> bool:
+    """True when any target of a parsed Harbour.toml links a binary that is already in the package
+    (`kind = "prebuilt"`, or a `prebuilt_libs` / `runtime_libs` list anywhere under a target)."""
+    def mentions(node) -> bool:
+        if isinstance(node, dict):
+            return any(k in ("prebuilt_libs", "runtime_libs") or mentions(v) for k, v in node.items())
+        if isinstance(node, list):
+            return any(mentions(v) for v in node)
+        return False
+
+    targets = manifest.get("targets")
+    if not isinstance(targets, dict):
+        return False
+    return any(isinstance(t, dict) and (t.get("kind") == "prebuilt" or mentions(t)) for t in targets.values())
+
+
 def is_header_only(manifest: dict) -> bool:
     """True when every target of a parsed Harbour.toml is `kind = "header-only"`.
 
@@ -252,7 +292,7 @@ def load_package(name: str, *, root: Path | None = None) -> Package:
             version=r["version"], upstream_version=r.get("upstream_version"),
             sha256=r.get("sha256"), rev=r.get("rev"), url=r.get("url"),
             strip_prefix=r.get("strip_prefix"), republish=r.get("republish"),
-            license_sha256=r.get("license_sha256"),
+            license_sha256=r.get("license_sha256"), archives=r.get("archives"),
         ))
     seen = set()
     for r in releases:
@@ -306,18 +346,84 @@ def release_tag(pkg: Package, release: Release) -> str | None:
 
 
 @dataclass
+class Archive:
+    """One platform's archive of a prebuilt release: a `[[source.archive]]` entry of its shim."""
+    os: str
+    arch: str
+    url: str
+    sha256: str
+    strip_prefix: str | None = None
+
+    @property
+    def key(self) -> str:
+        return f"{self.os}-{self.arch}"
+
+
+@dataclass
 class Source:
-    kind: str  # "tarball" | "git"
+    kind: str  # "tarball" | "git" | "archives"
     url: str
     sha256: str | None = None
     strip_prefix: str | None = None
     rev: str | None = None
+    archives: list[Archive] = field(default_factory=list)   # kind "archives": one per platform
+
+
+def upstream_archives(pkg: Package) -> list[dict]:
+    """The `[[upstream.archive]]` entries, shape-checked: each a table with string `os`, `arch`, `url`."""
+    raw = pkg.upstream.get("archive", [])
+    if not isinstance(raw, list) or not all(isinstance(a, dict) for a in raw):
+        raise RegistryError(f"{pkg.name}: [upstream] archive must be an array of tables (`[[upstream.archive]]`)")
+    for i, a in enumerate(raw):
+        unknown = set(a) - UPSTREAM_ARCHIVE_KEYS
+        if unknown:
+            raise RegistryError(f"{pkg.name}: unknown key(s) in [[upstream.archive]] #{i + 1}: {', '.join(sorted(unknown))}")
+        for key in ("os", "arch", "url"):
+            if not isinstance(a.get(key), str) or not a[key]:
+                raise RegistryError(f"{pkg.name}: [[upstream.archive]] #{i + 1} needs a string `{key}`")
+        if "strip_prefix" in a and not isinstance(a["strip_prefix"], str):
+            raise RegistryError(f"{pkg.name}: [[upstream.archive]] #{i + 1}: strip_prefix must be a string")
+    return raw
+
+
+def release_archives(pkg: Package, release: Release) -> list[Archive]:
+    """The archives of a prebuilt release, in `[[upstream.archive]]` order: each entry there whose
+    `<os>-<arch>` the release has a sha256 for. The URL and prefix are that entry's templates,
+    expanded for this release. A release key that matches no entry is an error (a typo would
+    otherwise silently drop a platform)."""
+    who = f"{pkg.name} {release.version}"
+    hashes = release.archives
+    if not isinstance(hashes, dict) or not hashes or not all(isinstance(v, str) for v in hashes.values()):
+        raise RegistryError(f"{who}: `archives` must be a non-empty table of `\"<os>-<arch>\" = \"<sha256>\"`")
+    tag = release_tag(pkg, release)
+    out, seen = [], set()
+    for a in upstream_archives(pkg):
+        key = f"{a['os']}-{a['arch']}"
+        if key in seen:
+            raise RegistryError(f"{pkg.name}: two [[upstream.archive]] entries for {key}")
+        seen.add(key)
+        if key in hashes:
+            strip_t = a.get("strip_prefix")
+            out.append(Archive(a["os"], a["arch"], expand(a["url"], release, tag=tag), hashes[key],
+                               expand(strip_t, release, tag=tag) if strip_t else None))
+    unknown = sorted(set(hashes) - seen)
+    if unknown:
+        raise RegistryError(f"{who}: `archives` names {', '.join(unknown)}, but there is no [[upstream.archive]] "
+                            f"with that os and arch (have: {', '.join(sorted(seen)) or 'none'})")
+    return out
 
 
 def release_source(pkg: Package, release: Release) -> Source:
     up = pkg.upstream
+    if release.archives is not None:
+        if release.sha256 is not None or release.rev is not None:
+            raise RegistryError(f"{pkg.name} {release.version}: a release with `archives` (prebuilt binaries) "
+                                "cannot also set `sha256` or `rev`")
+        archives = release_archives(pkg, release)
+        return Source("archives", archives[0].url, archives=archives)
     if (release.sha256 is None) == (release.rev is None):
-        raise RegistryError(f"{pkg.name} {release.version}: set exactly one of `sha256` (tarball) or `rev` (git)")
+        raise RegistryError(f"{pkg.name} {release.version}: set exactly one of `sha256` (tarball), `rev` (git) "
+                            "or `archives` (prebuilt binaries, one sha256 per platform)")
     if release.rev is not None:
         git = up.get("git")
         if not git:
@@ -464,7 +570,16 @@ def render_release(pkg: Package, release: Release) -> RenderedRelease:
     patch_entries.append((add_name, hashlib.sha256(add).hexdigest()))
 
     text = f'[package]\nname = "{pkg.name}"\nversion = "{version}"\n\n'
-    if source.kind == "tarball":
+    if source.kind == "archives":
+        # One `[[source.archive]]` per platform; Harbour downloads only the one that matches the
+        # platform being built for. The order is `[[upstream.archive]]`'s, and it is part of the
+        # release's checksum (shim_checksum), like every byte of these entries.
+        for a in source.archives:
+            text += f'[[source.archive]]\nos = "{a.os}"\narch = "{a.arch}"\nurl = "{a.url}"\nsha256 = "{a.sha256}"\n'
+            if a.strip_prefix:
+                text += f'strip_prefix = "{a.strip_prefix}"\n'
+            text += "\n"
+    elif source.kind == "tarball":
         text += f'[source.tarball]\nurl = "{source.url}"\nsha256 = "{source.sha256}"\n'
         if source.strip_prefix:
             text += f'strip_prefix = "{source.strip_prefix}"\n'
@@ -535,7 +650,29 @@ def parse_shim(text: str) -> dict:
     return tomllib.loads(text)
 
 
+ARCHIVES_CHECKSUM_PREFIX = "archives-sha256:"
+
+
+def archives_checksum(shim: dict) -> str:
+    """Port of Harbour's `Shim::archives_checksum`: ONE checksum for a prebuilt release, over every
+    platform's archive (conditions, URL, sha256, prefix, format) and the patches, so a lockfile
+    written on one platform pins the others' archives too."""
+    text = ""
+    for a in shim["source"]["archive"]:
+        text += (f"os={a.get('os', '')}|arch={a.get('arch', '')}|env={a.get('env', '')}|"
+                 f"archive:{a['url']}:{a['sha256']}:{a.get('strip_prefix', '')}:{a.get('format', '')}\n")
+    for p in shim.get("patches", []):
+        text += f"patch|{p['file']}|{p['sha256']}\n"
+    return ARCHIVES_CHECKSUM_PREFIX + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def is_archives_shim(shim: dict) -> bool:
+    return bool(shim.get("source", {}).get("archive"))
+
+
 def shim_checksum(shim: dict) -> str | None:
+    if is_archives_shim(shim):
+        return archives_checksum(shim)
     tarball = shim.get("source", {}).get("tarball")
     if tarball:
         return tarball["sha256"]
@@ -570,7 +707,9 @@ def render_idx(pkg: Package, shims: dict[str, dict], previous: list[dict], newes
                 "manifest is not kept: restore the record, or run render.py with --harbour <binary>"
             )
         records.append({
-            "format_version": 1, "name": pkg.name, "version": version,
+            # 2 for a prebuilt release: a Harbour from before prebuilt packages refuses the record
+            # by name instead of selecting a package whose shim it cannot read.
+            "format_version": 2 if is_archives_shim(shim) else 1, "name": pkg.name, "version": version,
             "yanked": old.get(version, {}).get("yanked", False),
             "deps": deps, "checksum": shim_checksum(shim),
             "license": shim.get("metadata", {}).get("license"),

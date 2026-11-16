@@ -25,7 +25,12 @@ For each package the runner:
      and requires exactly `[test] objects` for this platform. A source list that silently
      shrinks still links and still passes; this is what notices. A header-only package has
      `objects = 0`: it has no such directory, so what is checked instead is that the consumer's
-     Harbour.lock pins it from the registry and that no object was built for it;
+     Harbour.lock pins it from the registry and that no object was built for it. A PREBUILT
+     package (a release with per-platform `archives`) also has `objects = 0`: nothing is compiled
+     for the dependency, the consumer's own sources still are, and the consumer must still build
+     AND RUN. For it the runner additionally requires an archive for this platform and
+     architecture, that the lockfile pins the release's `archives-sha256:` checksum, and that
+     the archive Harbour downloaded is this platform's and no other's;
   6. if the package sets `[test] verify = true`, runs `harbour verify <pkg> --registry-path
      <snapshot> --format json` as an independent second signal (every public header that can
      compile on its own does, and a harness links against the library and runs) and requires
@@ -126,6 +131,44 @@ class Failure(Exception):
     pass
 
 
+def platform_archive(pkg: rt.Package, plat: str, arch: str) -> rt.Archive | None:
+    """The archive of a prebuilt package's newest release for `<plat>-<arch>`; None when the package
+    is not prebuilt. No archive for this platform is a failure, not a skip: the package claims the
+    platform in `[test] platforms`, and a test that quietly did nothing would keep that claim green."""
+    if pkg.newest.archives is None:
+        return None
+    archives = rt.release_archives(pkg, pkg.newest)
+    for a in archives:
+        if a.key == f"{plat}-{arch}":
+            return a
+    raise Failure(f"{pkg.name} {pkg.newest.version} is prebuilt and has no archive for {plat}-{arch} "
+                  f"(it has: {', '.join(a.key for a in archives)}); upstream publishes no binary for this machine")
+
+
+def prebuilt_problems(archives: list[rt.Archive], mine: rt.Archive, output: str, lock_checksum: str | None,
+                      index_checksum: str | None, fresh_cache: bool) -> list[str]:
+    """What is wrong with the evidence that a prebuilt package was fetched as the registry pins it.
+
+    `output` is everything the build printed. Harbour names the archive it downloads
+    (`Downloading <pkg> <version> for <triple> (<size>) from <url>`), so: no OTHER platform's URL may
+    appear (only the matching archive is downloaded; fetching all of them would be hundreds of
+    megabytes per build and would mean the platform conditions do not select), and with a cache that
+    started empty this platform's URL must appear. The lockfile must carry the release's
+    `archives-sha256:` checksum, the one in the index, which covers every platform's sha256."""
+    problems = []
+    if not index_checksum or not index_checksum.startswith(rt.ARCHIVES_CHECKSUM_PREFIX):
+        problems.append(f"the index record's checksum is `{index_checksum}`, not an `{rt.ARCHIVES_CHECKSUM_PREFIX}` one")
+    elif lock_checksum != index_checksum:
+        problems.append(f"Harbour.lock pins checksum `{lock_checksum}` but the index records `{index_checksum}`")
+    for a in archives:
+        if a is not mine and a.url != mine.url and a.url in output:
+            problems.append(f"the build fetched the {a.key} archive ({a.url}) on {mine.key}")
+    if fresh_cache and mine.url not in output:
+        problems.append(f"the build output never names this platform's archive ({mine.url}), although the cache "
+                        "started empty: the library did not come from the pinned archive")
+    return problems
+
+
 def dependency_objects(work: Path, name: str, version: str, want: int, log: list[str]) -> int:
     """Translation units compiled for the dependency, found under `work`.
 
@@ -151,10 +194,10 @@ def dependency_objects(work: Path, name: str, version: str, want: int, log: list
             continue
         pinned = pinned or any(p.get("name") == name and p.get("version") == version
                                and str(p.get("source", "")).startswith("registry+") for p in packages)
-    log.append(f"== header-only: {'Harbour.lock pins' if pinned else 'NO lock entry for'} {name} {version} "
+    log.append(f"== nothing compiled: {'Harbour.lock pins' if pinned else 'NO lock entry for'} {name} {version} "
                f"from the registry; {len(dirs)} deps directory(ies)")
     if not pinned:
-        raise Failure(f"[test] objects = 0 (header-only), but no Harbour.lock under {work} resolves "
+        raise Failure(f"[test] objects = 0 (header-only or prebuilt), but no Harbour.lock under {work} resolves "
                       f"`{name} {version}` from the registry: the consumer must depend on it through the registry.")
     return got
 
@@ -264,6 +307,7 @@ class Runner:
                     raise Failure(f"needs `{tool}` on PATH ([test] needs), and it is not there")
             newest = pkg.newest
             want_objects = expected_objects(pkg, self.plat, self.arch)
+            archive = platform_archive(pkg, self.plat, self.arch)
             work = self.tmp / f"work-{pkg.name}"
             work.mkdir()
             test_dir = pkg.dir / "test"
@@ -293,6 +337,8 @@ class Runner:
                     f"{self.plat}-{self.arch}). A source list that silently shrinks still links and still "
                     "passes its test; that is why this is asserted separately.")
             extra = ""
+            if archive is not None:
+                extra = ", " + self.prebuilt(pkg, archive, work, log)
             if pkg.test.get("verify"):
                 extra = ", " + self.verify(pkg, env, left, log)
         except Failure as err:
@@ -300,6 +346,29 @@ class Runner:
         except (RegistryError, OSError, subprocess.SubprocessError) as err:
             return False, f"{type(err).__name__}: {err}\n\n" + "\n".join(log)
         return True, f"{time.time() - start:.1f}s, {got} objects{extra}"
+
+    def prebuilt(self, pkg: rt.Package, archive: rt.Archive, work: Path, log: list[str]) -> str:
+        """The extra checks of a prebuilt package (prebuilt_problems): the right archive, pinned."""
+        newest = pkg.newest
+        record = next((r for r in rt.read_idx(rt.idx_path(pkg.name, index=self.snapshot / "index"))
+                       if r.get("version") == newest.version), {})
+        lock_checksum = None
+        for lock in work.glob("**/Harbour.lock"):
+            try:
+                packages = rt.read_toml(lock).get("package", [])
+            except RegistryError:
+                continue
+            for p in packages:
+                if p.get("name") == pkg.name and p.get("version") == newest.version:
+                    lock_checksum = p.get("checksum")
+        # The cache starts empty wherever HOME is isolated; on Windows it is the user's real cache.
+        fresh = current_platform() != "windows" or os.environ.get("GITHUB_ACTIONS") == "true"
+        problems = prebuilt_problems(rt.release_archives(pkg, newest), archive, "\n".join(log), lock_checksum,
+                                     record.get("checksum"), fresh)
+        log.append(f"== prebuilt: {archive.key} archive {archive.url}; lock checksum {lock_checksum}")
+        if problems:
+            raise Failure("prebuilt package: " + "; ".join(problems))
+        return f"prebuilt {archive.key} archive"
 
     def verify(self, pkg: rt.Package, env, left, log) -> str:
         """`harbour verify`: a second, independent signal, for packages that opt in with `[test] verify = true`.
