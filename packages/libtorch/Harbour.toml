@@ -1,0 +1,91 @@
+[package]
+name = "libtorch"
+version = "2.15.0"
+license = "BSD-3-Clause"
+supports = ["x86_64-*-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"]
+
+# PREBUILT: nothing is compiled. The package is upstream's official CPU libtorch archive for the platform
+# being built for (download.pytorch.org/libtorch/cpu; the registry entry pins one archive per platform by
+# sha256, and Harbour downloads only the matching one). This manifest is the same for every platform; the
+# `when` blocks name each archive's files.
+#
+# Everything below is read from the CMake package inside the 2.15.0 archives, which is upstream's own
+# statement of how a consumer builds against them:
+#   share/cmake/Torch/TorchConfig.cmake
+#     TORCH_INCLUDE_DIRS = include, include/torch/csrc/api/include          -> include_dirs
+#     TORCH_LIBRARIES    = torch (+ Caffe2_MAIN_LIBS = torch_library), c10   -> prebuilt_libs: torch, torch_cpu, c10
+#     target_compile_features(torch INTERFACE cxx_std_20)                    -> requires_cpp = "20" (a minimum)
+#     TORCH_CXX_FLAGS is not set in 2.15.0 (no _GLIBCXX_USE_CXX11_ABI: the archive uses the new libstdc++ ABI)
+#   share/cmake/Caffe2/Caffe2Targets.cmake (+ Caffe2Targets-release.cmake for the file names)
+#     torch -> torch_cpu_library -> torch_cpu -> c10; `protobuf::libprotobuf` and `caffe2::mkl` are
+#     interface targets with no file in the archive (protobuf and MKL are linked into torch_cpu)
+#     torch_cpu INTERFACE_COMPILE_DEFINITIONS: USE_DISTRIBUTED;USE_C10D_GLOO everywhere, plus
+#       USE_RPC;USE_TENSORPIPE on Linux and macOS                             -> defines
+#     c10/torch_cpu INTERFACE_COMPILE_OPTIONS on Windows: /permissive- /EHsc /bigobj (C++ only)
+#                                                                             -> cflags under compiler = "msvc"
+#       (/EHsc is Harbour's default for C++ with exceptions on; /Z7 is CMake's debug-info choice, not ours)
+#
+# Linux only: upstream wraps torch and torch_cpu in `-Wl,--no-as-needed ... -Wl,--as-needed`. Harbour puts a
+# public `ldflags` entry AFTER the prebuilt libraries on the link line, so that cannot be written here. For
+# this CPU archive it changes nothing that matters: lib/libtorch.so is an 8 KB stub with no symbols whose
+# only job is to depend on libtorch_cpu.so, a linker defaulting to --as-needed (Ubuntu's) drops it, and
+# libtorch_cpu.so itself stays because any program that uses torch references its symbols.
+#
+# runtime_libs are the libraries the linked ones load that are not on the link line (read from each
+# library's own dependency table: ELF NEEDED, Mach-O LC_LOAD_DYLIB, PE imports):
+#   Linux    libtorch_cpu.so needs libgomp.so.1, bundled in lib/ (found through its RUNPATH $ORIGIN);
+#   macOS    libtorch_cpu.dylib loads @loader_path/libomp.dylib;
+#   Windows  the DLLs behind the three import libraries, and what torch_cpu.dll imports from lib/:
+#            libiomp5md.dll (OpenMP) and uv.dll.
+# Not listed, because no library a consumer links needs them: libshm, libtorch_global_deps and (Linux)
+# libgfortran.so.5, the JIT/AOTI test libraries; (Windows) torch_python, shm, libiompstubs5md, the static
+# helper archives (fmt, cpuinfo, sleef, pthreadpool, libittnotify: already inside torch_cpu.dll).
+#
+# From C: the library has a C ABI (`aoti_torch_*`, `torch_*`: tensors from memory, shape and dtype queries,
+# ATen operators, errors as return codes; exported from torch_cpu), but upstream's headers for it
+# (torch/csrc/inductor/aoti_torch/c/shim.h, torch/csrc/stable/c/shim.h) are C++-only in 2.15.0. A C program
+# declares the functions it calls itself and may include <torch/headeronly/version.h>, which is valid C.
+# `lang = "c++"` makes whatever links this target use the C++ driver, as these libraries need.
+[targets.torch]
+kind = "prebuilt"
+lang = "c++"
+
+[targets.torch.public]
+include_dirs = ["include", "include/torch/csrc/api/include"]
+defines = ["USE_DISTRIBUTED", "USE_C10D_GLOO"]
+
+[targets.torch.surface.compile]
+requires_cpp = "20"
+
+[[targets.torch.when]]
+os = "linux"
+prebuilt_libs = ["lib/libtorch.so", "lib/libtorch_cpu.so", "lib/libc10.so"]
+runtime_libs = ["lib/libgomp.so.1"]
+
+[[targets.torch.when]]
+os = "macos"
+prebuilt_libs = ["lib/libtorch.dylib", "lib/libtorch_cpu.dylib", "lib/libc10.dylib"]
+runtime_libs = ["lib/libomp.dylib"]
+
+[[targets.torch.when]]
+os = "windows"
+prebuilt_libs = ["lib/torch.lib", "lib/torch_cpu.lib", "lib/c10.lib"]
+runtime_libs = ["lib/torch.dll", "lib/torch_cpu.dll", "lib/c10.dll", "lib/libiomp5md.dll", "lib/uv.dll"]
+
+[[targets.torch.surface.when]]
+os = "linux"
+
+[targets.torch.surface.when."compile.public"]
+defines = ["USE_RPC", "USE_TENSORPIPE"]
+
+[[targets.torch.surface.when]]
+os = "macos"
+
+[targets.torch.surface.when."compile.public"]
+defines = ["USE_RPC", "USE_TENSORPIPE"]
+
+[[targets.torch.surface.when]]
+compiler = "msvc"
+
+[targets.torch.surface.when."compile.public"]
+cflags = ["/permissive-", "/bigobj"]

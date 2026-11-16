@@ -1,0 +1,29 @@
+# Consumer test for libtorch: depends on it THROUGH THE REGISTRY (tools/test.py points Harbour at this
+# checkout), never by path. "*" means "whatever the registry's newest version is".
+#
+# Two consumers in one program, because the question is "can I call libtorch from C++ and from C":
+#   * `consumer` is a plain C executable (C11, compiled by the C compiler, `main` in C). It calls
+#     libtorch's C ABI, then the C++ part.
+#   * `cxxpart` is C++20: the ordinary `#include <torch/torch.h>` API, and a translation unit that
+#     checks the C declarations in torch_c_shim.h against upstream's own headers.
+# Language is chosen per target, so the C++ sources are their own (static library) target.
+[package]
+name = "libtorch-test"
+version = "0.1.0"
+
+[dependencies]
+libtorch = "*"
+
+[targets.cxxpart]
+kind = "staticlib"
+lang = "c++"
+sources = ["src/consumer.cpp", "src/shim_decls.cpp"]
+
+[targets.consumer]
+kind = "exe"
+lang = "c"
+c_std = "11"
+sources = ["src/main.c"]
+
+[targets.consumer.deps]
+cxxpart = { local = true }
