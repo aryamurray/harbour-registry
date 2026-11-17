@@ -40,7 +40,7 @@ name: Watch
 #                                  manifest` step sees it, as REPAIR_API_KEY.
 #   variable  OPENROUTER_BASE      in that environment: the API base, https://openrouter.ai/api/v1
 #                                  (the URL up to and including the version segment; https only).
-#   (declared in the repair job)   the model, openrouter/free. Changing it is a reviewed change to
+#   (declared in the repair job)   the model, openai/gpt-oss-20b. Changing it is a reviewed change to
 #                                  this file.
 #   variable  REPAIR_TEMPERATURE, REPAIR_MAX_TOKENS, REPAIR_TIMEOUT, REPAIR_TOTAL_TIMEOUT,
 #             REPAIR_MAX_PROMPT_CHARS
@@ -537,11 +537,12 @@ jobs:
         env:
           # The key and the endpoint come from the `Openrouter` environment. The model is declared
           # here, in a reviewed file: changing the model that rewrites manifests is a change to this
-          # workflow. `openrouter/free` is OpenRouter's router over whichever free models it
-          # currently serves.
+          # workflow. A named model, not OpenRouter's free router: the router's choice on the
+          # first real repair took twenty minutes and returned no text. This one is billed to
+          # the account's credits (a repair prompt is roughly 8,000 tokens).
           REPAIR_API_BASE: ${{ vars.OPENROUTER_BASE }}
           REPAIR_API_KEY: ${{ secrets.OPENROUTER_KEY }}
-          REPAIR_MODEL: openrouter/free
+          REPAIR_MODEL: openai/gpt-oss-20b
           REPAIR_TEMPERATURE: ${{ vars.REPAIR_TEMPERATURE }}
           REPAIR_MAX_TOKENS: ${{ vars.REPAIR_MAX_TOKENS }}
           REPAIR_TIMEOUT: ${{ vars.REPAIR_TIMEOUT }}
