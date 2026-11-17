@@ -42,7 +42,8 @@ name: Watch
 #                                  (the URL up to and including the version segment; https only).
 #   (declared in the repair job)   the model, openrouter/free. Changing it is a reviewed change to
 #                                  this file.
-#   variable  REPAIR_TEMPERATURE, REPAIR_MAX_TOKENS, REPAIR_TIMEOUT, REPAIR_MAX_PROMPT_CHARS
+#   variable  REPAIR_TEMPERATURE, REPAIR_MAX_TOKENS, REPAIR_TIMEOUT, REPAIR_TOTAL_TIMEOUT,
+#             REPAIR_MAX_PROMPT_CHARS
 #                                  optional tuning; defaults and meaning in tools/repair.py's docstring.
 #   labels    bot, bump, needs-repair, needs-human, license-changed, keep (and repair-attempt-N):
 #             created by this workflow when missing (`tools/bump_triage.py ensure-labels`), nothing to
@@ -545,11 +546,12 @@ jobs:
           REPAIR_MAX_TOKENS: ${{ vars.REPAIR_MAX_TOKENS }}
           REPAIR_TIMEOUT: ${{ vars.REPAIR_TIMEOUT }}
           REPAIR_MAX_PROMPT_CHARS: ${{ vars.REPAIR_MAX_PROMPT_CHARS }}
+          REPAIR_TOTAL_TIMEOUT: ${{ vars.REPAIR_TOTAL_TIMEOUT }}
         run: |
           mkdir -p "$RUNNER_TEMP/out"
           keep=("PATH=$PATH" "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}")
           for v in REPAIR_API_BASE REPAIR_API_KEY REPAIR_MODEL REPAIR_TEMPERATURE REPAIR_MAX_TOKENS \
-                   REPAIR_TIMEOUT REPAIR_MAX_PROMPT_CHARS; do
+                   REPAIR_TIMEOUT REPAIR_MAX_PROMPT_CHARS REPAIR_TOTAL_TIMEOUT; do
             if [ -n "${!v:-}" ]; then keep+=("$v=${!v}"); fi
           done
           env -i "${keep[@]}" python -I tools/repair.py --package "$PKG" --attempt "$ATTEMPT" \

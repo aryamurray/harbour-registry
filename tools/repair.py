@@ -17,7 +17,9 @@ CONFIGURATION, by environment only (this script reads no other environment varia
     REPAIR_MODEL             the model name the provider expects
     REPAIR_TEMPERATURE       optional, default 0 ; `omit` leaves the field out of the request
     REPAIR_MAX_TOKENS        optional, default 8192 (reply tokens) ; `omit` leaves the field out
-    REPAIR_TIMEOUT           optional, seconds per request, default 300
+    REPAIR_TIMEOUT           optional, seconds per request, default 300. Wall clock: a server that
+                             keeps the connection alive with filler bytes does not extend it
+    REPAIR_TOTAL_TIMEOUT     optional, seconds for the whole attempt (all rounds and retries), default 900
     REPAIR_MAX_PROMPT_CHARS  optional, default 150000 ; the prompt is trimmed (deterministically, and it
                              says where) to fit, never the manifest itself
 If any of the first three is missing the script exits 3, "not configured", naming what to set.
@@ -102,6 +104,7 @@ Standalone on purpose (standard library only, no import of the other tools): the
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import json
 import os
@@ -228,6 +231,8 @@ class Config:
     max_tokens: int | None = 8192
     timeout: float = 300.0
     max_prompt_chars: int = DEFAULT_MAX_PROMPT_CHARS
+    total_timeout: float = 900.0        # wall clock for the whole attempt: every round and retry
+    deadline: float | None = None       # time.monotonic() value set by propose(); None: no overall limit
 
     @property
     def endpoint(self) -> str:
@@ -291,7 +296,8 @@ def load_config(environ: Mapping[str, str]) -> Config:
         temperature=_number(env, "REPAIR_TEMPERATURE", 0.0, float, 0.0, 2.0, omit_ok=True),
         max_tokens=_number(env, "REPAIR_MAX_TOKENS", 8192, int, 256, 1_000_000, omit_ok=True),
         timeout=_number(env, "REPAIR_TIMEOUT", 300.0, float, 5.0, 1500.0),
-        max_prompt_chars=prompt_budget(env))
+        max_prompt_chars=prompt_budget(env),
+        total_timeout=_number(env, "REPAIR_TOTAL_TIMEOUT", 900.0, float, 10.0, 2400.0))
 
 
 # ---------------------------------------------------------------------------
@@ -921,12 +927,29 @@ def chat(cfg: Config, messages: list[dict], sleep: Callable[[float], None] = tim
     for attempt in range(HTTP_RETRIES + 1):
         if attempt:
             sleep(RETRY_SLEEP[min(attempt - 1, len(RETRY_SLEEP) - 1)])
+        now = time.monotonic()
+        if cfg.deadline is not None and now >= cfg.deadline:
+            raise EndpointError((last + "; " if last else "") +
+                                f"out of time: the attempt's {cfg.total_timeout:g} s (REPAIR_TOTAL_TIMEOUT) are spent")
+        # One request may take cfg.timeout seconds of WALL CLOCK, and never past the attempt's deadline.
+        # The socket timeout alone does not bound it: it restarts with every byte received, and a
+        # router that keeps a slow request alive with filler bytes held one request open for over
+        # twenty minutes that way.
+        stop = now + cfg.timeout if cfg.deadline is None else min(now + cfg.timeout, cfg.deadline)
         req = urllib.request.Request(cfg.endpoint, data=body, method="POST", headers={
             "Content-Type": "application/json", "Accept": "application/json",
             "Authorization": f"Bearer {cfg.key}", "User-Agent": "repair-step/1"})
         try:
-            with _opener().open(req, timeout=cfg.timeout) as r:
-                raw = r.read(MAX_RESPONSE_BYTES + 1)
+            with _opener().open(req, timeout=max(1.0, stop - now)) as r:
+                buf = bytearray()
+                while len(buf) <= MAX_RESPONSE_BYTES:
+                    chunk = r.read1(65536)
+                    if not chunk:
+                        break
+                    buf += chunk
+                    if time.monotonic() > stop:
+                        raise TimeoutError(f"no complete response within {stop - now:.0f} s")
+                raw = bytes(buf)
         except urllib.error.HTTPError as e:
             detail = e.read(2000).decode("utf-8", "replace") if e.fp else ""
             last = f"HTTP {e.code} from the model endpoint: {hide(detail)}"
@@ -974,6 +997,8 @@ def propose(inp: Inputs, cfg: Config, call: Callable[[Config, list[dict]], tuple
         transcript.update(package=inp.package, model=cfg.model, prompt_notes=notes,
                           system=system, user=user, rounds=[])
     problems: list[str] = []
+    if cfg.deadline is None:            # the whole attempt, every round and retry, shares one clock
+        cfg = dataclasses.replace(cfg, deadline=time.monotonic() + cfg.total_timeout)
     for n in range(1, MAX_ROUNDS + 1):
         reply, finish = call(cfg, messages)
         record = {"round": n, "finish_reason": finish, "reply": reply, "problems": []}

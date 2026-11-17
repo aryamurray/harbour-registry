@@ -612,7 +612,7 @@ What to create:
 | secret `OPENROUTER_KEY`, **in that environment** | the OpenRouter key, sent as `Authorization: Bearer <key>`. Only the one step that calls the model sees it |
 | variable `OPENROUTER_BASE`, **in that environment** | the API base, `https://openrouter.ai/api/v1`: the URL up to and including the version segment, https only. The repair step POSTs to `<base>/chat/completions` and contacts nothing else |
 | the model | not a setting: `openrouter/free` is written in the `repair` job of `watch.yml`, so changing the model that rewrites manifests is a reviewed change to that file |
-| variables `REPAIR_TEMPERATURE`, `REPAIR_MAX_TOKENS`, `REPAIR_TIMEOUT`, `REPAIR_MAX_PROMPT_CHARS` | optional; see below |
+| variables `REPAIR_TEMPERATURE`, `REPAIR_MAX_TOKENS`, `REPAIR_TIMEOUT`, `REPAIR_TOTAL_TIMEOUT`, `REPAIR_MAX_PROMPT_CHARS` | optional; see below |
 | labels `bot`, `bump`, `needs-repair`, `needs-human`, `license-changed`, `keep`, `repair-attempt-N` | created by the workflow when missing. `keep` is the one a person applies (a bump PR carrying it is never closed as superseded) |
 
 Branch protection that makes this safe (already required by the guard section above): require `PR result`,
@@ -696,7 +696,8 @@ vendor SDK is involved and nothing but the Python standard library is used.
    differ from one repair to the next. To use another provider, change what the job maps to `REPAIR_API_BASE`,
    `REPAIR_API_KEY` and `REPAIR_MODEL`.
 3. Optional variables: `REPAIR_TEMPERATURE` (default `0`), `REPAIR_MAX_TOKENS` (reply tokens, default `8192`;
-   either accepts `omit` for providers that reject the field), `REPAIR_TIMEOUT` (seconds, default `300`),
+   either accepts `omit` for providers that reject the field), `REPAIR_TIMEOUT` (seconds of wall clock per request, default `300`), `REPAIR_TOTAL_TIMEOUT` (seconds for the
+   whole attempt, every round and retry, default `900`),
    `REPAIR_MAX_PROMPT_CHARS` (default `150000`; lower it for a model with a small context window. A prompt is
    about a quarter as many tokens as characters; curl's is about 32,000 characters).
 4. Nothing to switch on: repair runs by default. To stop it, set the repository variable
