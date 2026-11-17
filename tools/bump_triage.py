@@ -305,12 +305,23 @@ def job_log(run: Gh, repo: str, job_id: int, *, pauses: tuple[float, ...] = LOG_
     asked for again after each of `pauses`; the reason returned is the LAST answer, with how often it
     was asked, so the failure summary says why it holds no log lines."""
     why, attempts = "", 0
+    # A recent `gh` refuses to print a response holding terminal escape sequences unless told to, and
+    # a build log is full of colours: that refusal, not timing, is why the first summaries had no log
+    # lines. `tail` strips colours and control characters, so asking for them is safe. An older `gh`
+    # does not know the flag; it is then dropped, without spending an attempt.
+    flags = ["--allow-escape-sequences"]
     for pause in (0.0, *pauses):
         if pause:
             sleep(pause)
         attempts += 1
         try:
-            return run("api", f"repos/{repo}/actions/jobs/{job_id}/logs", timeout=LOG_TIMEOUT), True
+            try:
+                return run("api", *flags, f"repos/{repo}/actions/jobs/{job_id}/logs", timeout=LOG_TIMEOUT), True
+            except TriageError as e:
+                if not (flags and "unknown flag" in str(e)):
+                    raise
+                flags = []
+                return run("api", f"repos/{repo}/actions/jobs/{job_id}/logs", timeout=LOG_TIMEOUT), True
         except (TriageError, subprocess.TimeoutExpired) as e:
             why, again = log_failure(e)
             if not again:
