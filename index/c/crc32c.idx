@@ -1,1 +1,2 @@
 {"format_version":1,"name":"crc32c","version":"1.1.0","yanked":false,"deps":[],"checksum":null,"license":"BSD-3-Clause","shim":"c/crc32c/1.1.0.toml"}
+{"format_version":1,"name":"crc32c","version":"1.1.2","yanked":false,"deps":[],"checksum":null,"license":"BSD-3-Clause","shim":"c/crc32c/1.1.2.toml"}
