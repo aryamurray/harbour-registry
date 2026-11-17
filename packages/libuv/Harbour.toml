@@ -20,7 +20,7 @@
 
 [package]
 name = "libuv"
-version = "1.51.0"
+version = "1.53.0"
 description = "Cross-platform asynchronous I/O"
 license = "MIT"
 homepage = "https://libuv.org"
@@ -146,4 +146,4 @@ defines = ["WIN32_LEAN_AND_MEAN", "_WIN32_WINNT=0x0A00", "_CRT_DECLARE_NONSTDC_N
 [[targets.uv.surface.when]]
 os = "windows"
 [targets.uv.surface.when."link.public"]
-libs = ["psapi", "user32", "advapi32", "iphlpapi", "userenv", "ws2_32", "dbghelp", "ole32", "shell32"]
+libs = ["psapi", "user32", "advapi32", "iphlpapi", "userenv", "ws2_32", "dbghelp", "ole32", "shell32", "synchronization"]
