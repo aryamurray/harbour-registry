@@ -11,6 +11,11 @@ url = "https://dist.libuv.org/dist/{tag}/libuv-{tag}.tar.gz"
 strip_prefix = "libuv-{tag}"
 
 [[release]]
+version = "1.53.0"
+sha256 = "cb0d6dd2128d5a95bd242c6cc982a24fe608fa93da57b6b4ec763b0018c53e64"
+license_sha256 = "a4a57cff3ff489d5bad8fde827f9ec0eddd61b92e32527ce167ccd0eba2ef17c"
+
+[[release]]
 version = "1.51.0"
 sha256 = "5f0557b90b1106de71951a3c3931de5e0430d78da1d9a10287ebc7a3f78ef8eb"
 license_sha256 = "a4a57cff3ff489d5bad8fde827f9ec0eddd61b92e32527ce167ccd0eba2ef17c"

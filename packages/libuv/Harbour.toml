@@ -20,7 +20,7 @@
 
 [package]
 name = "libuv"
-version = "1.51.0"
+version = "1.53.0"
 description = "Cross-platform asynchronous I/O"
 license = "MIT"
 homepage = "https://libuv.org"

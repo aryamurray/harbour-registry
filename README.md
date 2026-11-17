@@ -27,7 +27,7 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [libjpeg-turbo](packages/libjpeg-turbo) | 3.2.1 | `IJG AND BSD-3-Clause AND Zlib` | linux, macos, windows | JPEG image codec: the libjpeg and TurboJPEG APIs, built without SIMD |
 | [libpng](packages/libpng) | 1.6.50 | `libpng-2.0` | linux, macos, windows | Reference implementation of the PNG image format |
 | [libtorch](packages/libtorch) | 2.15.0 | `BSD-3-Clause` | linux, macos, windows | PyTorch's C++ library (LibTorch), CPU build: upstream's official prebuilt binaries, not built from source |
-| [libuv](packages/libuv) | 1.51.0 | `MIT` | linux, macos, windows | Cross-platform asynchronous I/O |
+| [libuv](packages/libuv) | 1.53.0 | `MIT` | linux, macos, windows | Cross-platform asynchronous I/O |
 | [libwebp](packages/libwebp) | 1.6.0 | `BSD-3-Clause` | linux, macos, windows | WebP image codec: encoder, decoder, sharp YUV conversion, demux and mux libraries |
 | [luajit](packages/luajit) | 2.1.1792588164 | `MIT` | linux, macos, windows | Just-in-time compiler and interpreter for the Lua language |
 | [lz4](packages/lz4) | 1.11.1 | `BSD-2-Clause` | linux, macos, windows | Extremely fast lossless compression: LZ4 blocks, high-compression mode and the frame format |
