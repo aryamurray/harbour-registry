@@ -1,9 +1,9 @@
 diff --git a/Harbour.toml b/Harbour.toml
 new file mode 100644
-index 0000000..507a546
+index 0000000..77b9414
 --- /dev/null
 +++ b/Harbour.toml
-@@ -0,0 +1,1103 @@
+@@ -0,0 +1,1102 @@
 +# THE REGISTRY ENTRY'S MANIFEST, derived from ci/canary/cpython/Harbour.toml and
 +# ci/canary/cpython-config by tools/registry-from-shims/cpython/derive.py -- edit the
 +# derivation, not this file. Differences from the canary: zlib is a registry
@@ -1095,7 +1095,6 @@ index 0000000..507a546
 +    "Python/frozen_modules/_sitebuiltins.h",
 +    "Python/frozen_modules/abc.h",
 +    "Python/frozen_modules/codecs.h",
-+    "Python/frozen_modules/frozen_only.h",
 +    "Python/frozen_modules/genericpath.h",
 +    "Python/frozen_modules/importlib.machinery.h",
 +    "Python/frozen_modules/importlib.util.h",
@@ -1171,10 +1170,10 @@ index 0000000..70ef6b2
 +"$HARBOUR_TOOL_FREEZE_MODULE" zipimport ./Lib/zipimport.py Python/frozen_modules/zipimport.h
 diff --git a/harbour/freeze2.sh b/harbour/freeze2.sh
 new file mode 100644
-index 0000000..21d7e59
+index 0000000..32c6d7e
 --- /dev/null
 +++ b/harbour/freeze2.sh
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,31 @@
 +#!/bin/sh
 +# Stage 2: freeze the rest, using _bootstrap_python.
 +#
@@ -1206,7 +1205,6 @@ index 0000000..21d7e59
 +./_bootstrap_python ./Programs/_freeze_module.py __phello__.ham.eggs ./Lib/__phello__/ham/eggs.py Python/frozen_modules/__phello__.ham.eggs.h
 +./_bootstrap_python ./Programs/_freeze_module.py __phello__.spam ./Lib/__phello__/spam.py Python/frozen_modules/__phello__.spam.h
 +./_bootstrap_python ./Programs/_freeze_module.py linecache ./Lib/linecache.py Python/frozen_modules/linecache.h
-+./_bootstrap_python ./Programs/_freeze_module.py frozen_only ./Tools/freeze/flag.py Python/frozen_modules/frozen_only.h
 diff --git a/harbour/pyconfig.sh b/harbour/pyconfig.sh
 new file mode 100644
 index 0000000..13419e5

@@ -29,4 +29,3 @@ echo none > pybuilddir.txt
 ./_bootstrap_python ./Programs/_freeze_module.py __phello__.ham.eggs ./Lib/__phello__/ham/eggs.py Python/frozen_modules/__phello__.ham.eggs.h
 ./_bootstrap_python ./Programs/_freeze_module.py __phello__.spam ./Lib/__phello__/spam.py Python/frozen_modules/__phello__.spam.h
 ./_bootstrap_python ./Programs/_freeze_module.py linecache ./Lib/linecache.py Python/frozen_modules/linecache.h
-./_bootstrap_python ./Programs/_freeze_module.py frozen_only ./Tools/freeze/flag.py Python/frozen_modules/frozen_only.h
