@@ -1,0 +1,18 @@
+# Fixture: a rolling release with no tags. It opts out of the watcher and has no tag template.
+[package]
+name = "fx-nowatch"
+description = "Fixture: opted out of the watcher (watch = false, no tag template)"
+license = "MIT"
+
+[upstream]
+git = "https://github.com/fx-upstream/fx-nowatch"
+watch = false
+
+[[release]]
+version = "2.1.1700000000"
+rev = "40541766125d29c5ee7814b289ce0af9db2868e5"
+license_sha256 = "8e29f5ad940fa1f78f3639150315405e7457eb27a79afd3129f0773628811379"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 7

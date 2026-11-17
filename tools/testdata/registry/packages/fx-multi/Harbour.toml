@@ -1,0 +1,12 @@
+[package]
+name = "fx-multi"
+version = "2.10.0"
+license = "BSD-3-Clause"
+
+[targets.multi]
+kind = "staticlib"
+lang = "c"
+sources = ["src/*.c"]
+
+[targets.multi.surface.compile.public]
+include_dirs = ["include"]

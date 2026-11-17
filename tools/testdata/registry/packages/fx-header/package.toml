@@ -1,0 +1,18 @@
+# Fixture: a header-only package (nothing is compiled, so `objects` is exactly 0).
+[package]
+name = "fx-header"
+description = "Fixture: header-only"
+license = "BSL-1.0"
+
+[upstream]
+git = "https://github.com/fx-upstream/fx-header"
+tag = "v{version}"
+
+[[release]]
+version = "3.12.0"
+rev = "30085ec9946877c27a4e675980a702cddf93cd78"
+license_sha256 = "24dc1d606ea15122fee33977cff034ee8b71b0f813f5fc6450660c5eaa2a42ca"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 0

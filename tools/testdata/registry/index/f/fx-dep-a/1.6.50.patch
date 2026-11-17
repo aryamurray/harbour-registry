@@ -1,0 +1,21 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..b1ae622
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,15 @@
++[package]
++name = "fx-dep-a"
++version = "1.6.50"
++license = "MIT"
++
++[dependencies]
++fx-tarball = "^1.3"
++
++[targets.a]
++kind = "staticlib"
++lang = "c"
++sources = ["src/*.c"]
++
++[targets.a.surface.compile.public]
++include_dirs = ["include"]

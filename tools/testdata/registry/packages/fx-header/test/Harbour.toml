@@ -1,0 +1,10 @@
+[package]
+name = "fx-header-test"
+version = "0.1.0"
+
+[dependencies]
+fx-header = "*"
+
+[targets.fx-header-test]
+kind = "exe"
+sources = ["src/**/*.c"]

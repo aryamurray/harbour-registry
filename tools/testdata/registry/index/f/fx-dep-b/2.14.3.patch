@@ -1,0 +1,23 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..85e4d55
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,17 @@
++[package]
++name = "fx-dep-b"
++version = "2.14.3"
++license = "FTL OR GPL-2.0-or-later"
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl"]
++
++[dependencies]
++fx-dep-a = "1.6"
++fx-tarball = { version = "1.3", optional = true }
++
++[targets.b]
++kind = "staticlib"
++lang = "c"
++sources = ["src/*.c"]
++
++[targets.b.surface.compile.public]
++include_dirs = ["include"]
