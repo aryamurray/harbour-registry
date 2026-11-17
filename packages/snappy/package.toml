@@ -11,6 +11,11 @@ tag = "{version}"
 # are not byte-stable. The release is pinned by the git commit its (lightweight) tag points at.
 
 [[release]]
+version = "1.3.1"
+rev = "9c28114a38866f6deeaa826db918293bc28ae410"
+license_sha256 = "68387b0fb0089985c376ea6642cdf3981c2308bccffdcefabfc753ba95eae387"
+
+[[release]]
 version = "1.2.1"
 rev = "2c94e11145f0b7b184b831577c93e5a41c4c0346"
 license_sha256 = "4d8b1b09a4b3ea32bb6ed1f1064f114d636e34725597bb37830e1470ca1e35e7"
