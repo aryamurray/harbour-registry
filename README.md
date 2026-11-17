@@ -640,7 +640,7 @@ merges nothing.
 
 **The repair contract** (`tools/repair.py`; its docstring is the full text):
 
-* *input:* the failure summary, the upstream added/removed/renamed file listing, the run context, and the bump
+* *input:* the failure summary, the upstream added/removed/renamed file listing, the diff text of upstream's own build files (CMake, Makefile, meson and the like, capped), the run context, and the bump
   branch's `packages/<pkg>/` fetched as data into a directory (never executed);
 * *output:* files for `packages/<pkg>/Harbour.toml`, `overlay/**`, `patches/*.patch`, nothing else (files can be
   added or rewritten, not deleted), committed to the **same** bump branch with `REGISTRY_BOT_TOKEN` so `pr.yml`

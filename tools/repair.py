@@ -142,6 +142,9 @@ CAP_SUMMARY = 24_000
 CAP_SUMMARY_SMALL = 8_000
 CAP_EXTRA_FILE = 12_000
 CAP_EXTRA_TOTAL = 40_000
+CAP_BUILD_DIFF_FILE = 12_000        # one upstream build file's diff
+CAP_BUILD_DIFF = 30_000             # all of them together
+CAP_BUILD_DIFF_SMALL = 8_000
 CAP_LISTING = 150                   # names shown per group of "other" upstream changes
 CAP_LISTING_SMALL = 25
 GITHUB_COMPARE_LIMIT = 300          # the compare API lists at most this many files
@@ -620,6 +623,30 @@ def upstream_changes(diff: dict | None, why: str, manifest: str, cap: int = CAP_
     return "\n".join(out)
 
 
+def build_file_diffs(diff: dict | None, cap: int = CAP_BUILD_DIFF) -> str:
+    """What upstream changed in its own build files between the two tags, as diff text.
+
+    The failure log says WHAT broke; this is usually where the answer is (a library added to the
+    link line, a new define, a source moved). Files nearest the root come first, and the whole is
+    capped: it is untrusted text like the rest of the prompt's data.
+    """
+    files = [f for f in (diff or {}).get("files") or []
+             if isinstance(f, dict) and isinstance(f.get("filename"), str) and isinstance(f.get("patch"), str) and f["patch"]]
+    if not files:
+        return "(no build-file changes are available)"
+    out, used, left_out = [], 0, 0
+    for f in sorted(files, key=lambda f: (f["filename"].count("/"), f["filename"])):
+        text = clip(clean(f["patch"]), CAP_BUILD_DIFF_FILE)
+        if used + len(text) > cap:
+            left_out += 1
+            continue
+        used += len(text)
+        out.append(f"--- {_PATHISH.sub('?', f['filename'])[:200]}\n{text}")
+    if left_out:
+        out.append(f"[... the diff of {left_out} more build file(s) is not shown ...]")
+    return "\n\n".join(out)
+
+
 def extra_files_text(extra: dict[str, bytes], with_content: bool) -> str:
     if not extra:
         return "(the package has no overlay/ or patches/ files)"
@@ -675,6 +702,8 @@ def build_prompt(inp: Inputs, max_chars: int = DEFAULT_MAX_PROMPT_CHARS) -> tupl
             notes.append(f"the failure summary was cut from {len(summary)} to about {summary_cap} characters")
         if level >= 1 and inp.extra:
             notes.append("overlay and patch files are listed by name only")
+        if level >= 2 and any(isinstance(f, dict) and f.get("patch") for f in (inp.diff or {}).get("files") or []):
+            notes.append(f"upstream's build-file diffs are cut to about {CAP_BUILD_DIFF_SMALL} characters")
         if level >= 3:
             notes.append(f"the upstream file listing shows at most {CAP_LISTING_SMALL} names per group")
         sections = [
@@ -686,6 +715,10 @@ def build_prompt(inp: Inputs, max_chars: int = DEFAULT_MAX_PROMPT_CHARS) -> tupl
              clip(summary, summary_cap) or "(empty)"),
             ("upstream-file-changes", "Upstream files added, removed or renamed between the two releases:",
              upstream_changes(inp.diff, inp.diff_why, inp.manifest, CAP_LISTING_SMALL if level >= 3 else CAP_LISTING)),
+            ("upstream-build-file-diffs", "What upstream changed in its own build files (CMake, Makefile, meson and the "
+             "like) between the two releases. A library, define, include directory or source that upstream added "
+             "or removed here is usually exactly what the manifest must mirror:",
+             build_file_diffs(inp.diff, CAP_BUILD_DIFF_SMALL if level >= 2 else CAP_BUILD_DIFF)),
             ("overlay-and-patches", "The package's overlay and patch files:",
              extra_files_text(inp.extra, with_content=level < 1)),
         ]
