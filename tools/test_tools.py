@@ -1270,8 +1270,11 @@ class Triage(unittest.TestCase):
             return ""
         return gh, calls
 
-    def triage(self, gh, **kw):
-        return bump_triage.triage(self.args(**kw), run=gh, ls_remote=lambda u: ls(("v1.3.1", sha(1)), ("v1.3.2", sha(2))))
+    def triage(self, gh, sleep=None, **kw):
+        def no_sleep(seconds):
+            self.fail(f"triage slept {seconds} s although every log was there")
+        return bump_triage.triage(self.args(**kw), run=gh, ls_remote=lambda u: ls(("v1.3.1", sha(1)), ("v1.3.2", sha(2))),
+                                  sleep=sleep or no_sleep)
 
     def posted(self, calls, needle):
         return [c for c in calls if needle in " ".join(c)]
@@ -1339,6 +1342,104 @@ class Triage(unittest.TestCase):
             gh, calls = self.fake_gh()
             self.assertEqual(self.triage(gh, head_branch=branch)["repair"], "false", branch)
             self.assertEqual(calls, [], branch)
+
+    # -- reading the failed jobs' logs ---------------------------------------------------------------
+    def log_gh(self, answers, jobs=None):
+        """A `gh` whose answers for a job's log are scripted: {job id: [text | Exception, ...]} (the last repeats)."""
+        base, calls = self.fake_gh()
+        asked: list[tuple[int, int]] = []
+        jobs = jobs or [{"id": 1, "name": "Plan", "conclusion": "failure", "steps": [{"name": "Self-test the tools", "conclusion": "failure"}]},
+                        {"id": 2, "name": "PR result", "conclusion": "failure", "steps": []}]
+
+        def gh(*a, input=None, timeout=120):
+            path = next((x for x in a if x.startswith("repos/")), "")
+            if "/actions/runs/42/jobs" in path:
+                return "\n".join(json.dumps(j) for j in jobs) + "\n"
+            if "/actions/jobs/" in path:
+                self.assertEqual(a, ("api", path), "the documented endpoint, nothing else on the command line")
+                job = int(re.fullmatch(r"repos/o/r/actions/jobs/(\d+)/logs", path).group(1))
+                asked.append((job, timeout))
+                script = answers[job]
+                answer = script[min(sum(1 for j, _ in asked if j == job), len(script)) - 1]
+                if isinstance(answer, Exception):
+                    raise answer
+                return answer
+            return base(*a, input=input, timeout=timeout)
+        return gh, asked
+
+    NOT_YET = bump_triage.TriageError("gh api repos/o/r/actions/jobs/1/logs failed: gh: Not Found (HTTP 404)")
+    LOG = "2026-01-01T00:00:00.0000000Z FAIL: test_x\n2026-01-01T00:00:01.0000000Z ##[error]Process completed with exit code 1.\n"
+
+    def test_a_log_that_is_not_there_yet_is_asked_for_again(self):
+        # `triage` runs seconds after the run completes; GitHub may still be storing the logs.
+        gh, asked = self.log_gh({1: [self.NOT_YET, self.NOT_YET, self.LOG], 2: [self.LOG]})
+        slept = []
+        with tempfile.TemporaryDirectory() as tmp:
+            self.triage(gh, out_dir=tmp, sleep=slept.append)
+            summary = (Path(tmp) / "summary.md").read_text()
+        self.assertEqual([j for j, _ in asked], [1, 1, 1, 2])
+        self.assertEqual(slept, list(bump_triage.LOG_RETRY_SLEEP[:2]))
+        self.assertEqual(summary.count("FAIL: test_x"), 2)
+        self.assertNotIn("log unavailable", summary)
+        self.assertTrue(all(t == bump_triage.LOG_TIMEOUT for _, t in asked))
+
+    def test_a_log_that_never_comes_says_why_and_the_wait_is_spent_once(self):
+        gh, asked = self.log_gh({1: [self.NOT_YET], 2: [self.NOT_YET]})
+        slept = []
+        with tempfile.TemporaryDirectory() as tmp:
+            out = self.triage(gh, out_dir=tmp, sleep=slept.append)
+            summary = (Path(tmp) / "summary.md").read_text()
+        self.assertEqual(out["repair"], "true")                      # the verdict does not depend on the logs
+        n = len(bump_triage.LOG_RETRY_SLEEP)
+        self.assertEqual([j for j, _ in asked], [1] * (n + 1) + [2, 2])
+        self.assertEqual(slept, [*bump_triage.LOG_RETRY_SLEEP, bump_triage.LOG_RETRY_SLEEP[0]])
+        self.assertLess(sum(slept) + len(asked) * bump_triage.LOG_TIMEOUT, 15 * 60, "inside the job's timeout-minutes")
+        self.assertIn(f"(log unavailable after {n + 1} attempt(s): HTTP 404: GitHub has no log for this job, or has not "
+                      "finished storing it yet (Not Found (HTTP 404)))", summary)
+        self.assertIn("(log unavailable after 2 attempt(s): HTTP 404", summary)
+        self.assertNotIn("expired or not retrievable", summary)
+        # The worst case, every job of a full summary: still bounded.
+        many = [{"id": i, "name": f"job {i}", "conclusion": "failure", "steps": []} for i in range(1, 30)]
+        gh, asked = self.log_gh({i: [self.NOT_YET] for i in range(1, 30)}, jobs=many)
+        slept = []
+        self.triage(gh, sleep=slept.append)
+        self.assertEqual(len({j for j, _ in asked}), bump_triage.MAX_JOBS_SHOWN)
+        self.assertLess(sum(slept) + len(asked) * 2, 3 * 60)
+
+    def test_an_answer_that_waiting_cannot_change_is_not_asked_for_again(self):
+        E = bump_triage.TriageError
+        cases = {
+            "permission": (E("gh api x failed: gh: Resource not accessible by integration (HTTP 403)"),
+                           "HTTP 403: the token may not read Actions logs (the triage job needs `permissions: actions: read`)"),
+            "expired": (E("gh api x failed: gh: Gone (HTTP 410)"), "HTTP 410: the log has expired or was deleted"),
+            "bad token": (E("gh api x failed: gh: Bad credentials (HTTP 401)"), "HTTP 401: the token was not accepted"),
+            "timeout": (subprocess.TimeoutExpired(["gh"], 60), "no answer within 60 s"),
+        }
+        for label, (err, needle) in cases.items():
+            with self.subTest(label):
+                gh, asked = self.log_gh({1: [err], 2: [self.LOG]})
+                slept = []
+                text, ok = bump_triage.job_log(gh, "o/r", 1, sleep=slept.append)
+                self.assertEqual((ok, slept, asked), (False, [], [(1, bump_triage.LOG_TIMEOUT)]))
+                self.assertTrue(text.startswith("(log unavailable after 1 attempt(s): " + needle), text)
+        # What may pass is retried: a server error, a rate limit, a failure with no HTTP status at all.
+        for err in (E("gh api x failed: gh: Server Error (HTTP 502)"), E("gh api x failed: gh: secondary rate limit (HTTP 429)"),
+                    E("gh api x failed: dial tcp: lookup api.github.com: no such host")):
+            gh, asked = self.log_gh({1: [err, self.LOG]})
+            slept = []
+            self.assertEqual(bump_triage.job_log(gh, "o/r", 1, sleep=slept.append), (self.LOG, True), err)
+            self.assertEqual(slept, [bump_triage.LOG_RETRY_SLEEP[0]])
+        self.assertEqual(bump_triage.log_failure(E("gh api x failed: gh: Unprocessable (HTTP 422)")), ("HTTP 422 (Unprocessable (HTTP 422))", False))
+
+    def test_the_reason_is_untrusted_text_like_the_log_it_replaces(self):
+        hostile = bump_triage.TriageError("gh api x failed: gh: ```\n## injected <b>|` (HTTP 404)\n" + "x" * 5000)
+        gh, _ = self.log_gh({1: [hostile], 2: [hostile]})
+        text, ok = bump_triage.job_log(gh, "o/r", 1, sleep=lambda s: None)
+        self.assertFalse(ok)
+        self.assertEqual(text.count("\n"), 0)
+        self.assertLess(len(text), 400)
+        for ch in "`<>|#":
+            self.assertNotIn(ch, text)
 
     def test_untrusted_text_is_bounded_and_cannot_break_out(self):
         log = "ok\n```\n## injected heading\n@everyone\n````\nend"
@@ -1432,6 +1533,10 @@ class Workflows(unittest.TestCase):
         triage = code[code.index("  triage:"):code.index("  repair:")]
         self.assertIn("head_repository.full_name == github.repository", triage)
         self.assertIn("startsWith(github.event.workflow_run.head_branch, 'bot/bump-')", triage)
+        # ... which reads the failed jobs' logs: without `actions: read` every one of them is a 403.
+        perms = re.search(r"\n    permissions:\n((?:      .*\n)+)", triage).group(1)
+        self.assertEqual(re.findall(r"^      ([a-z-]+): (\w+)", perms, re.M),
+                         [("actions", "read"), ("contents", "read"), ("pull-requests", "write"), ("issues", "write")])
 
 
 # ---------------------------------------------------------------------------

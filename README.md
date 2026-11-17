@@ -626,7 +626,9 @@ jobs failed, the log lines leading up to each failure, the upstream compare stat
 when upstream is on GitHub), and counts attempts in `repair-attempt-<n>` labels, incremented *before* the repair
 job starts so a crashed repair still spends its attempt. A green run removes `needs-repair`/`needs-human`. When
 repair is not enabled or the budget is spent: label `needs-human`, drop `needs-repair`, open the issue
-`needs-human: <package> <version>`, stop.
+`needs-human: <package> <version>`, stop. The job starts seconds after the run ends, when GitHub may not have
+finished storing a job's log: a log that is not there yet is asked for again a few times (bounded), and if it
+never comes the summary carries the reason (the HTTP status) in place of the log lines.
 
 **Security of that job.** `workflow_run` runs the default branch's workflow in the base repository with write
 permissions, after a workflow that executed PR code. So it checks out the default branch only and never the PR's
