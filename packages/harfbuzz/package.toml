@@ -9,6 +9,11 @@ git = "https://github.com/harfbuzz/harfbuzz.git"
 tag = "{version}"
 
 [[release]]
+version = "15.1.0"
+rev = "3df40d9b98d6b32f0e4288d4ecfbb158ddb3a372"
+license_sha256 = "b35cd165b566417165547219fd6b7c351a74c27141950f1e40e507d3c1890908"
+
+[[release]]
 version = "15.0.0"
 rev = "35f656a1a2bab548ea7f54a6dd3fba2b09680d14"
 license_sha256 = "b35cd165b566417165547219fd6b7c351a74c27141950f1e40e507d3c1890908"

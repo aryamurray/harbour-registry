@@ -1,0 +1,15 @@
+[package]
+name = "harfbuzz"
+version = "15.1.0"
+
+[source.git]
+url = "https://github.com/harfbuzz/harfbuzz.git"
+rev = "3df40d9b98d6b32f0e4288d4ecfbb158ddb3a372"
+
+[metadata]
+license = "MIT"
+upstream_url = "https://github.com/harfbuzz/harfbuzz.git"
+
+[[patches]]
+file = "15.1.0.patch"
+sha256 = "1d0be2ce40ce83b9573dde58f7ade27f9d1b79424fce2ba662779aef40fb3b9a"
