@@ -24,7 +24,7 @@
 
 [package]
 name = "curl"
-version = "8.22.0"
+version = "8.23.0"
 license = "curl"
 description = "curl 8.22.0, configured by Harbour probes instead of by configure"
 

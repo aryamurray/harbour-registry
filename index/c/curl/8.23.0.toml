@@ -1,0 +1,15 @@
+[package]
+name = "curl"
+version = "8.23.0"
+
+[source.tarball]
+url = "https://github.com/curl/curl/releases/download/curl-8_23_0/curl-8.23.0.tar.gz"
+sha256 = "e3de77cfa6367083c776a26647fc9f633b538c06c3baa73d931a252ac8f72b49"
+strip_prefix = "curl-8.23.0"
+
+[metadata]
+license = "curl"
+
+[[patches]]
+file = "8.23.0.patch"
+sha256 = "c830e13c9e6c6f05f51874a2938e85c3ece572ad9a38bb92313bbb51c81ca19f"
