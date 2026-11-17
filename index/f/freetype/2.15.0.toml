@@ -1,0 +1,15 @@
+[package]
+name = "freetype"
+version = "2.15.0"
+
+[source.git]
+url = "https://gitlab.freedesktop.org/freetype/freetype.git"
+rev = "37515cf56ba3349656049edbed89ffc6f6466f2d"
+
+[metadata]
+license = "FTL OR GPL-2.0-or-later"
+upstream_url = "https://gitlab.freedesktop.org/freetype/freetype.git"
+
+[[patches]]
+file = "2.15.0.patch"
+sha256 = "5655381b4c30367743f58a1506cb93a124cddeb5521a3d30d52a3283b8ae78f4"
