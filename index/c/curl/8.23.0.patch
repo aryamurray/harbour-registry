@@ -1,0 +1,520 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..f4b6e97
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,514 @@
++# Harbour shim for curl 8.22.0, copied into the extracted upstream tree by
++# `ci/canary/curl/run.sh`.
++#
++# This is what the probe subsystem was built for. There is **no vendored
++# `curl_config.h`** here: every `HAVE_*` and `SIZEOF_*` curl's code reads is
++# measured from the toolchain by a probe, and written into a generated
++# header. The file this replaces was 793 lines per (os, arch) pair, and the
++# CI job that produced it (`.github/workflows/harvest.yml:76-86`) said in its
++# own comment that the config header "is the part that genuinely cannot be
++# produced on another platform".
++#
++# Read `ci/canary/curl-config/regenerate.md` for the partition of curl's 252
++# questions. Counted in this file: **108 probes**, 10 literal *choices* (the
++# project options that are on), and **10 literal assertions** -- four that
++# hold on both platforms and six keyed on one with `[[targets.curl.when]]`.
++# Ten assertions against 108 measurements is the honest price of refusing an
++# arbitrary-C-snippet probe kind, and keeping them visibly separate from the
++# measurements is the whole point of paying it.
++#
++# TLS, zlib, zstd, brotli, libpsl, libidn2, nghttp2, libssh2 and LDAP are all
++# off, matching the cmake options the oracle in `ci/canary/curl-config/` was
++# generated with. That is not a limitation of Harbour; it is what keeps this
++# canary comparable to a reference answer.
++
++[package]
++name = "curl"
++version = "8.23.0"
++license = "curl"
++description = "curl 8.22.0, configured by Harbour probes instead of by configure"
++
++[targets.curl]
++kind = "staticlib"
++lang = "c"
++# curl compiles all of its library sources unconditionally and empties the
++# disabled ones out with `#ifdef` internally, so there is no per-feature
++# source selection to express. Upstream's own list is `CSOURCES` in
++# `lib/Makefile.inc` (`LIB_CFILES` plus the `vauth`, `vdns`, `vquic`, `vssh`
++# and `vtls` subdirectory lists, and `curlx`), and the CMake build globs the
++# same files. Every `.c` under `lib/` is in it except one, so the list is
++# the pattern and the exception, and a file upstream adds, removes or
++# renames under `lib/` needs no edit here (`[test] objects` still pins how
++# many are compiled).
++sources = ["lib/**/*.c"]
++exclude = [
++    # The Windows DLL entry point: `lib/CMakeLists.txt` adds it to the shared
++    # library only, and `lib/Makefile.am` to the Windows libtool build. Not
++    # part of `CSOURCES`, and this is a static library.
++    "lib/dllmain.c",
++]
++
++[targets.curl.private]
++# `lib` for curl's internal headers, `include` for its public ones. The
++# directory holding the generated `curl_config.h` is added by Harbour, at the
++# front of this list.
++include_dirs = ["lib", "include"]
++# `HAVE_CONFIG_H` is what makes `lib/curl_setup.h:138` include
++# `curl_config.h` instead of falling back to one of curl's hand-written
++# `config-win32.h` / `config-mac.h`. It is the single define that decides
++# whether this whole subsystem is in the build or not.
++defines = ["HAVE_CONFIG_H", "BUILDING_LIBCURL", "HAVE_GETADDRINFO=1", "CURLU_STRICT=1"]
++
++[targets.curl.public]
++include_dirs = ["include"]
++# Public because `curl/curl.h` reads it: without it the header decorates
++# every entry point with `__declspec(dllimport)` on Windows, and a consumer
++# that disagreed with the library about that would fail to link. One fact,
++# one place, on the surface that carries it to consumers.
++defines = ["CURL_STATICLIB"]
++
++# curl's threaded resolver and `curl_threads.c` need pthreads. Not on Windows, where they use
++# the Win32 thread API (`curl_threads.c` selects it on `_WIN32`).
++[[targets.curl.surface.when]]
++os = "linux"
++[targets.curl.surface.when."link.public"]
++libs = ["pthread"]
++
++[[targets.curl.surface.when]]
++os = "macos"
++[targets.curl.surface.when."link.public"]
++libs = ["pthread"]
++
++# Windows (MSVC). The libraries curl's CMakeLists.txt links on WIN32: `CURL_NETWORK_AND_TIME_LIBS`
++# ws2_32 and iphlpapi (if_nametoindex), bcrypt (BCryptGenRandom), and advapi32 and crypt32 for
++# USE_WIN32_CRYPTO (NTLM, md4/md5/sha256, CryptoAPI). Not linked: secur32 (only for
++# USE_WINDOWS_SSPI, which only the Schannel option turns on).
++[[targets.curl.surface.when]]
++os = "windows"
++[targets.curl.surface.when."link.public"]
++libs = ["ws2_32", "iphlpapi", "bcrypt", "advapi32", "crypt32"]
++
++# `lib/macos.c` reads the system proxy configuration through
++# SystemConfiguration, so `Curl_macos_init` leaves `SCDynamicStoreCopyProxies`
++# and `CFRelease` undefined without these. Found by the link failing, which
++# is the right way to find it: nothing in the config header mentions them, so
++# no probe could have.
++[[targets.curl.surface.when]]
++os = "macos"
++[targets.curl.surface.when."link.public"]
++frameworks = ["CoreFoundation", "SystemConfiguration"]
++
++# ---------------------------------------------------------------------------
++# The probes: 108 questions, answered by the toolchain.
++#
++# 106 of them are the questions `ci/canary/curl-config/` checks against curl's
++# own cmake, question by question, on macOS and Linux. The other two are
++# `SIZEOF_CURL_OFF_T` and `SIZEOF_CURL_SOCKET_T`, which are asked about curl's
++# own typedefs and so only make sense here.
++# ---------------------------------------------------------------------------
++[targets.curl.probes]
++emit = { header = "curl_config.h" }
++
++# The project options, and the four assertions that hold on both platforms.
++#
++# curl has 93 project options and every one that is *off* is already spelled
++# `/* #undef */` by curl's own header, so only the ones that are on need
++# saying. They are in a separate list from the probes precisely so that the
++# generated header's `/* #undef */` lines keep meaning "asked and answered
++# no" rather than "nobody mentioned it".
++#
++# Only the ones that are *on* need saying. A `CURL_DISABLE_*` that is off is
++# the default, and curl's own header spells it `/* #undef */`.
++defines = [
++  # Matching the oracle's cmake options.
++  "CURL_DISABLE_LDAP=1",
++  "CURL_DISABLE_LDAPS=1",
++  # HSTS and HTTP message signatures both need a crypto backend, and there is
++  # none in this configuration. curl's cmake reaches the same conclusion.
++  "CURL_DISABLE_HSTS=1",
++  "CURL_DISABLE_HTTPSIG=1",
++  # Features that are on, and that curl's code tests by name rather than by
++  # absence.
++  "USE_IPV6=1",
++  "USE_UNIX_SOCKETS=1",
++  "USE_RESOLV_THREADED=1",
++  # (`HAVE_THREADS_POSIX` and `_FILE_OFFSET_BITS` are Unix answers, in the
++  # `linux` and `macos` blocks below: curl's CMake sets them `if(NOT WIN32)`
++  # and from `CMake/win32-cache.cmake` respectively.)
++  # The name curl puts in its user agent and in `curl_version()`. A string,
++  # so it is a packager's choice by construction.
++  "CURL_OS=\"harbour\"",
++
++  # --- Not choices: assertions. -------------------------------------------
++  # These two are answers no probe kind can give, and they are the same on
++  # every platform, so they need no `[[when]]` block. (The other two that were
++  # here, HAVE_ATOMIC and HAVE_DECL_FSEEKO, are Unix answers; so is
++  # HAVE_WRITABLE_ARGV. They are in the `linux` and `macos` blocks below.)
++  # They are grouped and labelled rather than scattered, because the one
++  # thing a generated config header must never do is make an assertion look
++  # like a measurement.
++  #
++  # Each is a `check_c_source_compiles` in curl's cmake over a program with
++  # no declarative shape -- the category the probe design rejects by name.
++  "HAVE_GETADDRINFO_THREADSAFE=1",
++]
++
++# Header existence: 35 questions, the same list `ci/canary/curl-config/`
++# checks against curl's own answers.
++check_headers = [
++  "arpa/inet.h",
++  "dirent.h",
++  "fcntl.h",
++  "ifaddrs.h",
++  "libgen.h",
++  "linux/tcp.h",
++  "locale.h",
++  "net/if.h",
++  "netdb.h",
++  "netinet/in.h",
++  "netinet/in6.h",
++  "netinet/ip.h",
++  "netinet/tcp.h",
++  "netinet/udp.h",
++  "poll.h",
++  "pwd.h",
++  "stdatomic.h",
++  "stdbool.h",
++  "strings.h",
++  "stropts.h",
++  "sys/eventfd.h",
++  "sys/filio.h",
++  "sys/ioctl.h",
++  "sys/param.h",
++  "sys/poll.h",
++  "sys/resource.h",
++  "sys/select.h",
++  "sys/sockio.h",
++  "sys/types.h",
++  "sys/un.h",
++  "sys/utime.h",
++  "termio.h",
++  "termios.h",
++  "unistd.h",
++  "utime.h",
++]
++
++# Function existence: 54 questions. Each *links*, which is the point -- a
++# header that declares something the libc does not provide answers `yes` to
++# a compile-only check and then fails at link time in a file nobody wrote.
++check_symbols = [
++  "accept4",
++  "alarm",
++  "arc4random",
++  "basename",
++  "closesocket",
++  "eventfd",
++  "fcntl",
++  "fnmatch",
++  "freeaddrinfo",
++  "fseeko",
++  "fsetxattr",
++  "getaddrinfo",
++  "geteuid",
++  "gethostbyname_r",
++  "gethostname",
++  "getifaddrs",
++  "getpass_r",
++  "getpeername",
++  "getppid",
++  "getpwuid",
++  "getpwuid_r",
++  "getrlimit",
++  "getsockname",
++  "gettimeofday",
++  "gmtime_r",
++  "if_nametoindex",
++  "ioctlsocket",
++  "localtime_r",
++  "mach_absolute_time",
++  "memrchr",
++  "memset_explicit",
++  "memset_s",
++  "opendir",
++  "pipe",
++  "poll",
++  "realpath",
++  "recv",
++  "sched_yield",
++  "send",
++  "sendmmsg",
++  "sendmsg",
++  "setlocale",
++  "setrlimit",
++  "sigaction",
++  "siginterrupt",
++  "signal",
++  "socket",
++  "socketpair",
++  "strcasecmp",
++  "strerror_r",
++  "utime",
++  "utimes",
++]
++
++# `sigsetjmp` is a macro over `__sigsetjmp` on glibc and a real function on
++# macOS, so it needs its header named. The bulk list deliberately supplies no
++# prelude: it is for functions reachable with no header, and a symbol that is
++# a macro anywhere is not one of those.
++[targets.curl.probes.named.HAVE_SIGSETJMP]
++symbol = "sigsetjmp"
++prelude = ["setjmp.h"]
++
++# `pipe2` is probed through `<unistd.h>` rather than by name alone, on purpose.
++# A symbol with no prelude is declared by the probe itself, so the SDK's
++# availability annotation never reaches the compiler, and an SDK newer than the
++# OS (or a deployment target older than the SDK) answers "present" for a
++# function the OS does not have: curl then calls it through a null weak
++# reference and segfaults. With the header's declaration in scope, the probe
++# compile's `-Werror=unguarded-availability-new` rejects it. Same answer on
++# glibc, where `_GNU_SOURCE` (defined below) makes `<unistd.h>` declare it.
++[targets.curl.probes.named.HAVE_PIPE2]
++symbol = "pipe2"
++prelude = ["unistd.h"]
++
++# ---------------------------------------------------------------------------
++# Type existence: 6 questions. curl's code does not compile without these.
++# Each prelude is the set of headers curl's own test includes.
++# ---------------------------------------------------------------------------
++
++[targets.curl.probes.named.HAVE_BOOL_T]
++type = "bool"
++prelude = ["sys/types.h", "stdbool.h"]
++
++[targets.curl.probes.named.HAVE_SA_FAMILY_T]
++type = "sa_family_t"
++prelude = ["sys/socket.h"]
++
++[targets.curl.probes.named.HAVE_SUSECONDS_T]
++type = "suseconds_t"
++prelude = ["sys/types.h", "sys/time.h"]
++
++[targets.curl.probes.named.HAVE_STRUCT_TIMEVAL]
++type = "struct timeval"
++prelude = ["sys/time.h", "time.h"]
++
++[targets.curl.probes.named.HAVE_STRUCT_SOCKADDR_STORAGE]
++type = "struct sockaddr_storage"
++prelude = ["sys/socket.h"]
++
++[targets.curl.probes.named.HAVE_SOCKADDR_IN6_SIN6_SCOPE_ID]
++type = "struct sockaddr_in6"
++member = "sin6_scope_id"
++prelude = ["netinet/in.h"]
++
++# ---------------------------------------------------------------------------
++# Constant existence: 6 questions about `ioctl`/`fcntl`/`setsockopt`/
++# `clock_gettime` flags.
++# ---------------------------------------------------------------------------
++
++[targets.curl.probes.named.HAVE_FCNTL_O_NONBLOCK]
++constant = "O_NONBLOCK"
++prelude = ["sys/types.h", "unistd.h", "fcntl.h"]
++
++[targets.curl.probes.named.HAVE_IOCTL_FIONBIO]
++constant = "FIONBIO"
++prelude = ["sys/types.h", "unistd.h", "sys/socket.h", "sys/ioctl.h"]
++
++[targets.curl.probes.named.HAVE_IOCTL_SIOCGIFADDR]
++constant = "SIOCGIFADDR"
++prelude = ["sys/types.h", "unistd.h", "sys/socket.h", "sys/ioctl.h", "net/if.h"]
++
++[targets.curl.probes.named.HAVE_SETSOCKOPT_SO_NONBLOCK]
++constant = "SO_NONBLOCK"
++prelude = ["sys/types.h", "sys/socket.h"]
++
++[targets.curl.probes.named.HAVE_CLOCK_GETTIME_MONOTONIC]
++constant = "CLOCK_MONOTONIC"
++prelude = ["time.h"]
++
++[targets.curl.probes.named.HAVE_CLOCK_GETTIME_MONOTONIC_RAW]
++constant = "CLOCK_MONOTONIC_RAW"
++prelude = ["time.h"]
++
++# ---------------------------------------------------------------------------
++# Sizes: 7 questions. Two of them are asked about *curl's own* typedefs,
++# which works because a probe is compiled with the target's resolved
++# `include_dirs` -- `include/` is on that list, so `curl/curl.h` is reachable
++# from a probe snippet. curl's cmake computes these two by sizing whichever
++# type it picked for `curl_off_t`; measuring the typedef directly asks the
++# same question of the same headers without restating the choice.
++# ---------------------------------------------------------------------------
++
++[targets.curl.probes.named.SIZEOF_INT]
++sizeof = "int"
++
++[targets.curl.probes.named.SIZEOF_LONG]
++sizeof = "long"
++
++[targets.curl.probes.named.SIZEOF_OFF_T]
++sizeof = "off_t"
++prelude = ["sys/types.h"]
++
++[targets.curl.probes.named.SIZEOF_SIZE_T]
++sizeof = "size_t"
++prelude = ["stddef.h"]
++
++[targets.curl.probes.named.SIZEOF_TIME_T]
++sizeof = "time_t"
++prelude = ["time.h"]
++
++[targets.curl.probes.named.SIZEOF_CURL_OFF_T]
++sizeof = "curl_off_t"
++prelude = ["curl/curl.h"]
++
++[targets.curl.probes.named.SIZEOF_CURL_SOCKET_T]
++sizeof = "curl_socket_t"
++prelude = ["curl/curl.h"]
++
++# ---------------------------------------------------------------------------
++# The answers that are *not* measurements, keyed on the platform they hold
++# for.
++#
++# This is the design's prescribed escape hatch and it is deliberately plain:
++# every line below is a human asserting a fact, in the manifest, where a
++# reviewer can see that it *is* an assertion. The alternative considered and
++# rejected was a probe kind for function arity -- "compile this call with
++# this many arguments" -- which is an arbitrary C snippet with a fig leaf,
++# and which would make these five look exactly like the 108 measured ones.
++#
++# Each value is what curl's own cmake concludes on that platform, and all
++# five differ between the two, which is what makes them worth keeping
++# visible rather than folding into the invariant group above.
++# ---------------------------------------------------------------------------
++
++[[targets.curl.when]]
++os = "macos"
++defines = [
++  # `fsetxattr` takes six arguments on Darwin and five on Linux. The
++  # `symbol` probe answers that the name links, which it does on both.
++  "HAVE_FSETXATTR_6=1",
++  # Darwin's `strerror_r` is the POSIX one (returns `int`); glibc's default
++  # is the GNU one (returns `char *`).
++  "HAVE_POSIX_STRERROR_R=1",
++  # `__builtin_available` is a clang/Darwin extension.
++  "HAVE_BUILTIN_AVAILABLE=1",
++
++  # The answers that hold on both Unixes (and that Windows must not get; see
++  # the `windows` block below).
++  #
++  # `HAVE_ATOMIC` and `HAVE_DECL_FSEEKO` are check_c_source_compiles / a
++  # follow-on of fseeko in curl's cmake (`CMake/unix-cache.cmake` sets both).
++  # `HAVE_THREADS_POSIX` is `find_package(Threads)` under `if(NOT WIN32)`.
++  # `HAVE_WRITABLE_ARGV` is a *run* probe: curl's test writes to `argv[0]` and
++  # sees whether it took. Permanently out of scope by the design's organising
++  # principle, and curl's own cmake hardcodes it per platform too, which is
++  # the same admission made in a different file.
++  # `off_t` is 64-bit because `_FILE_OFFSET_BITS` says so, and curl's
++  # `SIZEOF_OFF_T` probe is measured *with* that define in scope.
++  "HAVE_ATOMIC=1",
++  "HAVE_DECL_FSEEKO=1",
++  "HAVE_THREADS_POSIX=1",
++  "HAVE_WRITABLE_ARGV=1",
++  "_FILE_OFFSET_BITS=64",
++]
++
++[[targets.curl.when]]
++os = "linux"
++defines = [
++  # `_GNU_SOURCE` is not an assertion; it is a *feature-test macro*, and it
++  # belongs in this block because curl's own cmake puts it in exactly the
++  # same place -- `CMakeLists.txt:255-258`, on Linux, Cygwin and GNU only,
++  # with the comment "Required for accept4(), pipe2(), sendmmsg()" and a
++  # second line adding it to `CMAKE_REQUIRED_DEFINITIONS` so that every
++  # feature check sees it too.
++  #
++  # Leaving it out is the one thing this shim got wrong, and it is worth
++  # recording how it was found because it is the failure shape this repo
++  # keeps producing. Without it:
++  #
++  #   - glibc declares `memrchr` and `accept4` only under `_GNU_SOURCE`, so
++  #     GCC compiled four call sites with `implicit declaration of function
++  #     'memrchr'` -- which in C means "returns int". The 32 low bits of a
++  #     pointer were then assigned to a `const char *`, and
++  #     `urlapi.c`'s `dedotdotify` resolved relative URLs wrongly.
++  #   - glibc's default `strerror_r` is the XSI one, which returns `int`.
++  #     `HAVE_GLIBC_STRERROR_R` below asserts it is the GNU one, which
++  #     returns `char *`. Under `_GNU_SOURCE` that assertion is true; without
++  #     it, `curlx/strerr.c:293` assigns an `int` to a `const char *`.
++  #
++  # The library built, linked and passed every check on macOS. It was the
++  # consumer's relative-URL assertion, on Linux, that failed -- a successful
++  # build with wrong output, which is what the consumer exists for. A canary
++  # that stopped at "curl compiled" would have shipped this.
++  #
++  # Probes see it too: a target-level `[[when]]` block's `defines` reach the
++  # probe command line, verified on a recorded argv. That matters, because
++  # `_GNU_SOURCE` changes which declarations exist and a probe answered
++  # without it would be answering about a different translation unit than
++  # the one being compiled.
++  "_GNU_SOURCE=1",
++
++  "HAVE_FSETXATTR_5=1",
++  "HAVE_GLIBC_STRERROR_R=1",
++  # glibc's `gethostbyname_r` is the six-argument form. The `symbol` probe
++  # answers that the name links -- which it does on glibc and not on Darwin
++  # -- and says nothing about the arity.
++  "HAVE_GETHOSTBYNAME_R_6=1",
++
++  # The Unix answers shared with macOS; see the `macos` block above.
++  "HAVE_ATOMIC=1",
++  "HAVE_DECL_FSEEKO=1",
++  "HAVE_THREADS_POSIX=1",
++  "HAVE_WRITABLE_ARGV=1",
++  "_FILE_OFFSET_BITS=64",
++]
++
++# Windows (MSVC). curl's modern Windows builds are CMake builds, which pre-fill
++# the answers that cannot be measured by a compile on a machine with no POSIX
++# headers (`CMake/win32-cache.cmake`) and then generate `curl_config.h` from
++# `lib/curl_config-cmake.h.in`, with HAVE_CONFIG_H defined, exactly as here.
++# (The hand-written `lib/config-win32.h` is not an option: it `#error`s on any
++# MSVC newer than 2013.) So the probes run and write the header on Windows too,
++# and this block asserts the 1-answers of win32-cache.cmake that a probe with no
++# Winsock header or import library in scope cannot reproduce. Its 0-answers
++# (every POSIX header and function) are what the probes measure. Not set, as in
++# CMake on Windows: HAVE_THREADS_POSIX, HAVE_ATOMIC and HAVE_STDATOMIC_H (0 on
++# MSVC), HAVE_FSEEKO, HAVE_WRITABLE_ARGV, _FILE_OFFSET_BITS (HAVE_FILE_OFFSET_BITS
++# is 0 on MSVC). Not enabled either: Schannel (CURL_USE_SCHANNEL is OFF by
++# default upstream, as is every TLS backend here), so this is the same
++# no-TLS configuration as Linux and macOS.
++[[targets.curl.when]]
++os = "windows"
++defines = [
++  "HAVE_CLOSESOCKET=1",
++  "HAVE_FCNTL_H=1",
++  "HAVE_FREEADDRINFO=1",
++  "HAVE_GETADDRINFO=1",
++  "HAVE_GETHOSTNAME=1",
++  "HAVE_GETPEERNAME=1",
++  "HAVE_GETSOCKNAME=1",
++  "HAVE_IOCTLSOCKET=1",
++  "HAVE_IOCTLSOCKET_FIONBIO=1",
++  "HAVE_IO_H=1",
++  "HAVE_LOCALE_H=1",
++  "HAVE_RECV=1",
++  "HAVE_SEND=1",
++  "HAVE_SETLOCALE=1",
++  "HAVE_SIGNAL=1",
++  "HAVE_SOCKADDR_IN6_SIN6_SCOPE_ID=1",
++  "HAVE_SOCKET=1",
++  "HAVE_STDBOOL_H=1",
++  "HAVE_BOOL_T=1",
++  "HAVE_STRUCT_SOCKADDR_STORAGE=1",
++  "HAVE_STRUCT_TIMEVAL=1",
++  "HAVE_SYS_TYPES_H=1",
++  "HAVE_SYS_UTIME_H=1",
++  "HAVE_UTIME=1",
++  # curl_config-cmake.h.in `#cmakedefine ssize_t ${ssize_t}`: MSVC has no
++  # ssize_t, and CMake picks `__int64` when it is as wide as size_t (it is, on
++  # x86_64).
++  "ssize_t=__int64",
++  # Set by CMakeLists.txt for WIN32 (`set(USE_WIN32_CRYPTO ON)`), which is what
++  # makes it link advapi32 and crypt32.
++  "USE_WIN32_CRYPTO=1",
++]
