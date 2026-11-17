@@ -1,0 +1,15 @@
+[package]
+name = "mbedtls"
+version = "3.6.8"
+
+[source.git]
+url = "https://github.com/Mbed-TLS/mbedtls"
+rev = "82e69999f91126589a28b70dd75b69fbcabe2711"
+
+[metadata]
+license = "Apache-2.0 OR GPL-2.0-or-later"
+upstream_url = "https://github.com/Mbed-TLS/mbedtls"
+
+[[patches]]
+file = "3.6.8.patch"
+sha256 = "8d4cb973bcd879b1544208912cd6843875432c8e88b9a4d89f04605d6cf8fdd2"
