@@ -606,9 +606,9 @@ What to create:
 | --- | --- |
 | secret `REGISTRY_BOT_TOKEN` | a fine-grained PAT (or GitHub App installation token) scoped to this repository only: Contents read+write, Pull requests read+write, Issues read+write (for labels). Only the push, label, PR, supersede (comment on, close and delete the branch of a bump PR that a newer one replaces) and auto-merge steps see it; keep that account **out of the branch-protection bypass list** |
 | variable `REGISTRY_AUTO_MERGE` | `true` to run `gh pr merge --auto --squash` on each bump PR, **except one whose upstream license files changed** (never requested for those). Default off. Needs "Allow auto-merge" in the repository settings and `PR result` required by branch protection; otherwise it is a warning and the PR waits for a human. **Nothing in the workflow merges anything itself.** Flip it once you trust the gate |
-| variable `REGISTRY_REPAIR_ENABLED` | `true` once the `openrouter` environment below holds its key. A **repository** variable, not an environment one: the triage job reads it, and that job does not use the environment. Default off: a failed bump then goes straight to `needs-human` |
+| variable `REGISTRY_REPAIR_ENABLED` | `true` once the `Openrouter` environment below holds its key. A **repository** variable, not an environment one: the triage job reads it, and that job does not use the environment. Default off: a failed bump then goes straight to `needs-human` |
 | variable `REGISTRY_REPAIR_ATTEMPTS` | repair attempts per bump PR, default `2` |
-| environment `openrouter` | a GitHub environment (Settings > Environments). Only the `repair` job declares it, so what it holds can be read by that job and by nothing else in the repository. Do not add required reviewers (every repair would wait for approval); restricting it to the default branch is fine |
+| environment `Openrouter` | a GitHub environment (Settings > Environments). Only the `repair` job declares it, so what it holds can be read by that job and by nothing else in the repository. Do not add required reviewers (every repair would wait for approval); restricting it to the default branch is fine |
 | secret `OPENROUTER_KEY`, **in that environment** | the OpenRouter key, sent as `Authorization: Bearer <key>`. Only the one step that calls the model sees it |
 | variable `OPENROUTER_BASE`, **in that environment** | the API base, `https://openrouter.ai/api/v1`: the URL up to and including the version segment, https only. The repair step POSTs to `<base>/chat/completions` and contacts nothing else |
 | the model | not a setting: `openrouter/free` is written in the `repair` job of `watch.yml`, so changing the model that rewrites manifests is a reviewed change to that file |
@@ -687,7 +687,7 @@ outside the blocks is ignored, any other `=== ... ===` line or an unterminated b
 (`POST <base>/chat/completions` with `model` and `messages`, the reply in `choices[0].message.content`) works; no
 vendor SDK is involved and nothing but the Python standard library is used.
 
-1. In the GitHub environment `openrouter` (create it if it does not exist), store the OpenRouter key as the
+1. In the GitHub environment `Openrouter` (create it if it does not exist), store the OpenRouter key as the
    secret `OPENROUTER_KEY` and set the variable `OPENROUTER_BASE` to `https://openrouter.ai/api/v1`.
 2. The model is declared in the `repair` job of `.github/workflows/watch.yml` (`REPAIR_MODEL`).
    `openrouter/free` routes to whichever free models OpenRouter currently serves, so which model answers can

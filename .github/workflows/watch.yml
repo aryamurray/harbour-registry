@@ -27,10 +27,10 @@ name: Watch
 #                                  repository only, with Contents: read and write, Pull requests: read
 #                                  and write, Issues: read and write (labels). Required, see below.
 #   variable  REGISTRY_AUTO_MERGE  `true` to enable auto-merge on bump PRs. Default off.
-#   variable  REGISTRY_REPAIR_ENABLED   `true` once the `openrouter` environment below has its key. Default off:
+#   variable  REGISTRY_REPAIR_ENABLED   `true` once the `Openrouter` environment below has its key. Default off:
 #                                  a failed bump then goes straight to `needs-human`.
 #   variable  REGISTRY_REPAIR_ATTEMPTS  repair attempts per bump PR before `needs-human`. Default 2.
-#   environment `openrouter`       a GitHub environment (Settings > Environments) holding the two
+#   environment `Openrouter`       a GitHub environment (Settings > Environments) holding the two
 #                                  settings below. Only the `repair` job declares it, so only that job can
 #                                  read them. Do not give it required reviewers (every repair would
 #                                  wait for approval); restricting it to the default branch is fine, the
@@ -457,7 +457,7 @@ jobs:
     runs-on: ubuntu-24.04
     # The model key lives in this GitHub environment, not in the repository's secrets, so that no
     # other job or workflow can name it. A job reads an environment's secrets only by declaring it.
-    environment: openrouter
+    environment: Openrouter
     timeout-minutes: 45
     permissions:
       contents: read         # fetch the bump branch (the push uses REGISTRY_BOT_TOKEN, not this token)
@@ -530,7 +530,7 @@ jobs:
       - name: Propose a repaired manifest
         if: steps.fetch.outputs.go == 'true'
         env:
-          # The key and the endpoint come from the `openrouter` environment. The model is declared
+          # The key and the endpoint come from the `Openrouter` environment. The model is declared
           # here, in a reviewed file: changing the model that rewrites manifests is a change to this
           # workflow. `openrouter/free` is OpenRouter's router over whichever free models it
           # currently serves.
