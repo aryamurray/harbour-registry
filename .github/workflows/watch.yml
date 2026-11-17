@@ -27,8 +27,9 @@ name: Watch
 #                                  repository only, with Contents: read and write, Pull requests: read
 #                                  and write, Issues: read and write (labels). Required, see below.
 #   variable  REGISTRY_AUTO_MERGE  `true` to enable auto-merge on bump PRs. Default off.
-#   variable  REGISTRY_REPAIR_ENABLED   `true` once the `Openrouter` environment below has its key. Default off:
-#                                  a failed bump then goes straight to `needs-human`.
+#   variable  REGISTRY_REPAIR_ENABLED   optional OFF switch. Repair is on by default (declared in the
+#                                  triage job); set this to `false` and a failed bump goes straight
+#                                  to `needs-human`.
 #   variable  REGISTRY_REPAIR_ATTEMPTS  repair attempts per bump PR before `needs-human`. Default 2.
 #   environment `Openrouter`       a GitHub environment (Settings > Environments) holding the two
 #                                  settings below. Only the `repair` job declares it, so only that job can
@@ -412,7 +413,10 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           BUDGET: ${{ vars.REGISTRY_REPAIR_ATTEMPTS || '2' }}
-          ENABLED: ${{ vars.REGISTRY_REPAIR_ENABLED || 'false' }}
+          # Repair is on. It is declared here rather than left to a setting, like the model the
+          # repair job uses. The variable remains as an off switch: set REGISTRY_REPAIR_ENABLED to
+          # `false` and a failed bump goes straight to `needs-human`.
+          ENABLED: ${{ vars.REGISTRY_REPAIR_ENABLED || 'true' }}
         run: |
           python tools/bump_triage.py triage --repo "$GH_REPO" --run-id "$RUN_ID" \
             --head-branch "$HEAD_BRANCH" --head-sha "$HEAD_SHA" --conclusion "$CONCLUSION" \
