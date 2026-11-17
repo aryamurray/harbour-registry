@@ -9,6 +9,11 @@ git = "https://github.com/pnggroup/libpng.git"
 tag = "v{version}"
 
 [[release]]
+version = "1.6.59"
+rev = "cd952f49f95bb27154ae77dbb103032d95f6e580"
+license_sha256 = "4c5983cd192ccb9535db6d0926324dd08afbe59b0893b65de9641fa28b7c768a"
+
+[[release]]
 version = "1.6.50"
 rev = "2b978915d82377df13fcbb1fb56660195ded868a"
 license_sha256 = "12ccd661ee36f6849d0184fec7007a0bb6f3b89aa48922614f61d1e7eaeb125a"

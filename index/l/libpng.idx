@@ -1,1 +1,2 @@
 {"format_version":1,"name":"libpng","version":"1.6.50","yanked":false,"deps":[{"name":"zlib","version_req":"^1.3","optional":false,"default_features":true,"kind":"normal","registry":null}],"checksum":null,"license":"libpng-2.0","shim":"l/libpng/1.6.50.toml"}
+{"format_version":1,"name":"libpng","version":"1.6.59","yanked":false,"deps":[{"name":"zlib","version_req":"^1.3","optional":false,"default_features":true,"kind":"normal","registry":null}],"checksum":null,"license":"libpng-2.0","shim":"l/libpng/1.6.59.toml"}
