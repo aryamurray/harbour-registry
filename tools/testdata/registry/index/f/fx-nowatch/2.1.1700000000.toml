@@ -1,0 +1,15 @@
+[package]
+name = "fx-nowatch"
+version = "2.1.1700000000"
+
+[source.git]
+url = "https://github.com/fx-upstream/fx-nowatch"
+rev = "40541766125d29c5ee7814b289ce0af9db2868e5"
+
+[metadata]
+license = "MIT"
+upstream_url = "https://github.com/fx-upstream/fx-nowatch"
+
+[[patches]]
+file = "2.1.1700000000.patch"
+sha256 = "9824ad40fad67222763b0e56cb7b671cf08abc3c399e653bfc9a430f83aeb775"

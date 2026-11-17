@@ -1,0 +1,2 @@
+{"format_version":1,"name":"fx-multi","version":"2.9.0","yanked":false,"deps":[],"checksum":"ce8e92c6d647a470650cf60e7438308791e7bb654a6a0e69f1e149a1a1b49758","license":"BSD-3-Clause","shim":"f/fx-multi/2.9.0.toml"}
+{"format_version":1,"name":"fx-multi","version":"2.10.0","yanked":false,"deps":[],"checksum":"961a79b9423e4e20c84ed85e5ed53ca82750c0666cba2f4572aeaf42ac674ccf","license":"BSD-3-Clause","shim":"f/fx-multi/2.10.0.toml"}

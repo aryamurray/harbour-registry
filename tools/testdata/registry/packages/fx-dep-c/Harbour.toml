@@ -1,0 +1,15 @@
+[package]
+name = "fx-dep-c"
+version = "0.4.0"
+license = "MIT"
+
+[dependencies]
+fx-dep-b = "^2.14"
+
+[targets.c]
+kind = "staticlib"
+lang = "c"
+sources = ["src/*.c"]
+
+[targets.c.surface.compile.public]
+include_dirs = ["include"]

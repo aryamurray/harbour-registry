@@ -1,0 +1,12 @@
+[package]
+name = "fx-nowatch"
+version = "2.1.1700000000"
+license = "MIT"
+
+[targets.nowatch]
+kind = "staticlib"
+lang = "c"
+sources = ["src/*.c"]
+
+[targets.nowatch.surface.compile.public]
+include_dirs = ["include"]

@@ -1,0 +1,18 @@
+# Fixture: depends on fx-tarball (the first link of the dependency chain).
+[package]
+name = "fx-dep-a"
+description = "Fixture: depends on fx-tarball"
+license = "MIT"
+
+[upstream]
+git = "https://github.com/fx-upstream/fx-dep-a.git"
+tag = "fx-{major}_{minor}_{patch}"
+
+[[release]]
+version = "1.6.50"
+rev = "52a0711b9ecf324b4ea03d5fcb38a0b2f4147308"
+license_sha256 = "fb479754c3f9d0c5fc0692ba60aeaabef19005755438682149f70d876389fe06"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 2

@@ -1,0 +1,10 @@
+[package]
+name = "fx-tarball-test"
+version = "0.1.0"
+
+[dependencies]
+fx-tarball = "*"
+
+[targets.fx-tarball-test]
+kind = "exe"
+sources = ["src/**/*.c"]

@@ -1,0 +1,1 @@
+{"format_version":1,"name":"fx-dep-c","version":"0.4.0","yanked":false,"deps":[{"name":"fx-dep-b","version_req":"^2.14","optional":false,"default_features":true,"kind":"normal","registry":null}],"checksum":"e31a151899257510abfa94515c6b0875960146ccb6980e7d4de09d5c7e8b1e58","license":"MIT","shim":"f/fx-dep-c/0.4.0.toml"}

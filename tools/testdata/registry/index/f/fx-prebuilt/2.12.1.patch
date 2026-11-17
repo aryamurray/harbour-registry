@@ -1,0 +1,24 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..c7c8935
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,18 @@
++[package]
++name = "fx-prebuilt"
++version = "2.12.1"
++license = "BSD-3-Clause"
++
++[targets.fx-prebuilt]
++kind = "prebuilt"
++
++[targets.fx-prebuilt.public]
++include_dirs = ["include"]
++
++[[targets.fx-prebuilt.when]]
++os = "linux"
++prebuilt_libs = ["lib/libfx.so"]
++
++[[targets.fx-prebuilt.when]]
++os = "macos"
++prebuilt_libs = ["lib/libfx.dylib"]
