@@ -606,11 +606,12 @@ What to create:
 | --- | --- |
 | secret `REGISTRY_BOT_TOKEN` | a fine-grained PAT (or GitHub App installation token) scoped to this repository only: Contents read+write, Pull requests read+write, Issues read+write (for labels). Only the push, label, PR, supersede (comment on, close and delete the branch of a bump PR that a newer one replaces) and auto-merge steps see it; keep that account **out of the branch-protection bypass list** |
 | variable `REGISTRY_AUTO_MERGE` | `true` to run `gh pr merge --auto --squash` on each bump PR, **except one whose upstream license files changed** (never requested for those). Default off. Needs "Allow auto-merge" in the repository settings and `PR result` required by branch protection; otherwise it is a warning and the PR waits for a human. **Nothing in the workflow merges anything itself.** Flip it once you trust the gate |
-| variable `REGISTRY_REPAIR_ENABLED` | `true` once the three `REPAIR_*` settings below exist. Default off: a failed bump then goes straight to `needs-human` |
+| variable `REGISTRY_REPAIR_ENABLED` | `true` once the `Openrouter` environment below holds its key. A **repository** variable, not an environment one: the triage job reads it, and that job does not use the environment. Default off: a failed bump then goes straight to `needs-human` |
 | variable `REGISTRY_REPAIR_ATTEMPTS` | repair attempts per bump PR, default `2` |
-| secret `REPAIR_API_KEY` | the key of the model endpoint, sent as `Authorization: Bearer <key>`. Only the one step that calls the model sees it |
-| variable `REPAIR_API_BASE` | base URL of an OpenAI-compatible API, https, for example `https://api.example.com/v1`. The repair step POSTs to `<base>/chat/completions` and contacts nothing else |
-| variable `REPAIR_MODEL` | the model name that endpoint expects |
+| environment `Openrouter` | a GitHub environment (Settings > Environments). Only the `repair` job declares it, so what it holds can be read by that job and by nothing else in the repository. Do not add required reviewers (every repair would wait for approval); restricting it to the default branch is fine |
+| secret `OPENROUTER_KEY`, **in that environment** | the OpenRouter key, sent as `Authorization: Bearer <key>`. Only the one step that calls the model sees it |
+| variable `OPENROUTER_BASE`, **in that environment** | the API base, `https://openrouter.ai/api/v1`: the URL up to and including the version segment, https only. The repair step POSTs to `<base>/chat/completions` and contacts nothing else |
+| the model | not a setting: `openrouter/free` is written in the `repair` job of `watch.yml`, so changing the model that rewrites manifests is a reviewed change to that file |
 | variables `REPAIR_TEMPERATURE`, `REPAIR_MAX_TOKENS`, `REPAIR_TIMEOUT`, `REPAIR_MAX_PROMPT_CHARS` | optional; see below |
 | labels `bot`, `bump`, `needs-repair`, `needs-human`, `license-changed`, `keep`, `repair-attempt-N` | created by the workflow when missing. `keep` is the one a person applies (a bump PR carrying it is never closed as superseded) |
 
@@ -686,17 +687,19 @@ outside the blocks is ignored, any other `=== ... ===` line or an unterminated b
 (`POST <base>/chat/completions` with `model` and `messages`, the reply in `choices[0].message.content`) works; no
 vendor SDK is involved and nothing but the Python standard library is used.
 
-1. Create an API key at the provider, scoped as narrowly as it allows, and store it as the Actions **secret**
-   `REPAIR_API_KEY`.
-2. Set the Actions **variables** `REPAIR_API_BASE` (the URL up to and including the version segment, usually
-   ending in `/v1`; https only) and `REPAIR_MODEL` (the provider's model identifier).
+1. In the GitHub environment `Openrouter` (create it if it does not exist), store the OpenRouter key as the
+   secret `OPENROUTER_KEY` and set the variable `OPENROUTER_BASE` to `https://openrouter.ai/api/v1`.
+2. The model is declared in the `repair` job of `.github/workflows/watch.yml` (`REPAIR_MODEL`).
+   `openrouter/free` routes to whichever free models OpenRouter currently serves, so which model answers can
+   differ from one repair to the next. To use another provider, change what the job maps to `REPAIR_API_BASE`,
+   `REPAIR_API_KEY` and `REPAIR_MODEL`.
 3. Optional variables: `REPAIR_TEMPERATURE` (default `0`), `REPAIR_MAX_TOKENS` (reply tokens, default `8192`;
    either accepts `omit` for providers that reject the field), `REPAIR_TIMEOUT` (seconds, default `300`),
    `REPAIR_MAX_PROMPT_CHARS` (default `150000`; lower it for a model with a small context window. A prompt is
    about a quarter as many tokens as characters; curl's is about 32,000 characters).
 4. Set `REGISTRY_REPAIR_ENABLED` to `true`.
 
-With `REGISTRY_REPAIR_ENABLED=true` and a setting missing, the repair job fails with "not configured: set ...",
+With `REGISTRY_REPAIR_ENABLED=true` and the key or the base missing (or the environment misnamed, which GitHub creates empty), the repair job fails with "not configured: set ...",
 and the PR is handed to a human. To try a provider before enabling anything, export the three variables in a
 shell and run `tools/repair.py` on a directory laid out as above; `http://localhost` is accepted as a base for a
 local model server.
