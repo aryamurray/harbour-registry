@@ -1,0 +1,10 @@
+[package]
+name = "fx-multi-test"
+version = "0.1.0"
+
+[dependencies]
+fx-multi = "*"
+
+[targets.fx-multi-test]
+kind = "exe"
+sources = ["src/**/*.c"]

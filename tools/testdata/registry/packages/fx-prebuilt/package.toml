@@ -1,0 +1,35 @@
+# Fixture: a prebuilt package (one upstream binary archive per platform; a human's exception).
+[package]
+name = "fx-prebuilt"
+description = "Fixture: prebuilt, one archive per platform"
+license = "BSD-3-Clause"
+
+[upstream]
+git = "https://github.com/fx-upstream/fx-prebuilt"
+tag = "v{version}"
+watch = false
+
+[[upstream.archive]]
+os = "linux"
+arch = "x86_64"
+url = "https://dl.fx-upstream.invalid/fx-prebuilt-{version}-linux-x86_64.zip"
+strip_prefix = "fx-prebuilt"
+
+[[upstream.archive]]
+os = "macos"
+arch = "aarch64"
+url = "https://dl.fx-upstream.invalid/{tag}/fx-prebuilt-macos-arm64.tar.xz"
+
+[[release]]
+version = "2.12.1"
+license_sha256 = "d321e1b2e3ae1a29a00a2d60b1940c406c66c98df7104d595599d7bf52814ed7"
+[release.archives]
+linux-x86_64 = "b8aeb139fdc9ee583e47655d29618a5c07858053b78bdc67a5c6d120c00d44ed"
+macos-aarch64 = "81f9924310226d4ffdbdfebd0a4ad767a3b555d7d3bfcce8f9d73fed95d3872c"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 0
+
+[review]
+prebuilt = "fixture: stands for a library that cannot be built from source in a manifest"

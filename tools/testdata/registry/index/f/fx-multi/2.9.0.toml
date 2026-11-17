@@ -1,0 +1,15 @@
+[package]
+name = "fx-multi"
+version = "2.9.0"
+
+[source.tarball]
+url = "https://github.com/fx-upstream/fx-multi/archive/refs/tags/release-2.9.tar.gz"
+sha256 = "ce8e92c6d647a470650cf60e7438308791e7bb654a6a0e69f1e149a1a1b49758"
+strip_prefix = "fx-multi-release-2.9"
+
+[metadata]
+license = "BSD-3-Clause"
+
+[[patches]]
+file = "2.9.0.patch"
+sha256 = "46b6836e5f7bf9b3bb0c64a1455fcd5649735753402cddb9d94f1ba6c8591653"

@@ -1,0 +1,14 @@
+[package]
+name = "fx-dep-c"
+version = "0.4.0"
+
+[source.tarball]
+url = "https://dl.fx-upstream.invalid/fx-dep-c/fx-dep-c-0.4.0.tar.xz"
+sha256 = "e31a151899257510abfa94515c6b0875960146ccb6980e7d4de09d5c7e8b1e58"
+
+[metadata]
+license = "MIT"
+
+[[patches]]
+file = "0.4.0.patch"
+sha256 = "50e339dddb5eaaeb2e7469e7bee5bb2849c416ff4f045a3f4f5dc411c3dcf3b2"

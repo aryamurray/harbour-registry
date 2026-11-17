@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -467,6 +468,98 @@ class EndToEnd(unittest.TestCase):
             self.assertEqual(elsewhere.requests, [], "the key must never reach a second host")
 
 
+class DribblingEndpoint:
+    """An endpoint that answers 200 and then sends one filler byte every `gap` seconds, never finishing:
+    what a router does to keep a slow request's connection alive."""
+
+    def __init__(self, gap=0.05, seconds=20.0):
+        self.requests = 0
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):   # noqa: N802
+                self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                outer.requests += 1
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()                       # no Content-Length: the body ends when we close
+                end = time.monotonic() + seconds
+                try:
+                    while time.monotonic() < end:
+                        self.wfile.write(b" ")
+                        self.wfile.flush()
+                        time.sleep(gap)
+                except OSError:
+                    pass
+
+            def log_message(self, *a):
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.base = f"http://127.0.0.1:{self.server.server_address[1]}/v1"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+class TimeLimits(unittest.TestCase):
+    """The socket timeout restarts with every byte, so it does not bound a request. The first real repair
+    sat in one model call for over twenty minutes; these are the limits that stop that."""
+
+    def test_a_response_kept_alive_with_filler_bytes_is_cut_off_at_the_request_timeout(self):
+        with DribblingEndpoint() as ep:
+            cfg = repair.Config(base=ep.base, key="k", model="m", timeout=0.5)
+            start = time.monotonic()
+            with self.assertRaises(repair.EndpointError) as cm:
+                repair.chat(cfg, [], sleep=lambda s: None)
+            took = time.monotonic() - start
+        self.assertIn("no complete response within", str(cm.exception))
+        self.assertEqual(ep.requests, repair.HTTP_RETRIES + 1)       # each try is cut off, then retried
+        self.assertLess(took, 0.5 * (repair.HTTP_RETRIES + 1) + 3.0, took)
+
+    def test_the_attempts_deadline_also_cuts_a_request_short_and_stops_the_retries(self):
+        with DribblingEndpoint() as ep:
+            cfg = repair.Config(base=ep.base, key="k", model="m", timeout=30.0, total_timeout=0.6,
+                                deadline=time.monotonic() + 0.6)
+            start = time.monotonic()
+            with self.assertRaises(repair.EndpointError) as cm:
+                repair.chat(cfg, [], sleep=lambda s: None)
+            took = time.monotonic() - start
+        self.assertIn("out of time", str(cm.exception))
+        self.assertIn("REPAIR_TOTAL_TIMEOUT", str(cm.exception))
+        self.assertEqual(ep.requests, 1)                              # no second try once the time is spent
+        self.assertLess(took, 5.0, took)
+
+    def test_a_spent_deadline_makes_no_request_at_all(self):
+        with DribblingEndpoint() as ep:
+            cfg = repair.Config(base=ep.base, key="k", model="m", deadline=time.monotonic() - 1)
+            with self.assertRaises(repair.EndpointError):
+                repair.chat(cfg, [], sleep=lambda s: None)
+        self.assertEqual(ep.requests, 0)
+
+    def test_a_completion_with_no_text_is_an_empty_reply_not_a_broken_endpoint(self):
+        # What a reasoning model returns when its token budget went on thinking.
+        null = {"choices": [{"index": 0, "message": {"role": "assistant", "content": None},
+                             "finish_reason": "length"}]}
+        with FakeEndpoint([null]) as ep:
+            text, finish = repair.chat(repair.Config(base=ep.base, key="k", model="m"), [])
+        self.assertEqual((text, finish), ("", "length"))
+        with self.assertRaises(repair.ReplyError):
+            repair.parse_reply("")                       # so the round is refused and the model is asked again
+
+    def test_the_total_timeout_is_configurable_and_bounded(self):
+        base = {"REPAIR_API_BASE": "https://api.example.com/v1", "REPAIR_API_KEY": "k", "REPAIR_MODEL": "m"}
+        self.assertEqual(repair.load_config(base).total_timeout, 900.0)
+        self.assertEqual(repair.load_config({**base, "REPAIR_TOTAL_TIMEOUT": "120"}).total_timeout, 120.0)
+        with self.assertRaises(repair.RepairError):
+            repair.load_config({**base, "REPAIR_TOTAL_TIMEOUT": "86400"})
+
+
 class Workflow(unittest.TestCase):
     def test_the_model_key_and_the_github_tokens_never_share_a_step(self):
         try:
@@ -487,7 +580,9 @@ class Workflow(unittest.TestCase):
         self.assertNotIn("secrets.REPAIR_API_KEY", text)
         # The endpoint comes from the same environment; the model is declared in the workflow.
         self.assertEqual(with_key[0]["env"]["REPAIR_API_BASE"], "${{ vars.OPENROUTER_BASE }}")
-        self.assertEqual(with_key[0]["env"]["REPAIR_MODEL"], "openrouter/free")
+        self.assertEqual(with_key[0]["env"]["REPAIR_MODEL"], "openai/gpt-oss-20b")
+        # Repair is on unless the repository variable says otherwise: the default is in the workflow.
+        self.assertIn("ENABLED: ${{ vars.REGISTRY_REPAIR_ENABLED || 'true' }}", text)
         names = [s.get("name", "") for s in steps]
         push = next(s for s in steps if "REGISTRY_BOT_TOKEN" in json.dumps(s.get("env", {})))
         self.assertGreater(names.index(push["name"]), names.index(with_key[0]["name"]))

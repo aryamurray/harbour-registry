@@ -1,0 +1,17 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..e7bc33b
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,11 @@
++[package]
++name = "fx-header"
++version = "3.12.0"
++license = "BSL-1.0"
++
++[targets.fx-header]
++kind = "header-only"
++lang = "c"
++
++[targets.fx-header.surface.compile.public]
++include_dirs = ["include"]

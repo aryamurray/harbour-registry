@@ -15,7 +15,7 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [c-ares](packages/c-ares) | 1.34.9 | `MIT` | linux, macos, windows | Asynchronous DNS resolver library, configured by Harbour probes |
 | [cjson](packages/cjson) | 1.7.18 | `MIT` | linux, macos, windows | Ultralightweight JSON parser in ANSI C |
 | [cpython](packages/cpython) | 3.14.9 | `PSF-2.0` | linux, macos | The Python interpreter, built from its generated sources |
-| [crc32c](packages/crc32c) | 1.1.0 | `BSD-3-Clause` | linux, macos, windows | CRC32C implementation with support for CPU-specific acceleration instructions |
+| [crc32c](packages/crc32c) | 1.1.2 | `BSD-3-Clause` | linux, macos, windows | CRC32C implementation with support for CPU-specific acceleration instructions |
 | [curl](packages/curl) | 8.22.0 | `curl` | linux, macos, windows | Command-line tool and library for transferring data with URLs, configured by Harbour probes |
 | [expat](packages/expat) | 2.10.0 | `MIT` | linux, macos, windows | Stream-oriented XML parser library, configured by Harbour probes |
 | [fmt](packages/fmt) | 11.2.0 | `MIT` | linux, macos, windows | A modern formatting library |
@@ -31,7 +31,7 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [libwebp](packages/libwebp) | 1.6.0 | `BSD-3-Clause` | linux, macos, windows | WebP image codec: encoder, decoder, sharp YUV conversion, demux and mux libraries |
 | [luajit](packages/luajit) | 2.1.1792588164 | `MIT` | linux, macos, windows | Just-in-time compiler and interpreter for the Lua language |
 | [lz4](packages/lz4) | 1.11.1 | `BSD-2-Clause` | linux, macos, windows | Extremely fast lossless compression: LZ4 blocks, high-compression mode and the frame format |
-| [mbedtls](packages/mbedtls) | 3.6.7 | `Apache-2.0 OR GPL-2.0-or-later` | linux, macos, windows | Mbed TLS (3.6 LTS): the crypto, X.509 and TLS libraries as three targets |
+| [mbedtls](packages/mbedtls) | 3.6.8 | `Apache-2.0 OR GPL-2.0-or-later` | linux, macos, windows | Mbed TLS (3.6 LTS): the crypto, X.509 and TLS libraries as three targets |
 | [nghttp2](packages/nghttp2) | 1.71.0 | `MIT` | linux, macos, windows | HTTP/2 C library: frames, sessions, streams and HPACK (libnghttp2 only) |
 | [nlohmann-json](packages/nlohmann-json) | 3.12.0 | `MIT` | linux, macos, windows | JSON for Modern C++: a header-only JSON library with an STL-like interface |
 | [openssl](packages/openssl) | 3.5.4 | `Apache-2.0` | linux, macos, windows | OpenSSL SHA-2 and AES primitives (a slice of libcrypto, generated sources) |
@@ -39,13 +39,13 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [pjrt-c-api](packages/pjrt-c-api) | 0.118.0 | `Apache-2.0` | linux, macos, windows | PJRT C API of OpenXLA: the C interface between ML frameworks and XLA devices and plugins (headers only) |
 | [protobuf](packages/protobuf) | 36.2.0 | `BSD-3-Clause AND MIT` | linux, macos | Protocol Buffers C++ runtime (lite and full libraries); no protoc |
 | [pugixml](packages/pugixml) | 1.16.0 | `MIT` | linux, macos, windows | Light-weight, fast C++ XML parser with a DOM-like interface and XPath 1.0 |
-| [redis](packages/redis) | 7.2.16 | `BSD-3-Clause` | linux, macos | In-memory data structure store |
-| [snappy](packages/snappy) | 1.2.1 | `BSD-3-Clause` | linux, macos, windows | A fast compressor/decompressor |
+| [redis](packages/redis) | 7.2.17 | `BSD-3-Clause` | linux, macos | In-memory data structure store |
+| [snappy](packages/snappy) | 1.3.1 | `BSD-3-Clause` | linux, macos, windows | A fast compressor/decompressor |
 | [spdlog](packages/spdlog) | 1.17.0 | `MIT` | linux, macos | Fast C++ logging library, built in compiled mode against the registry's fmt |
 | [tinyxml2](packages/tinyxml2) | 11.0.0 | `Zlib` | linux, macos, windows | Simple, small, efficient C++ XML parser (DOM-style) |
 | [xxhash](packages/xxhash) | 0.8.4 | `BSD-2-Clause` | linux, macos, windows | Extremely fast non-cryptographic hash algorithm: XXH32, XXH64, XXH3 and XXH128 |
 | [yaml-cpp](packages/yaml-cpp) | 0.9.0 | `MIT` | linux, macos, windows | YAML 1.2 parser and emitter in C++ |
-| [zlib](packages/zlib) | 1.3.1 | `Zlib` | linux, macos, windows | General-purpose lossless compression library (deflate/inflate, gzip, crc32, adler32) |
+| [zlib](packages/zlib) | 1.4.0 | `Zlib` | linux, macos, windows | General-purpose lossless compression library (deflate/inflate, gzip, crc32, adler32) |
 | [zstd](packages/zstd) | 1.5.7 | `BSD-3-Clause OR GPL-2.0-only` | linux, macos, windows | Zstandard, fast real-time compression |
 <!-- packages:end -->
 
@@ -313,7 +313,7 @@ All are Python 3.11+, standard library only, and run on Linux, macOS and Windows
 | `tools/watch.py supersede --package P --version V` | close the open bump PRs that the open bump PR for `V` replaces |
 | `tools/bump_triage.py` | what happens when the gate finishes on a bump PR (labels, one failure summary, repair budget) |
 | `tools/repair.py` | the repair step: asks a language model (any OpenAI-compatible endpoint, `REPAIR_*` settings) for a rewritten manifest and accepts only files inside its output contract. `--print-prompt` shows what would be sent without sending it |
-| `python3 -m unittest discover -s tools -p "test_*.py"` | tests of the tools (the patch renderer against real `git diff`, the guard against real git history, lint and render against mutated copies of this checkout) |
+| `python3 -m unittest discover -s tools -p "test_*.py"` | tests of the tools (the patch renderer against real `git diff`, the guard against real git history, lint, render and the watcher against mutated copies of the fixture registry in `tools/testdata/registry/`: synthetic `fx-*` packages, so that no change to a real package can fail the tools' self-test) |
 
 ### Rendering is byte-exact
 
@@ -606,13 +606,13 @@ What to create:
 | --- | --- |
 | secret `REGISTRY_BOT_TOKEN` | a fine-grained PAT (or GitHub App installation token) scoped to this repository only: Contents read+write, Pull requests read+write, Issues read+write (for labels). Only the push, label, PR, supersede (comment on, close and delete the branch of a bump PR that a newer one replaces) and auto-merge steps see it; keep that account **out of the branch-protection bypass list** |
 | variable `REGISTRY_AUTO_MERGE` | `true` to run `gh pr merge --auto --squash` on each bump PR, **except one whose upstream license files changed** (never requested for those). Default off. Needs "Allow auto-merge" in the repository settings and `PR result` required by branch protection; otherwise it is a warning and the PR waits for a human. **Nothing in the workflow merges anything itself.** Flip it once you trust the gate |
-| variable `REGISTRY_REPAIR_ENABLED` | `true` once the `Openrouter` environment below holds its key. A **repository** variable, not an environment one: the triage job reads it, and that job does not use the environment. Default off: a failed bump then goes straight to `needs-human` |
+| variable `REGISTRY_REPAIR_ENABLED` | optional **off switch**. Repair is on by default, declared in the triage job of `watch.yml`. Set this **repository** variable to `false` and a failed bump goes straight to `needs-human` |
 | variable `REGISTRY_REPAIR_ATTEMPTS` | repair attempts per bump PR, default `2` |
 | environment `Openrouter` | a GitHub environment (Settings > Environments). Only the `repair` job declares it, so what it holds can be read by that job and by nothing else in the repository. Do not add required reviewers (every repair would wait for approval); restricting it to the default branch is fine |
 | secret `OPENROUTER_KEY`, **in that environment** | the OpenRouter key, sent as `Authorization: Bearer <key>`. Only the one step that calls the model sees it |
 | variable `OPENROUTER_BASE`, **in that environment** | the API base, `https://openrouter.ai/api/v1`: the URL up to and including the version segment, https only. The repair step POSTs to `<base>/chat/completions` and contacts nothing else |
-| the model | not a setting: `openrouter/free` is written in the `repair` job of `watch.yml`, so changing the model that rewrites manifests is a reviewed change to that file |
-| variables `REPAIR_TEMPERATURE`, `REPAIR_MAX_TOKENS`, `REPAIR_TIMEOUT`, `REPAIR_MAX_PROMPT_CHARS` | optional; see below |
+| the model | not a setting: `openai/gpt-oss-20b` is written in the `repair` job of `watch.yml`, so changing the model that rewrites manifests is a reviewed change to that file |
+| variables `REPAIR_TEMPERATURE`, `REPAIR_MAX_TOKENS`, `REPAIR_TIMEOUT`, `REPAIR_TOTAL_TIMEOUT`, `REPAIR_MAX_PROMPT_CHARS` | optional; see below |
 | labels `bot`, `bump`, `needs-repair`, `needs-human`, `license-changed`, `keep`, `repair-attempt-N` | created by the workflow when missing. `keep` is the one a person applies (a bump PR carrying it is never closed as superseded) |
 
 Branch protection that makes this safe (already required by the guard section above): require `PR result`,
@@ -626,7 +626,9 @@ jobs failed, the log lines leading up to each failure, the upstream compare stat
 when upstream is on GitHub), and counts attempts in `repair-attempt-<n>` labels, incremented *before* the repair
 job starts so a crashed repair still spends its attempt. A green run removes `needs-repair`/`needs-human`. When
 repair is not enabled or the budget is spent: label `needs-human`, drop `needs-repair`, open the issue
-`needs-human: <package> <version>`, stop.
+`needs-human: <package> <version>`, stop. The job starts seconds after the run ends, when GitHub may not have
+finished storing a job's log: a log that is not there yet is asked for again a few times (bounded), and if it
+never comes the summary carries the reason (the HTTP status) in place of the log lines.
 
 **Security of that job.** `workflow_run` runs the default branch's workflow in the base repository with write
 permissions, after a workflow that executed PR code. So it checks out the default branch only and never the PR's
@@ -690,16 +692,19 @@ vendor SDK is involved and nothing but the Python standard library is used.
 1. In the GitHub environment `Openrouter` (create it if it does not exist), store the OpenRouter key as the
    secret `OPENROUTER_KEY` and set the variable `OPENROUTER_BASE` to `https://openrouter.ai/api/v1`.
 2. The model is declared in the `repair` job of `.github/workflows/watch.yml` (`REPAIR_MODEL`).
-   `openrouter/free` routes to whichever free models OpenRouter currently serves, so which model answers can
-   differ from one repair to the next. To use another provider, change what the job maps to `REPAIR_API_BASE`,
+   It is a named model (`openai/gpt-oss-20b`), billed to the OpenRouter account, so the same model answers
+   every repair. OpenRouter's free router (`openrouter/free`) was tried first: on the first real repair its
+   choice took twenty minutes and returned no text. To use another provider, change what the job maps to `REPAIR_API_BASE`,
    `REPAIR_API_KEY` and `REPAIR_MODEL`.
 3. Optional variables: `REPAIR_TEMPERATURE` (default `0`), `REPAIR_MAX_TOKENS` (reply tokens, default `8192`;
-   either accepts `omit` for providers that reject the field), `REPAIR_TIMEOUT` (seconds, default `300`),
+   either accepts `omit` for providers that reject the field), `REPAIR_TIMEOUT` (seconds of wall clock per request, default `300`), `REPAIR_TOTAL_TIMEOUT` (seconds for the
+   whole attempt, every round and retry, default `900`),
    `REPAIR_MAX_PROMPT_CHARS` (default `150000`; lower it for a model with a small context window. A prompt is
    about a quarter as many tokens as characters; curl's is about 32,000 characters).
-4. Set `REGISTRY_REPAIR_ENABLED` to `true`.
+4. Nothing to switch on: repair runs by default. To stop it, set the repository variable
+   `REGISTRY_REPAIR_ENABLED` to `false`.
 
-With `REGISTRY_REPAIR_ENABLED=true` and the key or the base missing (or the environment misnamed, which GitHub creates empty), the repair job fails with "not configured: set ...",
+With the key or the base missing (or the environment misnamed, which GitHub creates empty), the repair job fails with "not configured: set ...",
 and the PR is handed to a human. To try a provider before enabling anything, export the three variables in a
 shell and run `tools/repair.py` on a directory laid out as above; `http://localhost` is accepted as a base for a
 local model server.

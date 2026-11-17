@@ -1,0 +1,18 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..df3f57f
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,12 @@
++[package]
++name = "fx-multi"
++version = "2.9.0"
++license = "BSD-3-Clause"
++
++[targets.multi]
++kind = "staticlib"
++lang = "c"
++sources = ["src/*.c"]
++
++[targets.multi.surface.compile.public]
++include_dirs = ["include"]

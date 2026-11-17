@@ -1,0 +1,15 @@
+[package]
+name = "fx-gitrev"
+version = "15.0.0"
+
+[source.git]
+url = "https://github.com/fx-upstream/fx-gitrev.git"
+rev = "4a1d9f75934f82c553e3ddd66c8f9067db5f2704"
+
+[metadata]
+license = "MIT"
+upstream_url = "https://github.com/fx-upstream/fx-gitrev.git"
+
+[[patches]]
+file = "15.0.0.patch"
+sha256 = "d764860531e7b229964c839e97ddfabcd4a3c3daf1c2308767113924cb864358"

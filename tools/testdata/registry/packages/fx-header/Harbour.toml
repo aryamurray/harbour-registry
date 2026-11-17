@@ -1,0 +1,11 @@
+[package]
+name = "fx-header"
+version = "3.12.0"
+license = "BSL-1.0"
+
+[targets.fx-header]
+kind = "header-only"
+lang = "c"
+
+[targets.fx-header.surface.compile.public]
+include_dirs = ["include"]

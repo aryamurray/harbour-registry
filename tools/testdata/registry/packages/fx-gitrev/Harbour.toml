@@ -1,0 +1,12 @@
+[package]
+name = "fx-gitrev"
+version = "15.0.0"
+license = "MIT"
+
+[targets.gitrev]
+kind = "staticlib"
+lang = "c"
+sources = ["src/*.c"]
+
+[targets.gitrev.surface.compile.public]
+include_dirs = ["include"]

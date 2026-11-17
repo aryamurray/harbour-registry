@@ -1,0 +1,23 @@
+# Fixture: a tarball-pinned package whose URL is a template (what `watch.py bump` bumps).
+[package]
+name = "fx-tarball"
+description = "Fixture: pinned by tarball sha256, URL from a template, upstream on GitHub"
+license = "Zlib"
+homepage = "https://fx-tarball.invalid"
+
+[upstream]
+git = "https://github.com/fx-upstream/fx-tarball"
+tag = "v{version}"
+url = "https://github.com/fx-upstream/fx-tarball/releases/download/{tag}/fx-tarball-{version}.tar.gz"
+strip_prefix = "fx-tarball-{version}"
+
+[[release]]
+version = "1.3.1"
+sha256 = "1d07e1768bec820937370c01c836934d7b27417b7e83c43dd1fc63445ff2d22a"
+license_sha256 = "f333d2a50895c5394f8fa5da1c408fb1f3a969a1351be9b976c08f78bf939f89"
+republish = "fixture: 1.3.1 was republished once (the marker is spent: it is in the base too)"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 15
+verify = true

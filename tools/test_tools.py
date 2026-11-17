@@ -2,11 +2,30 @@
 
 A gate that is wrong silently is worse than none, so the parts that decide pass/fail are tested
 against ground truth: render_add_patch against what real `git diff --binary` prints, the guard
-against throw-away git repositories, lint and render against mutated copies of this checkout.
+against throw-away git repositories, lint and render against mutated copies of a registry.
 Standard library only; needs git.
+
+WHICH REGISTRY. Not this checkout's: the tests run against the FIXTURE REGISTRY in
+tools/testdata/registry/, a few synthetic `fx-*` packages and the index/ they render to. A test that
+used a real package as its fixture (its name, version, hash, platforms, dependencies) broke whenever
+that package legitimately changed, and so made the gate refuse the very bump it was judging: the
+first automated bump (zlib 1.3.1 -> 1.4.0) failed here, in the tools' self-test, before anything
+was built. So:
+
+  * in this process the tools see the fixture (setUpModule points regtools at it), and
+    `rt.load_package("zlib")` simply fails: a new test cannot lean on a real package by accident;
+  * a test that mutates a registry gets `make_checkout()`: the working tree's tools/ next to a
+    copy of the fixture, in a throw-away git repository;
+  * the few tests whose SUBJECT is this checkout (is the committed index/ what packages/ renders
+    to? does every package satisfy the registry-wide invariants?) are in `RealRegistry`. They hold
+    for any valid registry and name no package and no version.
+
+The fixture is kept honest by `FixtureRegistry`: it must lint clean and be exactly what render.py
+produces. After editing a fixture package: `python3 tools/test_tools.py --render-fixture`.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import importlib.util
 import io
@@ -34,6 +53,7 @@ import repair  # noqa: E402
 import watch  # noqa: E402
 
 REPO = HERE.parent
+FIXTURE = HERE / "testdata" / "registry"
 
 # tools/test.py shares its name with the standard library's `test` package, so it is loaded by path.
 _spec = importlib.util.spec_from_file_location("registry_test_runner", HERE / "test.py")
@@ -45,6 +65,73 @@ GIT = ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "
 
 def run(cmd, cwd, **kw):
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, **kw)
+
+
+# ---------------------------------------------------------------------------
+# The registry the tests run against (see the module docstring)
+# ---------------------------------------------------------------------------
+
+_IDX_PATH, _SHIM_DIR = rt.idx_path, rt.shim_dir
+
+
+@contextlib.contextmanager
+def registry_at(root: Path):
+    """Point the tools imported into this process at the registry in `root` (packages/, index/).
+
+    regtools resolves ROOT from its own path, and `idx_path`/`shim_dir` bound the index directory as a
+    default argument when they were defined, so those two are wrapped as well."""
+    saved = (rt.ROOT, rt.PACKAGES, rt.INDEX, rt.idx_path, rt.shim_dir)
+    index = root / "index"
+    rt.ROOT, rt.PACKAGES, rt.INDEX = root, root / "packages", index
+    rt.idx_path = lambda name, *, index=index: _IDX_PATH(name, index=index)
+    rt.shim_dir = lambda name, *, index=index: _SHIM_DIR(name, index=index)
+    try:
+        yield root
+    finally:
+        rt.ROOT, rt.PACKAGES, rt.INDEX, rt.idx_path, rt.shim_dir = saved
+
+
+def setUpModule():
+    ctx = registry_at(FIXTURE)
+    ctx.__enter__()
+    unittest.addModuleCleanup(ctx.__exit__, None, None, None)
+
+
+def make_checkout(root: Path, registry: Path = FIXTURE) -> Path:
+    """A registry checkout in `root`: the tools of the working tree under test, next to a copy of
+    `registry`'s packages/, index/ and README.md (the fixture, unless a test is about this checkout).
+    The tools resolve the registry from their own path, so `root/tools/<tool>.py` judges `root`."""
+    (root / "tools").mkdir(parents=True, exist_ok=True)
+    for tool in sorted(HERE.glob("*.py")):
+        shutil.copy(tool, root / "tools" / tool.name)
+    for item in ("packages", "index"):
+        if (registry / item).is_dir():           # git keeps no empty directory: a registry with no package has no index/
+            shutil.copytree(registry / item, root / item)
+    shutil.copy(registry / "README.md", root / "README.md")
+    for item in ("config.toml", ".gitattributes", ".gitignore"):      # of the repository, not of its packages
+        shutil.copy(REPO / item, root / item)
+    return root
+
+
+def commit_all(root: Path, message: str = "base") -> None:
+    if not (root / ".git").exists():
+        run(GIT + ["init", "-q", "-b", "main"], root)
+    run(GIT + ["add", "-A"], root)
+    run(GIT + ["commit", "-q", "-m", message], root)
+
+
+def lint_copy(name: str, edit_toml=lambda s: s, edit_manifest=lambda s: s) -> list[str]:
+    """lint's errors for a copy of the fixture package `name` with its package.toml / Harbour.toml edited."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        shutil.copytree(FIXTURE / "packages" / name, root / "packages" / name)
+        for file, edit in (("package.toml", edit_toml), ("Harbour.toml", edit_manifest)):
+            p = root / "packages" / name / file
+            p.write_text(edit(p.read_text()), newline="")
+        with registry_at(root):
+            linter = lint.Linter()
+            linter.lint(name)
+            return [m for _, m in linter.errors]
 
 
 class PatchRendering(unittest.TestCase):
@@ -185,15 +272,31 @@ class Spdx(unittest.TestCase):
 
 class Plan(unittest.TestCase):
     def test_reverse_dependencies(self):
-        pkgs, everything, _ = plan.affected(["packages/zlib/Harbour.toml"])
+        pkgs, everything, _ = plan.affected(["packages/fx-tarball/Harbour.toml"])
         self.assertFalse(everything)
-        # libpng and cpython depend on zlib; freetype on libpng and zlib; harfbuzz on freetype.
-        self.assertTrue({"zlib", "libpng", "freetype", "harfbuzz", "cpython"} <= pkgs, pkgs)
-        self.assertNotIn("cjson", pkgs)
-        pkgs, _, _ = plan.affected(["packages/cjson/test/src/main.c"])
-        self.assertEqual(pkgs, {"cjson"})
-        pkgs, _, _ = plan.affected(["index/l/libpng/1.6.50.patch"])
-        self.assertEqual(pkgs, {"libpng", "freetype", "harfbuzz"})
+        # fx-dep-a depends on fx-tarball; fx-dep-b on fx-dep-a (and, optionally, on fx-tarball);
+        # fx-dep-c on fx-dep-b only. Nothing else in the fixture depends on any of them.
+        self.assertEqual(pkgs, {"fx-tarball", "fx-dep-a", "fx-dep-b", "fx-dep-c"})
+        pkgs, _, _ = plan.affected(["packages/fx-gitrev/test/src/main.c"])
+        self.assertEqual(pkgs, {"fx-gitrev"})
+        pkgs, _, _ = plan.affected(["index/f/fx-dep-a/1.6.50.patch"])
+        self.assertEqual(pkgs, {"fx-dep-a", "fx-dep-b", "fx-dep-c"})
+        pkgs, _, _ = plan.affected(["index/f/fx-dep-b.idx", "packages/fx-header/package.toml"])
+        self.assertEqual(pkgs, {"fx-dep-b", "fx-dep-c", "fx-header"})
+        self.assertEqual(plan.dependents(set(rt.package_names()))["fx-tarball"], {"fx-dep-a", "fx-dep-b"})
+
+    def test_the_fixture_registry_is_not_part_of_the_registry(self):
+        # tools/testdata/registry/ holds packages/ and index/ directories of its own. They are test
+        # data: a change there is a change to the tools' tests, and names no package to re-test.
+        paths = [f"tools/testdata/registry/{p.relative_to(FIXTURE).as_posix()}" for p in sorted(FIXTURE.rglob("*")) if p.is_file()]
+        self.assertTrue(any("/packages/fx-tarball/" in p for p in paths) and any(p.endswith("/index/f/fx-tarball.idx") for p in paths))
+        for path in paths:
+            self.assertIsNone(plan.package_of(path), path)
+        self.assertEqual(plan.affected(paths)[:2], (set(), False))
+        # ... and seen from this checkout, the tools find no package under tools/.
+        with registry_at(REPO):
+            self.assertEqual(rt.PACKAGES, REPO / "packages")
+            self.assertEqual(plan.affected(paths)[:2], (set(), False))
 
     def test_judge_changes_retest_everything(self):
         for path in ("tools/test.py", "tools/regtools.py", "tools/plan.py", ".github/workflows/pr.yml",
@@ -201,6 +304,7 @@ class Plan(unittest.TestCase):
             pkgs, everything, _ = plan.affected([path])
             self.assertTrue(everything, path)
             self.assertEqual(pkgs, set(rt.package_names()))
+            self.assertIn("fx-tarball", pkgs)
 
     def test_tooling_that_does_not_build_packages_retests_nothing(self):
         # Each of these has its own check in the PR workflow; none changes what a consumer test does.
@@ -211,24 +315,15 @@ class Plan(unittest.TestCase):
             self.assertFalse(everything, path)
             self.assertEqual(pkgs, set(), path)
 
-    def test_a_full_run_is_a_few_shards_that_cover_every_package_once(self):
-        names = set(rt.package_names())
-        rows = plan.build_shards(names)
-        per_plat = {}
-        for r in rows:
-            self.assertEqual(r["runner"], plan.RUNNERS[r["os"]])
-            self.assertRegex(r["packages"], r"^[a-z0-9_-]+( [a-z0-9_-]+)*$")
-            per_plat.setdefault(r["os"], []).extend(r["packages"].split())
-        self.assertLessEqual(len(rows), plan.MAX_SHARDS * len(plan.RUNNERS))
-        for plat, tested in per_plat.items():
-            want = sorted(n for n in names if plat in rt.load_package(n).platforms())
-            self.assertEqual(sorted(tested), want, plat)       # every package, exactly once
-        self.assertEqual({r["packages"] for r in plan.build({"zlib"})}, {"zlib"})
+    def test_one_package_is_one_row_per_platform(self):
+        self.assertEqual({r["packages"] for r in plan.build({"fx-tarball"})}, {"fx-tarball"})
+        self.assertEqual(len(plan.build({"fx-tarball"})), 3)
 
     def test_matrix_respects_platforms(self):
-        rows = plan.build({"zlib", "redis"})
+        rows = plan.build({"fx-tarball", "fx-dep-b"})
         self.assertEqual({(r["package"], r["os"]) for r in rows},
-                         {("zlib", "linux"), ("zlib", "macos"), ("zlib", "windows"), ("redis", "linux"), ("redis", "macos")})
+                         {("fx-tarball", "linux"), ("fx-tarball", "macos"), ("fx-tarball", "windows"),
+                          ("fx-dep-b", "linux"), ("fx-dep-b", "macos")})
         self.assertTrue(all(r["runner"] == plan.RUNNERS[r["os"]] for r in rows))
 
 
@@ -294,7 +389,9 @@ class Guard(unittest.TestCase):
 
     def test_forbidden_paths(self):
         for path in ("packages/foo/test/src/main.c", "tools/test.py", ".github/workflows/pr.yml", ".harbour-version",
-                     "CODEOWNERS", "config.toml", ".gitattributes", "packages/foo/notes.md", "packages/_template/package.toml"):
+                     "CODEOWNERS", "config.toml", ".gitattributes", "packages/foo/notes.md", "packages/_template/package.toml",
+                     # The tests' fixture registry is part of the judge, whatever its directories are called.
+                     "tools/testdata/registry/packages/fx-tarball/package.toml", "tools/testdata/registry/index/f/fx-tarball.idx"):
             with self.subTest(path):
                 self.setUp() if False else None
                 self.write(path, "changed\n")
@@ -344,21 +441,15 @@ class Guard(unittest.TestCase):
 
 
 class OnACopy(unittest.TestCase):
-    """lint and render against mutated copies of this checkout (tools resolve ROOT from their own path)."""
+    """lint and render against mutated copies of the fixture registry (tools resolve ROOT from their own path)."""
+
+    REGISTRY = FIXTURE
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
-        for item in ("tools", "packages", "index", "README.md", "config.toml", ".gitattributes"):
-            src = REPO / item
-            if src.is_dir():
-                shutil.copytree(src, self.root / item, ignore=shutil.ignore_patterns("__pycache__"))
-            else:
-                shutil.copy(src, self.root / item)
-        run(GIT + ["init", "-q", "-b", "main"], self.root)
-        run(GIT + ["add", "-A"], self.root)
-        run(GIT + ["commit", "-q", "-m", "base"], self.root)
+        self.root = make_checkout(Path(self.tmp.name), self.REGISTRY)
+        commit_all(self.root)
 
     def py(self, script, *args):
         return run([sys.executable, str(self.root / "tools" / script), *args], self.root)
@@ -373,56 +464,58 @@ class OnACopy(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
     def test_render_reproduces_index_from_scratch(self):
-        shutil.rmtree(self.root / "index" / "z" / "zlib")
-        (self.root / "index" / "z" / "zlib.idx").unlink()
-        # zlib's published version is not rendered from nothing: the newest release IS rendered,
-        # so the whole thing comes back byte for byte, including the idx.
-        r = self.py("render.py", "zlib")
+        shutil.rmtree(self.root / "index" / "f" / "fx-tarball")
+        (self.root / "index" / "f" / "fx-tarball.idx").unlink()
+        # fx-tarball has one release, the newest, and the newest release IS rendered: so the
+        # whole thing comes back byte for byte, including the idx.
+        r = self.py("render.py", "fx-tarball")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         d = run(["git", "diff", "--exit-code", "--stat", "index/"], self.root)
         self.assertEqual(d.returncode, 0, d.stdout)
 
     def test_stale_index_is_caught_with_a_diff(self):
-        self.edit("packages/zlib/Harbour.toml", lambda s: s + "\n# a comment\n")
+        self.edit("packages/fx-tarball/Harbour.toml", lambda s: s + "\n# a comment\n")
         r = self.py("render.py", "--check")
         self.assertEqual(r.returncode, 1)
-        self.assertIn("index/z/zlib/1.3.1.patch", r.stdout)
+        self.assertIn("index/f/fx-tarball/1.3.1.patch", r.stdout)
+        self.assertNotIn("fx-gitrev", r.stdout)             # and nothing else is reported stale
         self.assertIn("+# a comment", r.stdout)
 
     def test_published_version_is_immutable_against_base(self):
-        self.edit("packages/zlib/Harbour.toml", lambda s: s + "\n# a comment\n")
-        self.assertEqual(self.py("render.py", "zlib").returncode, 0)
+        self.edit("packages/fx-tarball/Harbour.toml", lambda s: s + "\n# a comment\n")
+        self.assertEqual(self.py("render.py", "fx-tarball").returncode, 0)
         r = self.py("render.py", "--check", "--base", "HEAD")
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("published at HEAD but would change", r.stdout)
         # ... unless a human acknowledges the republish on that release.
-        # (zlib already records a republish of its own, so drop that line first: a duplicate key is a parse error.)
-        self.edit("packages/zlib/package.toml", lambda s: re.sub(r'^republish = .*\n', '', s, flags=re.M).replace(
+        # (fx-tarball already records a republish of its own, which is in the base too and so is spent;
+        # drop that line first: a duplicate key is a parse error.)
+        self.edit("packages/fx-tarball/package.toml", lambda s: re.sub(r'^republish = .*\n', '', s, flags=re.M).replace(
             '[[release]]\nversion = "1.3.1"\n', '[[release]]\nversion = "1.3.1"\nrepublish = "test"\n'))
-        self.assertEqual(self.py("render.py", "zlib").returncode, 0)
+        self.assertEqual(self.py("render.py", "fx-tarball").returncode, 0)
         r = self.py("render.py", "--check", "--base", "HEAD")
         self.assertEqual(r.returncode, 0, r.stdout)
 
     def test_new_release_appends_and_keeps_old(self):
-        self.edit("packages/zlib/Harbour.toml", lambda s: s.replace('version = "1.3.1"', 'version = "1.3.2"', 1))
-        self.edit("packages/zlib/package.toml", lambda s: s.replace(
+        self.edit("packages/fx-tarball/Harbour.toml", lambda s: s.replace('version = "1.3.1"', 'version = "1.3.2"', 1))
+        self.edit("packages/fx-tarball/package.toml", lambda s: s.replace(
             '[[release]]\nversion = "1.3.1"', '[[release]]\nversion = "1.3.2"\nsha256 = "' + "ab" * 32 + '"\nlicense_sha256 = "'
             + "cd" * 32 + '"\n\n[[release]]\nversion = "1.3.1"'))
-        r = self.py("render.py", "zlib")
+        r = self.py("render.py", "fx-tarball")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertTrue((self.root / "index/z/zlib/1.3.2.toml").is_file())
+        self.assertTrue((self.root / "index/f/fx-tarball/1.3.2.toml").is_file())
         # The old version's files are untouched...
-        d = run(["git", "diff", "--exit-code", "--name-only", "--", "index/z/zlib/1.3.1.patch", "index/z/zlib/1.3.1.toml"], self.root)
+        d = run(["git", "diff", "--exit-code", "--name-only", "--", "index/f/fx-tarball/1.3.1.patch", "index/f/fx-tarball/1.3.1.toml"], self.root)
         self.assertEqual(d.returncode, 0, d.stdout)
         # ... and both versions are in the idx, in order.
-        lines = (self.root / "index/z/zlib.idx").read_text().splitlines()
+        lines = (self.root / "index/f/fx-tarball.idx").read_text().splitlines()
         self.assertEqual([json.loads(l)["version"] for l in lines], ["1.3.1", "1.3.2"])
         self.assertEqual(self.py("render.py", "--check", "--base", "HEAD").returncode, 0)
         guard_out = self.py("lint.py")
         self.assertEqual(guard_out.returncode, 0, guard_out.stdout)
 
     def test_older_release_without_artifacts_is_refused(self):
-        self.edit("packages/zlib/package.toml", lambda s: s.replace(
+        self.edit("packages/fx-tarball/package.toml", lambda s: s.replace(
             '[[release]]\nversion = "1.3.1"', '[[release]]\nversion = "1.3.0"\nsha256 = "' + "cd" * 32 + '"\n\n[[release]]\nversion = "1.3.1"'))
         r = self.py("render.py", "--check")
         self.assertEqual(r.returncode, 1)
@@ -436,16 +529,11 @@ class OnACopy(unittest.TestCase):
         self.assertIn("belongs to no package", r.stdout)
 
     def test_stale_readme_table_is_caught(self):
-        self.edit("README.md", lambda s: s.replace("[zlib](packages/zlib)", "[zlibX](packages/zlib)"))
+        self.assertIn("[fx-tarball](packages/fx-tarball)", (self.root / "README.md").read_text())
+        self.edit("README.md", lambda s: s.replace("[fx-tarball](packages/fx-tarball)", "[fx-tarballX](packages/fx-tarball)"))
         r = self.py("render.py", "--check")
         self.assertEqual(r.returncode, 1)
         self.assertIn("README", r.stdout)
-
-    def test_template_lints_once_copied(self):
-        """packages/_template is the starting point of every new package: it must itself be valid."""
-        shutil.copytree(self.root / "packages/_template", self.root / "packages/example")
-        r = self.py("lint.py", "example")
-        self.assertEqual(r.returncode, 0, r.stdout)
 
     def lint_fails(self, mutate, needle):
         mutate()
@@ -454,7 +542,7 @@ class OnACopy(unittest.TestCase):
         self.assertIn(needle, r.stdout)
 
     def test_lint_rules(self):
-        pt = "packages/zlib/package.toml"
+        pt = "packages/fx-tarball/package.toml"
         orig = (self.root / pt).read_text()
 
         def reset():
@@ -462,23 +550,23 @@ class OnACopy(unittest.TestCase):
 
         cases = {
             "http url": (lambda: self.edit(pt, lambda s: s.replace('url = "https://github', 'url = "http://github', 1)), "https://"),
-            "short sha": (lambda: self.edit(pt, lambda s: s.replace("sha256 = \"9a93", "sha256 = \"9A93", 1)), "64 lowercase hex"),
+            "short sha": (lambda: self.edit(pt, lambda s: re.sub(r'(?m)^sha256 = "[0-9a-f]{64}"', lambda m: m.group(0)[:9] + m.group(0)[9:].upper(), s, count=1)), "64 lowercase hex"),
             "bad license": (lambda: self.edit(pt, lambda s: s.replace('license = "Zlib"', 'license = "Proprietary"')), "allowlist"),
             "unknown key": (lambda: self.edit(pt, lambda s: s + "\n[test.extra]\nx = 1\n"), "unknown"),
             "no objects": (lambda: self.edit(pt, lambda s: s.replace("objects = 15\n", "")), "objects"),
-            "header-only needs objects = 0": (lambda: self.edit("packages/zlib/Harbour.toml", lambda s: s.replace('kind = "staticlib"', 'kind = "header-only"')), "objects must be 0"),
+            "header-only needs objects = 0": (lambda: self.edit("packages/fx-tarball/Harbour.toml", lambda s: s.replace('kind = "staticlib"', 'kind = "header-only"')), "objects must be 0"),
             "zero objects for a compiled library": (lambda: self.edit(pt, lambda s: s.replace("objects = 15", "objects = 0")), "at least 1"),
-            "windows without support": (lambda: self.edit("packages/redis/package.toml", lambda s: s.replace('["linux", "macos"]', '["linux", "macos", "windows"]')), "supports"),
+            "windows without support": (lambda: self.edit("packages/fx-dep-b/package.toml", lambda s: s.replace('["linux", "macos"]', '["linux", "macos", "windows"]')), "supports"),
             "verify is a boolean": (lambda: self.edit(pt, lambda s: s.replace("verify = true", 'verify = "yes"')), "verify must be true or false"),
             "version mismatch": (lambda: self.edit(pt, lambda s: s.replace('version = "1.3.1"', 'version = "1.3.2"', 1)), "must move together"),
-            "secret": (lambda: (self.root / "packages/zlib/overlay").mkdir() or (self.root / "packages/zlib/overlay/k.txt").write_text(
+            "secret": (lambda: (self.root / "packages/fx-tarball/overlay").mkdir() or (self.root / "packages/fx-tarball/overlay/k.txt").write_text(
                 "-----BEGIN RSA PRIVATE KEY-----\n"), "private key"),
-            "script overlay": (lambda: (self.root / "packages/zlib/overlay").mkdir() or (self.root / "packages/zlib/overlay/go.sh").write_text(
+            "script overlay": (lambda: (self.root / "packages/fx-tarball/overlay").mkdir() or (self.root / "packages/fx-tarball/overlay/go.sh").write_text(
                 "echo hi\n"), "generators"),
-            "prebuild": (lambda: self.edit("packages/zlib/Harbour.toml", lambda s: s + '\n[[targets.zlib.prebuild]]\ncommand = "x"\n'), "runs code during the build"),
-            "no test dir": (lambda: shutil.rmtree(self.root / "packages/zlib/test"), "test/ is missing"),
-            "path dependency in test": (lambda: self.edit("packages/zlib/test/Harbour.toml", lambda s: s.replace('zlib = "*"', 'zlib = { path = "../.." }')), "registry"),
-            "crlf overlay": (lambda: (self.root / "packages/zlib/overlay").mkdir() or (self.root / "packages/zlib/overlay/a.h").write_bytes(b"a\r\n"), "LF"),
+            "prebuild": (lambda: self.edit("packages/fx-tarball/Harbour.toml", lambda s: s + '\n[[targets.fx.prebuild]]\ncommand = "x"\n'), "runs code during the build"),
+            "no test dir": (lambda: shutil.rmtree(self.root / "packages/fx-tarball/test"), "test/ is missing"),
+            "path dependency in test": (lambda: self.edit("packages/fx-tarball/test/Harbour.toml", lambda s: s.replace('fx-tarball = "*"', 'fx-tarball = { path = "../.." }')), "registry"),
+            "crlf overlay": (lambda: (self.root / "packages/fx-tarball/overlay").mkdir() or (self.root / "packages/fx-tarball/overlay/a.h").write_bytes(b"a\r\n"), "LF"),
         }
         for label, (mutate, needle) in cases.items():
             with self.subTest(label):
@@ -541,24 +629,6 @@ UP = 'git = "https://x.invalid/p"\ntag = "v{version}"\n'
 
 
 class WatchTags(unittest.TestCase):
-    def test_every_template_in_packages_round_trips(self):
-        for name in rt.package_names():
-            pkg = rt.load_package(name)
-            up = pkg.upstream
-            with self.subTest(name):
-                if up.get("watch") is False and not up.get("tag"):
-                    # A rolling release with no tags (luajit) has nothing to follow: it opts out
-                    # explicitly and has no template. Anything else must be followable.
-                    self.assertTrue(up.get("git"), f"{name} opts out of the watcher but names no git")
-                    self.assertIn("opted out", watch.not_watchable(pkg) or "")
-                    continue
-                self.assertTrue(up.get("git") and up.get("tag"), f"{name} lacks what the watcher needs")
-                tag = rt.release_tag(pkg, pkg.newest)
-                verdict, cand = watch.classify_tag(tag, watch.tag_pattern(up["tag"]), up["tag"], up.get("scheme", "semver"))
-                self.assertEqual(verdict, "ok")
-                self.assertEqual(cand.version, pkg.newest.version)
-                self.assertEqual(cand.upstream_version, pkg.newest.upstream_version)
-
     def test_inversion_of_synthetic_templates(self):
         cases = [
             ("v{version}", "v1.2.3", "1.2.3", None),
@@ -719,21 +789,33 @@ class WatchTags(unittest.TestCase):
                 watch.real_ls_remote(str(bare))
             with self.assertRaises(watch.WatchError):
                 watch.real_ls_remote(str(Path(tmp) / "nowhere"), protocols=("file",))
-            # And through scan(): the real zlib entry, with the tags of the local repository.
-            f = watch.scan(["zlib"], ls_remote=lambda url: watch.real_ls_remote(str(bare), protocols=("file",)))[0]
+            # And through scan(): a package of the registry (1.3.1, `v{version}`), with the tags of the local repository.
+            f = watch.scan(["fx-tarball"], ls_remote=lambda url: watch.real_ls_remote(str(bare), protocols=("file",)))[0]
+            self.assertEqual(f.current, "1.3.1")
             self.assertEqual(f.status, "ok")
             self.assertEqual(f.target.version, "1.3.2")
             self.assertEqual(f.upstream_newest, "1.3.2")
 
     def test_scan_reports_errors_and_unwatchable_and_continues(self):
+        asked = []
+
         def fake(url):
-            if "libpng" in url:
+            asked.append(url)
+            if "fx-dep-a" in url:
                 raise watch.WatchError("boom")
-            return ls(("v1.7.19", sha(1)), ("v1.7.18", sha(2)))
-        out = {f.package: f for f in watch.scan(["cjson", "libpng", "zlib"], ls_remote=fake)}
-        self.assertEqual((out["libpng"].status, out["libpng"].reason), ("error", "boom"))
-        self.assertEqual(out["cjson"].target.version, "1.7.19")
-        self.assertEqual(out["zlib"].target.version, "1.7.19")    # the fake gives every repository the same tags
+            return ls(("v1.3.2", sha(1)), ("v0.4.1", sha(2)))
+        names = ["fx-dep-a", "fx-dep-c", "fx-nowatch", "fx-prebuilt", "fx-tarball"]
+        out = {f.package: f for f in watch.scan(names, ls_remote=fake)}
+        self.assertEqual(sorted(out), names)
+        self.assertEqual((out["fx-dep-a"].status, out["fx-dep-a"].reason), ("error", "boom"))
+        # The fake gives every repository the same tags: 1.3.1 follows them to 1.3.2, and 0.4.0 to
+        # 0.4.1 (1.3.2 would be a major bump, which is held back by default).
+        self.assertEqual(out["fx-tarball"].target.version, "1.3.2")
+        self.assertEqual(out["fx-dep-c"].target.version, "0.4.1")
+        self.assertEqual([c.version for c in out["fx-dep-c"].held_back], ["1.3.2"])
+        for name in ("fx-nowatch", "fx-prebuilt"):
+            self.assertEqual((out[name].status, out[name].target), ("not-watchable", None), name)
+        self.assertEqual(len(asked), 3, "a package that is not watchable is not asked about")
 
     def test_drop_open_filters_by_branch_and_issue(self):
         bumps = [{"package": "zlib", "version": "1.3.2"}, {"package": "cjson", "version": "1.7.19"},
@@ -845,27 +927,20 @@ class WatchArchive(unittest.TestCase):
 
 
 class BumpOnACopy(unittest.TestCase):
-    """`watch.bump` end to end on a throw-away copy of this checkout, with the network injected."""
+    """`watch.bump` end to end on a throw-away copy of the fixture registry, with the network injected.
+
+    fx-tarball (1.3.1, pinned by tarball) and fx-gitrev (15.0.0, pinned by commit) are what is bumped."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name) / "repo"
-        self.root.mkdir()
-        for item in ("tools", "packages", "index", "README.md", "config.toml", ".gitattributes", ".gitignore"):
-            src = REPO / item
-            if src.is_dir():
-                shutil.copytree(src, self.root / item, ignore=shutil.ignore_patterns("__pycache__"))
-            else:
-                shutil.copy(src, self.root / item)
+        self.root = make_checkout(Path(self.tmp.name) / "repo")
         # The copies' recorded license digests become the digest of the fake license below, so a
         # bump that serves the same text is "unchanged" and one that serves another is "changed".
-        for name in ("zlib", "harfbuzz"):
+        for name in ("fx-tarball", "fx-gitrev"):
             self.edit(f"packages/{name}/package.toml", lambda s: re.sub(
                 r'license_sha256 = "[0-9a-f]{64}"', f'license_sha256 = "{watch.license_info(self.LICENSE).digest}"', s))
-        run(GIT + ["init", "-q", "-b", "main"], self.root)
-        run(GIT + ["add", "-A"], self.root)
-        run(GIT + ["commit", "-q", "-m", "base"], self.root)
+        commit_all(self.root)
         self.logs: list[str] = []
 
     LICENSE = {"LICENSE": b"Permission is hereby granted, free of charge...\nCopyright (c) 1995-2024 The Authors\n"}
@@ -894,25 +969,25 @@ class BumpOnACopy(unittest.TestCase):
 
     def test_tarball_bump_end_to_end(self):
         tags = ls(("v1.3.1", sha(1)), ("v1.3.2", sha(2)), ("v1.4-rc1", sha(3)), ("v1.3.1.2", sha(4)))
-        info, fetched = self.do_bump("zlib", tags, ["zlib-1.3.2/", "zlib-1.3.2/zlib.h"])
-        self.assertEqual(fetched, ["https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz"])
+        info, fetched = self.do_bump("fx-tarball", tags, ["fx-tarball-1.3.2/", "fx-tarball-1.3.2/fx-tarball.h"])
+        self.assertEqual(fetched, ["https://github.com/fx-upstream/fx-tarball/releases/download/v1.3.2/fx-tarball-1.3.2.tar.gz"])
         self.assertEqual((info["old_version"], info["new_version"], info["sha256"]), ("1.3.1", "1.3.2", "ab" * 32))
-        self.assertEqual(info["branch"], "bot/bump-zlib-1.3.2")
+        self.assertEqual(info["branch"], "bot/bump-fx-tarball-1.3.2")
         self.assertIn("compare/v1.3.1...v1.3.2", info["compare_url"])
         body = watch.pr_body(info)
-        for needle in ("zlib", "1.3.1", "1.3.2", "ab" * 32, "carried forward unchanged", "compare"):
+        for needle in ("fx-tarball", "1.3.1", "1.3.2", "ab" * 32, "carried forward unchanged", "compare"):
             self.assertIn(needle, body)
-        ptoml = (self.root / "packages/zlib/package.toml").read_text()
+        ptoml = (self.root / "packages/fx-tarball/package.toml").read_text()
         self.assertIn('[[release]]\nversion = "1.3.2"\nsha256 = "%s"\nlicense_sha256 = "%s"\n\n[[release]]\nversion = "1.3.1"'
                       % ("ab" * 32, watch.license_info(self.LICENSE).digest), ptoml)
         self.assertEqual((info["license_changed"], info["auto_merge"], info["labels"]), (False, True, ["bot", "bump"]))
         self.assertIn("license files: unchanged", body)
         self.assertIn("not cross-checked", body)
-        self.assertIn('version = "1.3.2"', (self.root / "packages/zlib/Harbour.toml").read_text())
+        self.assertIn('version = "1.3.2"', (self.root / "packages/fx-tarball/Harbour.toml").read_text())
         for line in run(["git", "status", "--porcelain", "-uall"], self.root).stdout.splitlines():
             path = line[3:]
-            self.assertTrue(path in ("README.md", "packages/zlib/package.toml", "packages/zlib/Harbour.toml")
-                            or path.startswith("index/z/"), path)
+            self.assertTrue(path in ("README.md", "packages/fx-tarball/package.toml", "packages/fx-tarball/Harbour.toml")
+                            or path.startswith("index/f/fx-tarball"), path)
         # The gate's own fast checks accept it, against the base it came from.
         self.assertEqual(self.py("lint.py").returncode, 0, self.py("lint.py").stdout)
         r = self.py("render.py", "--check", "--base", "HEAD")
@@ -925,55 +1000,55 @@ class BumpOnACopy(unittest.TestCase):
         self.assertEqual(g.returncode, 0, g.stdout)
 
     def test_date_version_gets_upstream_version(self):
-        self.edit("packages/zlib/package.toml", lambda t: t.replace('tag = "v{version}"', 'tag = "{version}"').replace(
+        self.edit("packages/fx-tarball/package.toml", lambda t: t.replace('tag = "v{version}"', 'tag = "{version}"').replace(
             'version = "1.3.1"\n', 'version = "2024.12.28"\nupstream_version = "2024-12-28"\n'))
-        self.edit("packages/zlib/Harbour.toml", lambda t: t.replace('version = "1.3.1"', 'version = "2024.12.28"'))
+        self.edit("packages/fx-tarball/Harbour.toml", lambda t: t.replace('version = "1.3.1"', 'version = "2024.12.28"'))
         run(GIT + ["commit", "-qam", "date scheme"], self.root)
         # (index/ no longer matches that edit, so only the file edits are checked, not render/lint)
-        info, _ = self.do_bump("zlib", ls(("2024-12-28", sha(1)), ("2025-02-03", sha(2))), ["zlib-2025-02-03/"], run_checks=False)
+        info, _ = self.do_bump("fx-tarball", ls(("2024-12-28", sha(1)), ("2025-02-03", sha(2))), ["fx-tarball-2025-02-03/"], run_checks=False)
         self.assertEqual(info["new_version"], "2025.2.3")
-        self.assertIn('version = "2025.2.3"\nupstream_version = "2025-02-03"\n', (self.root / "packages/zlib/package.toml").read_text())
+        self.assertIn('version = "2025.2.3"\nupstream_version = "2025-02-03"\n', (self.root / "packages/fx-tarball/package.toml").read_text())
 
     def test_wrong_strip_prefix_fails_with_what_the_archive_contains_and_writes_nothing(self):
         tags = ls(("v1.3.1", sha(1)), ("v1.3.2", sha(2)))
         with self.assertRaises(watch.WatchError) as cm:
-            self.do_bump("zlib", tags, ["zlib-v1.3.2/", "zlib-v1.3.2/zlib.h"])
-        self.assertIn("zlib-v1.3.2", str(cm.exception))
-        self.assertIn("zlib-1.3.2", str(cm.exception))
+            self.do_bump("fx-tarball", tags, ["fx-tarball-v1.3.2/", "fx-tarball-v1.3.2/fx-tarball.h"])
+        self.assertIn("fx-tarball-v1.3.2", str(cm.exception))
+        self.assertIn("fx-tarball-1.3.2", str(cm.exception))
         self.assertEqual(self.status(), "")
 
     def test_git_rev_bump_uses_the_peeled_commit(self):
         tags = ls(("15.0.0", sha(1), sha(11)), ("15.1.0", sha(2), sha(22)), ("15.2.0-rc1", sha(3)))
-        info, fetched = self.do_bump("harfbuzz", tags)
+        info, fetched = self.do_bump("fx-gitrev", tags)
         self.assertEqual(fetched, [])
         self.assertEqual(info["rev"], sha(22))
         self.assertIn(f'version = "15.1.0"\nrev = "{sha(22)}"\nlicense_sha256 = "{watch.license_info(self.LICENSE).digest}"\n',
-                      (self.root / "packages/harfbuzz/package.toml").read_text())
+                      (self.root / "packages/fx-gitrev/package.toml").read_text())
         self.assertFalse(info["license_changed"])
-        self.assertEqual(self.py("lint.py", "harfbuzz").returncode, 0)
+        self.assertEqual(self.py("lint.py", "fx-gitrev").returncode, 0)
 
     def test_to_pins_a_version_and_never_downgrades(self):
         tags = ls(("v1.3.1", sha(1)), ("v1.3.2", sha(2)), ("v1.3.3", sha(3)))
-        info, _ = self.do_bump("zlib", tags, ["zlib-1.3.2/"], to="1.3.2")
+        info, _ = self.do_bump("fx-tarball", tags, ["fx-tarball-1.3.2/"], to="1.3.2")
         self.assertEqual(info["new_version"], "1.3.2")
         run(GIT + ["checkout", "-q", "--", "."], self.root)
         run(GIT + ["clean", "-fdq"], self.root)
         for to in ("1.3.1", "1.2.0", "9.9.9"):
             with self.assertRaises(watch.WatchError):
-                self.do_bump("zlib", tags, ["zlib-1.3.1/"], to=to)
+                self.do_bump("fx-tarball", tags, ["fx-tarball-1.3.1/"], to=to)
 
     def test_nothing_to_bump_and_dirty_tree_and_opt_out(self):
         with self.assertRaises(watch.WatchError):
-            self.do_bump("zlib", ls(("v1.3.1", sha(1))), [])
+            self.do_bump("fx-tarball", ls(("v1.3.1", sha(1))), [])
         (self.root / "stray.txt").write_text("x")
         with self.assertRaises(watch.WatchError) as cm:
-            self.do_bump("zlib", ls(("v1.3.2", sha(1))), ["zlib-1.3.2/"])
+            self.do_bump("fx-tarball", ls(("v1.3.2", sha(1))), ["fx-tarball-1.3.2/"])
         self.assertIn("not clean", str(cm.exception))
         (self.root / "stray.txt").unlink()
-        self.edit("packages/zlib/package.toml", lambda t: t.replace('tag = "v{version}"', 'tag = "v{version}"\nwatch = false'))
+        self.edit("packages/fx-tarball/package.toml", lambda t: t.replace('tag = "v{version}"', 'tag = "v{version}"\nwatch = false'))
         run(GIT + ["commit", "-qam", "opt out"], self.root)
         with self.assertRaises(watch.WatchError) as cm:
-            self.do_bump("zlib", ls(("v1.3.2", sha(1))), ["zlib-1.3.2/"])
+            self.do_bump("fx-tarball", ls(("v1.3.2", sha(1))), ["fx-tarball-1.3.2/"])
         self.assertIn("opted out", str(cm.exception))
 
     def test_a_failed_check_rolls_the_tree_back(self):
@@ -981,29 +1056,29 @@ class BumpOnACopy(unittest.TestCase):
         watch.run_tool = lambda root, script, *a: (False, "boom") if script == "lint.py" else orig(root, script, *a)
         self.addCleanup(lambda: setattr(watch, "run_tool", orig))
         with self.assertRaises(watch.WatchError):
-            self.do_bump("zlib", ls(("v1.3.1", sha(1)), ("v1.3.2", sha(2))), ["zlib-1.3.2/"])
+            self.do_bump("fx-tarball", ls(("v1.3.1", sha(1)), ("v1.3.2", sha(2))), ["fx-tarball-1.3.2/"])
         self.assertEqual(self.status(), "")
 
     def test_self_check_rejects_a_diff_that_touches_the_test(self):
-        self.assertEqual(watch.self_check(self.root, "zlib"), [])
-        self.edit("packages/zlib/test/src/main.c", lambda t: t + "/* weakened */\n")
-        problems = watch.self_check(self.root, "zlib")
-        self.assertTrue(any("packages/zlib/test/src/main.c" in p for p in problems), problems)
+        self.assertEqual(watch.self_check(self.root, "fx-tarball"), [])
+        self.edit("packages/fx-tarball/test/src/main.c", lambda t: t + "/* weakened */\n")
+        problems = watch.self_check(self.root, "fx-tarball")
+        self.assertTrue(any("packages/fx-tarball/test/src/main.c" in p for p in problems), problems)
         run(GIT + ["checkout", "-q", "--", "."], self.root)
         # overlay/ and patches/ are allowed to a bot by the guard, but not to a CANDIDATE.
-        (self.root / "packages/zlib/patches").mkdir()
-        (self.root / "packages/zlib/patches/x.patch").write_text("diff --git a/a b/a\n")
-        self.assertTrue(any("patches/x.patch" in p for p in watch.self_check(self.root, "zlib")))
-        (self.root / "packages/zlib/patches/x.patch").unlink()
-        (self.root / "packages/zlib/patches").rmdir()
-        self.edit("packages/zlib/package.toml", lambda t: t.replace("objects = ", "objects = 1", 1))
-        self.assertTrue(any("[test]" in p for p in watch.self_check(self.root, "zlib")))
+        (self.root / "packages/fx-tarball/patches").mkdir()
+        (self.root / "packages/fx-tarball/patches/x.patch").write_text("diff --git a/a b/a\n")
+        self.assertTrue(any("patches/x.patch" in p for p in watch.self_check(self.root, "fx-tarball")))
+        (self.root / "packages/fx-tarball/patches/x.patch").unlink()
+        (self.root / "packages/fx-tarball/patches").rmdir()
+        self.edit("packages/fx-tarball/package.toml", lambda t: t.replace("objects = ", "objects = 1", 1))
+        self.assertTrue(any("[test]" in p for p in watch.self_check(self.root, "fx-tarball")))
 
     def test_report_shape(self):
-        f = watch.analyze(rt.load_package("zlib"), watch.parse_ls_remote(ls(("v1.3.1", sha(1)), ("v1.3.2", sha(2)))))
+        f = watch.analyze(rt.load_package("fx-tarball", root=self.root / "packages"), watch.parse_ls_remote(ls(("v1.3.1", sha(1)), ("v1.3.2", sha(2)))))
         rep = watch.report_of([f])
-        self.assertEqual(rep["bumps"], [{"package": "zlib", "version": "1.3.2", "tag": "v1.3.2", "current": "1.3.1",
-                                         "branch": "bot/bump-zlib-1.3.2"}])
+        self.assertEqual(rep["bumps"], [{"package": "fx-tarball", "version": "1.3.2", "tag": "v1.3.2", "current": "1.3.1",
+                                         "branch": "bot/bump-fx-tarball-1.3.2"}])
         json.dumps(rep)
 
 
@@ -1147,20 +1222,10 @@ class GuardWatcherRules(unittest.TestCase):
 
 class LintPolicy(unittest.TestCase):
     def lint_with(self, extra):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            shutil.copytree(REPO / "packages/zlib", root / "packages/zlib")
-            p = root / "packages/zlib/package.toml"
-            p.write_text(p.read_text().replace('tag = "v{version}"', 'tag = "v{version}"\n' + extra))
-            old, rt.PACKAGES = rt.PACKAGES, root / "packages"
-            try:
-                linter = lint.Linter()
-                linter.lint("zlib")
-                return [m for _, m in linter.errors]
-            finally:
-                rt.PACKAGES = old
+        return lint_copy("fx-tarball", lambda s: s.replace('tag = "v{version}"', 'tag = "v{version}"\n' + extra, 1))
 
     def test_policy_keys_are_accepted_and_checked(self):
+        self.assertEqual(self.lint_with(""), [])
         self.assertEqual(self.lint_with('watch = false\nmax_bump = "minor"\nprereleases = true'), [])
         self.assertTrue(any("max_bump" in m for m in self.lint_with('max_bump = "huge"')))
         self.assertTrue(any("watch" in m for m in self.lint_with('watch = "no"')))
@@ -1172,17 +1237,17 @@ class Triage(unittest.TestCase):
 
     def args(self, **kw):
         import argparse
-        base = dict(repo="o/r", run_id="42", head_branch="bot/bump-zlib-1.3.2", head_sha=self.SHA, conclusion="failure",
+        base = dict(repo="o/r", run_id="42", head_branch="bot/bump-fx-tarball-1.3.2", head_sha=self.SHA, conclusion="failure",
                     budget=2, repair_enabled=True, out_dir=None)
         base.update(kw)
         return argparse.Namespace(**base)
 
     def fake_gh(self, labels=(), sha_=None, comments="", issues=""):
         calls = []
-        pr = {"number": 7, "html_url": "https://github.com/o/r/pull/7", "ref": "bot/bump-zlib-1.3.2",
+        pr = {"number": 7, "html_url": "https://github.com/o/r/pull/7", "ref": "bot/bump-fx-tarball-1.3.2",
               "sha": sha_ or self.SHA, "labels": list(labels)}
-        jobs = [{"id": 1, "name": "zlib (linux)", "conclusion": "failure", "steps": [{"name": "Consumer test", "conclusion": "failure"}]},
-                {"id": 2, "name": "zlib (macos)", "conclusion": "success", "steps": []},
+        jobs = [{"id": 1, "name": "fx-tarball (linux)", "conclusion": "failure", "steps": [{"name": "Consumer test", "conclusion": "failure"}]},
+                {"id": 2, "name": "fx-tarball (macos)", "conclusion": "success", "steps": []},
                 {"id": 3, "name": "Plan", "conclusion": "success", "steps": []}]
 
         def gh(*a, input=None, timeout=120):
@@ -1198,7 +1263,7 @@ class Triage(unittest.TestCase):
                 return comments
             if path.startswith("repos/o/r/issues?"):
                 return issues
-            if path.startswith("repos/madler/zlib/compare/"):
+            if path.startswith("repos/fx-upstream/fx-tarball/compare/"):
                 return json.dumps({"html_url": "u", "total_commits": 3, "files": [
                     {"filename": "a.c", "status": "modified", "additions": 3, "deletions": 1},
                     {"filename": "new.c", "status": "added", "additions": 9, "deletions": 0},
@@ -1206,8 +1271,11 @@ class Triage(unittest.TestCase):
             return ""
         return gh, calls
 
-    def triage(self, gh, **kw):
-        return bump_triage.triage(self.args(**kw), run=gh, ls_remote=lambda u: ls(("v1.3.1", sha(1)), ("v1.3.2", sha(2))))
+    def triage(self, gh, sleep=None, **kw):
+        def no_sleep(seconds):
+            self.fail(f"triage slept {seconds} s although every log was there")
+        return bump_triage.triage(self.args(**kw), run=gh, ls_remote=lambda u: ls(("v1.3.1", sha(1)), ("v1.3.2", sha(2))),
+                                  sleep=sleep or no_sleep)
 
     def posted(self, calls, needle):
         return [c for c in calls if needle in " ".join(c)]
@@ -1232,7 +1300,7 @@ class Triage(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = self.triage(gh, out_dir=tmp)
             self.assertEqual((out["repair"], out["attempt"], out["package"], out["version"], out["pr"]),
-                             ("true", "1", "zlib", "1.3.2", "7"))
+                             ("true", "1", "fx-tarball", "1.3.2", "7"))
             self.assertTrue((Path(tmp) / "summary.md").is_file() and (Path(tmp) / "context.json").is_file())
             self.assertTrue((Path(tmp) / "upstream-diff.json").is_file())
         self.assertEqual(len(self.posted(calls, "--method POST repos/o/r/issues/7/comments")), 1)
@@ -1253,15 +1321,15 @@ class Triage(unittest.TestCase):
         self.assertEqual(self.triage(gh)["repair"], "false")
         self.assertTrue(self.posted(calls, "--method POST repos/o/r/issues/7/labels"))
         self.assertTrue(self.posted(calls, "--method DELETE repos/o/r/issues/7/labels/needs-repair"))
-        self.assertEqual(len(self.posted(calls, "title=needs-human: zlib 1.3.2")), 1)
-        gh, calls = self.fake_gh(labels=["needs-repair", "repair-attempt-2"], issues="needs-human: zlib 1.3.2\n")
+        self.assertEqual(len(self.posted(calls, "title=needs-human: fx-tarball 1.3.2")), 1)
+        gh, calls = self.fake_gh(labels=["needs-repair", "repair-attempt-2"], issues="needs-human: fx-tarball 1.3.2\n")
         self.triage(gh)
         self.assertFalse(self.posted(calls, "title=needs-human"), "an open issue already exists")
 
     def test_repair_not_enabled_goes_straight_to_needs_human(self):
         gh, calls = self.fake_gh()
         self.assertEqual(self.triage(gh, repair_enabled=False)["repair"], "false")
-        self.assertTrue(self.posted(calls, "title=needs-human: zlib 1.3.2"))
+        self.assertTrue(self.posted(calls, "title=needs-human: fx-tarball 1.3.2"))
 
     def test_success_clears_and_stale_or_foreign_runs_are_ignored(self):
         gh, calls = self.fake_gh(labels=["needs-repair"])
@@ -1275,6 +1343,117 @@ class Triage(unittest.TestCase):
             gh, calls = self.fake_gh()
             self.assertEqual(self.triage(gh, head_branch=branch)["repair"], "false", branch)
             self.assertEqual(calls, [], branch)
+
+    # -- reading the failed jobs' logs ---------------------------------------------------------------
+    def log_gh(self, answers, jobs=None):
+        """A `gh` whose answers for a job's log are scripted: {job id: [text | Exception, ...]} (the last repeats)."""
+        base, calls = self.fake_gh()
+        asked: list[tuple[int, int]] = []
+        jobs = jobs or [{"id": 1, "name": "Plan", "conclusion": "failure", "steps": [{"name": "Self-test the tools", "conclusion": "failure"}]},
+                        {"id": 2, "name": "PR result", "conclusion": "failure", "steps": []}]
+
+        def gh(*a, input=None, timeout=120):
+            path = next((x for x in a if x.startswith("repos/")), "")
+            if "/actions/runs/42/jobs" in path:
+                return "\n".join(json.dumps(j) for j in jobs) + "\n"
+            if "/actions/jobs/" in path:
+                self.assertEqual(a, ("api", "--allow-escape-sequences", path), "the documented endpoint, and colours allowed")
+                job = int(re.fullmatch(r"repos/o/r/actions/jobs/(\d+)/logs", path).group(1))
+                asked.append((job, timeout))
+                script = answers[job]
+                answer = script[min(sum(1 for j, _ in asked if j == job), len(script)) - 1]
+                if isinstance(answer, Exception):
+                    raise answer
+                return answer
+            return base(*a, input=input, timeout=timeout)
+        return gh, asked
+
+    NOT_YET = bump_triage.TriageError("gh api repos/o/r/actions/jobs/1/logs failed: gh: Not Found (HTTP 404)")
+    LOG = "2026-01-01T00:00:00.0000000Z FAIL: test_x\n2026-01-01T00:00:01.0000000Z ##[error]Process completed with exit code 1.\n"
+
+    def test_a_log_that_is_not_there_yet_is_asked_for_again(self):
+        # `triage` runs seconds after the run completes; GitHub may still be storing the logs.
+        gh, asked = self.log_gh({1: [self.NOT_YET, self.NOT_YET, self.LOG], 2: [self.LOG]})
+        slept = []
+        with tempfile.TemporaryDirectory() as tmp:
+            self.triage(gh, out_dir=tmp, sleep=slept.append)
+            summary = (Path(tmp) / "summary.md").read_text()
+        self.assertEqual([j for j, _ in asked], [1, 1, 1, 2])
+        self.assertEqual(slept, list(bump_triage.LOG_RETRY_SLEEP[:2]))
+        self.assertEqual(summary.count("FAIL: test_x"), 2)
+        self.assertNotIn("log unavailable", summary)
+        self.assertTrue(all(t == bump_triage.LOG_TIMEOUT for _, t in asked))
+
+    def test_a_log_that_never_comes_says_why_and_the_wait_is_spent_once(self):
+        gh, asked = self.log_gh({1: [self.NOT_YET], 2: [self.NOT_YET]})
+        slept = []
+        with tempfile.TemporaryDirectory() as tmp:
+            out = self.triage(gh, out_dir=tmp, sleep=slept.append)
+            summary = (Path(tmp) / "summary.md").read_text()
+        self.assertEqual(out["repair"], "true")                      # the verdict does not depend on the logs
+        n = len(bump_triage.LOG_RETRY_SLEEP)
+        self.assertEqual([j for j, _ in asked], [1] * (n + 1) + [2, 2])
+        self.assertEqual(slept, [*bump_triage.LOG_RETRY_SLEEP, bump_triage.LOG_RETRY_SLEEP[0]])
+        self.assertLess(sum(slept) + len(asked) * bump_triage.LOG_TIMEOUT, 15 * 60, "inside the job's timeout-minutes")
+        self.assertIn(f"(log unavailable after {n + 1} attempt(s): HTTP 404: GitHub has no log for this job, or has not "
+                      "finished storing it yet (Not Found (HTTP 404)))", summary)
+        self.assertIn("(log unavailable after 2 attempt(s): HTTP 404", summary)
+        self.assertNotIn("expired or not retrievable", summary)
+        # The worst case, every job of a full summary: still bounded.
+        many = [{"id": i, "name": f"job {i}", "conclusion": "failure", "steps": []} for i in range(1, 30)]
+        gh, asked = self.log_gh({i: [self.NOT_YET] for i in range(1, 30)}, jobs=many)
+        slept = []
+        self.triage(gh, sleep=slept.append)
+        self.assertEqual(len({j for j, _ in asked}), bump_triage.MAX_JOBS_SHOWN)
+        self.assertLess(sum(slept) + len(asked) * 2, 3 * 60)
+
+    def test_an_answer_that_waiting_cannot_change_is_not_asked_for_again(self):
+        E = bump_triage.TriageError
+        cases = {
+            "permission": (E("gh api x failed: gh: Resource not accessible by integration (HTTP 403)"),
+                           "HTTP 403: the token may not read Actions logs (the triage job needs `permissions: actions: read`)"),
+            "expired": (E("gh api x failed: gh: Gone (HTTP 410)"), "HTTP 410: the log has expired or was deleted"),
+            "bad token": (E("gh api x failed: gh: Bad credentials (HTTP 401)"), "HTTP 401: the token was not accepted"),
+            "timeout": (subprocess.TimeoutExpired(["gh"], 60), "no answer within 60 s"),
+        }
+        for label, (err, needle) in cases.items():
+            with self.subTest(label):
+                gh, asked = self.log_gh({1: [err], 2: [self.LOG]})
+                slept = []
+                text, ok = bump_triage.job_log(gh, "o/r", 1, sleep=slept.append)
+                self.assertEqual((ok, slept, asked), (False, [], [(1, bump_triage.LOG_TIMEOUT)]))
+                self.assertTrue(text.startswith("(log unavailable after 1 attempt(s): " + needle), text)
+        # What may pass is retried: a server error, a rate limit, a failure with no HTTP status at all.
+        for err in (E("gh api x failed: gh: Server Error (HTTP 502)"), E("gh api x failed: gh: secondary rate limit (HTTP 429)"),
+                    E("gh api x failed: dial tcp: lookup api.github.com: no such host")):
+            gh, asked = self.log_gh({1: [err, self.LOG]})
+            slept = []
+            self.assertEqual(bump_triage.job_log(gh, "o/r", 1, sleep=slept.append), (self.LOG, True), err)
+            self.assertEqual(slept, [bump_triage.LOG_RETRY_SLEEP[0]])
+        self.assertEqual(bump_triage.log_failure(E("gh api x failed: gh: Unprocessable (HTTP 422)")), ("HTTP 422 (Unprocessable (HTTP 422))", False))
+
+    def test_a_gh_without_the_escape_flag_is_asked_again_without_it(self):
+        seen = []
+
+        def gh(*a, input=None, timeout=120):
+            seen.append(a)
+            if "--allow-escape-sequences" in a:
+                raise bump_triage.TriageError("gh api failed: unknown flag: --allow-escape-sequences")
+            return self.LOG
+
+        slept = []
+        self.assertEqual(bump_triage.job_log(gh, "o/r", 1, sleep=slept.append), (self.LOG, True))
+        self.assertEqual((slept, len(seen), seen[-1]), ([], 2, ("api", "repos/o/r/actions/jobs/1/logs")))
+
+    def test_the_reason_is_untrusted_text_like_the_log_it_replaces(self):
+        hostile = bump_triage.TriageError("gh api x failed: gh: ```\n## injected <b>|` (HTTP 404)\n" + "x" * 5000)
+        gh, _ = self.log_gh({1: [hostile], 2: [hostile]})
+        text, ok = bump_triage.job_log(gh, "o/r", 1, sleep=lambda s: None)
+        self.assertFalse(ok)
+        self.assertEqual(text.count("\n"), 0)
+        self.assertLess(len(text), 400)
+        for ch in "`<>|#":
+            self.assertNotIn(ch, text)
 
     def test_untrusted_text_is_bounded_and_cannot_break_out(self):
         log = "ok\n```\n## injected heading\n@everyone\n````\nend"
@@ -1291,12 +1470,12 @@ class Triage(unittest.TestCase):
         self.assertTrue(windowed.endswith("##[error]Process completed with exit code 1."), windowed[-80:])
         self.assertNotIn("cleanup noise", windowed)
         self.assertEqual(bump_triage.safe("a|b`c<d>"), "a?b?c?d?")
-        jobs = bump_triage.failed_jobs([{"id": 1, "name": "zlib (linux)", "conclusion": "failure"},
+        jobs = bump_triage.failed_jobs([{"id": 1, "name": "fx-tarball (linux)", "conclusion": "failure"},
                                         {"id": 2, "name": "Index (harbour registry index)", "conclusion": "timed_out"},
                                         {"id": 3, "name": "x (linux)", "conclusion": "cancelled"}])
-        self.assertEqual([(j["package"], j["platform"]) for j in jobs], [("zlib", "linux"), (None, None)])
+        self.assertEqual([(j["package"], j["platform"]) for j in jobs], [("fx-tarball", "linux"), (None, None)])
         many = [{"id": i, "package": None, "platform": None, "name": f"job {i}", "steps": []} for i in range(20)]
-        big = bump_triage.summary_markdown(pkg="zlib", old="1", new="2", run_url="u", head_sha="a" * 40,
+        big = bump_triage.summary_markdown(pkg="fx-tarball", old="1", new="2", run_url="u", head_sha="a" * 40,
                                            d=bump_triage.Decision("repair", 1), budget=2, jobs=many,
                                            logs={i: "x" * 100_000 for i in range(20)}, diff=None)
         self.assertLessEqual(len(big), bump_triage.MAX_COMMENT_CHARS)
@@ -1305,12 +1484,12 @@ class Triage(unittest.TestCase):
 
     def test_upstream_diff_markdown(self):
         gh, _ = self.fake_gh()
-        diff, _ = bump_triage.upstream_diff(gh, rt.load_package("zlib"), "1.3.2", lambda u: ls(("v1.3.2", sha(2))))
+        diff, _ = bump_triage.upstream_diff(gh, rt.load_package("fx-tarball"), "1.3.2", lambda u: ls(("v1.3.2", sha(2))))
         md = bump_triage.diff_markdown(diff)
         self.assertIn("3 file(s) changed", md)
         self.assertIn("`new.c`", md)
         self.assertIn("`gone.c`", md)
-        none, why = bump_triage.upstream_diff(gh, rt.load_package("freetype"), "2.15.0")
+        none, why = bump_triage.upstream_diff(gh, rt.load_package("fx-dep-b"), "2.15.0")
         self.assertIsNone(none)
         self.assertIn("not on GitHub", why)
 
@@ -1368,6 +1547,10 @@ class Workflows(unittest.TestCase):
         triage = code[code.index("  triage:"):code.index("  repair:")]
         self.assertIn("head_repository.full_name == github.repository", triage)
         self.assertIn("startsWith(github.event.workflow_run.head_branch, 'bot/bump-')", triage)
+        # ... which reads the failed jobs' logs: without `actions: read` every one of them is a 403.
+        perms = re.search(r"\n    permissions:\n((?:      .*\n)+)", triage).group(1)
+        self.assertEqual(re.findall(r"^      ([a-z-]+): (\w+)", perms, re.M),
+                         [("actions", "read"), ("contents", "read"), ("pull-requests", "write"), ("issues", "write")])
 
 
 # ---------------------------------------------------------------------------
@@ -1500,27 +1683,17 @@ class LicenseDigest(unittest.TestCase):
         self.assertEqual(watch.set_release_field(text.replace("\n", "\r\n"), "1.0.0", "k", "v").count("\r\n"), text.count("\n") + 1)
 
     def test_lint_requires_the_digest_on_the_newest_release(self):
-        def lint_zlib(mutate):
-            with tempfile.TemporaryDirectory() as tmp:
-                root = Path(tmp)
-                shutil.copytree(REPO / "packages/zlib", root / "packages/zlib")
-                p = root / "packages/zlib/package.toml"
-                p.write_text(mutate(p.read_text()))
-                old, rt.PACKAGES = rt.PACKAGES, root / "packages"
-                try:
-                    linter = lint.Linter()
-                    linter.lint("zlib")
-                    return [m for _, m in linter.errors]
-                finally:
-                    rt.PACKAGES = old
-        self.assertEqual(lint_zlib(lambda s: s), [])
-        self.assertTrue(any("must record `license_sha256`" in m for m in lint_zlib(lambda s: re.sub(r'license_sha256 = "[0-9a-f]+"\n', "", s))))
-        self.assertTrue(any("64 lowercase hex" in m for m in lint_zlib(lambda s: re.sub(r'license_sha256 = "[0-9a-f]+"', 'license_sha256 = "ABC"', s))))
-        self.assertTrue(any("unknown key" in m for m in lint_zlib(lambda s: s.replace("license_sha256", "licence_sha256"))))
-
-    def test_every_package_records_a_digest(self):
-        for name in rt.package_names():
-            self.assertRegex(rt.load_package(name).newest.license_sha256 or "", r"^[0-9a-f]{64}$", name)
+        def lint_pkg(mutate):
+            return lint_copy("fx-tarball", mutate)
+        self.assertEqual(lint_pkg(lambda s: s), [])
+        self.assertTrue(any("must record `license_sha256`" in m for m in lint_pkg(lambda s: re.sub(r'license_sha256 = "[0-9a-f]+"\n', "", s))))
+        self.assertTrue(any("64 lowercase hex" in m for m in lint_pkg(lambda s: re.sub(r'license_sha256 = "[0-9a-f]+"', 'license_sha256 = "ABC"', s))))
+        self.assertTrue(any("unknown key" in m for m in lint_pkg(lambda s: s.replace("license_sha256", "licence_sha256"))))
+        # Only the NEWEST release must record it: fx-multi's older release may go without.
+        def without_the_older_digest(s):
+            head, _, tail = s.rpartition("license_sha256 = ")
+            return head + "# license_sha256 = " + tail
+        self.assertEqual(lint_copy("fx-multi", without_the_older_digest), [])
 
     def test_a_package_without_a_baseline_digest_is_not_watchable(self):
         f = analyze_text  # noqa: F841
@@ -1533,8 +1706,8 @@ class LicenseDigest(unittest.TestCase):
             self.assertIsNone(watch.not_watchable(rt.load_package("p", root=Path(tmp))))
 
     def test_verify_license_rederives_only_what_changed_and_reports_a_false_digest(self):
-        pkg = rt.load_package("zlib")
-        base = (REPO / "packages/zlib/package.toml").read_bytes()
+        pkg = rt.load_package("fx-tarball")
+        base = (FIXTURE / "packages/fx-tarball/package.toml").read_bytes()
         self.assertEqual(watch.releases_to_verify(pkg, base), [])
         self.assertEqual([r.version for r in watch.releases_to_verify(pkg, None)], ["1.3.1"])
         self.assertEqual([r.version for r in watch.releases_to_verify(pkg, base.replace(pkg.newest.license_sha256.encode(), LIC_A.encode()))], ["1.3.1"])
@@ -1544,7 +1717,7 @@ class LicenseDigest(unittest.TestCase):
 
         def fetch(url, strip_prefix=None, sha256=pkg.newest.sha256, texts={"LICENSE": MIT}):
             calls.append(url)
-            return watch.ArchiveInfo(sha256, 1, ["zlib-1.3.1/LICENSE"], dict(texts))
+            return watch.ArchiveInfo(sha256, 1, ["fx-tarball-1.3.1/LICENSE"], dict(texts))
         pkg.newest.license_sha256 = good.digest
         self.assertEqual(watch.release_license(pkg, pkg.newest, fetch=fetch).digest, good.digest)
         # The tarball must be the pinned one, or its license files prove nothing.
@@ -1552,10 +1725,11 @@ class LicenseDigest(unittest.TestCase):
             watch.release_license(pkg, pkg.newest, fetch=lambda url, strip_prefix=None: fetch(url, sha256="0" * 64))
         self.assertIn("not the pinned", str(cm.exception))
         # A git-pinned release is read at its rev.
-        png = rt.load_package("libpng")
+        dep = rt.load_package("fx-dep-a")
         seen = []
-        watch.release_license(png, png.newest, tree=lambda url, rev, tag=None: seen.append((url, rev, tag)) or {"LICENSE": MIT})
-        self.assertEqual(seen, [("https://github.com/pnggroup/libpng.git", png.newest.rev, "v1.6.50")])
+        watch.release_license(dep, dep.newest, tree=lambda url, rev, tag=None: seen.append((url, rev, tag)) or {"LICENSE": MIT})
+        self.assertRegex(dep.newest.rev, r"^[0-9a-f]{40}$")
+        self.assertEqual(seen, [("https://github.com/fx-upstream/fx-dep-a.git", dep.newest.rev, "fx-1_6_50")])
 
 
 class LicenseDriftBump(unittest.TestCase):
@@ -1571,12 +1745,12 @@ class LicenseDriftBump(unittest.TestCase):
 
     def test_a_changed_digest_makes_a_needs_human_pr_that_the_guard_refuses(self):
         b = self.b
-        info, _ = b.do_bump("zlib", self.TAGS, ["zlib-1.3.2/", "zlib-1.3.2/zlib.h"], texts=self.RELICENSED)
+        info, _ = b.do_bump("fx-tarball", self.TAGS, ["fx-tarball-1.3.2/", "fx-tarball-1.3.2/fx-tarball.h"], texts=self.RELICENSED)
         new = watch.license_info(self.RELICENSED).digest
         self.assertEqual((info["license_changed"], info["auto_merge"]), (True, False))
         self.assertEqual(info["labels"], ["bot", "bump", "needs-human", "license-changed"])
         self.assertEqual((info["license_sha256"], info["old_license_sha256"]), (new, watch.license_info(b.LICENSE).digest))
-        ptoml = (b.root / "packages/zlib/package.toml").read_text()
+        ptoml = (b.root / "packages/fx-tarball/package.toml").read_text()
         self.assertIn(f'version = "1.3.2"\nsha256 = "{"ab" * 32}"\nlicense_sha256 = "{new}"\n', ptoml)
         self.assertIn('license = "Zlib"', ptoml)                    # carried forward: not the bot's to edit
         self.assertEqual(ptoml.count(watch.license_info(b.LICENSE).digest), 1)      # the old release keeps its digest
@@ -1598,11 +1772,11 @@ class LicenseDriftBump(unittest.TestCase):
         self.assertIn("upstream's license files changed", errors[0])      # the literal the workflow greps for
         self.assertIn(guard.LICENSE_DRIFT, errors[0])
         # A human taking it over (not a bot branch, no bot label) is not restricted.
-        h = b.py("guard.py", "--base", "main", "--head", "HEAD", "--author", "alice", "--head-ref", "bump-zlib-1.3.2")
+        h = b.py("guard.py", "--base", "main", "--head", "HEAD", "--author", "alice", "--head-ref", "bump-fx-tarball-1.3.2")
         self.assertEqual(h.returncode, 0, h.stdout)
 
     def test_git_pinned_packages_are_covered_too(self):
-        info, _ = self.b.do_bump("harfbuzz", ls(("15.0.0", sha(1), sha(11)), ("15.1.0", sha(2), sha(22))), texts=self.RELICENSED)
+        info, _ = self.b.do_bump("fx-gitrev", ls(("15.0.0", sha(1), sha(11)), ("15.1.0", sha(2), sha(22))), texts=self.RELICENSED)
         self.assertTrue(info["license_changed"])
         self.assertFalse(info["auto_merge"])
 
@@ -1613,39 +1787,39 @@ class LicenseDriftBump(unittest.TestCase):
         def tamper(root, script, *a):       # something else slips into the candidate after render
             out = orig(root, script, *a)
             if script == "lint.py":
-                b.edit("packages/zlib/package.toml", lambda s: s.replace('tag = "v{version}"', 'tag = "v{version}"\nmax_bump = "major"'))
+                b.edit("packages/fx-tarball/package.toml", lambda s: s.replace('tag = "v{version}"', 'tag = "v{version}"\nmax_bump = "major"'))
             return out
         watch.run_tool = tamper
         self.addCleanup(lambda: setattr(watch, "run_tool", orig))
         with self.assertRaises(watch.WatchError) as cm:
-            b.do_bump("zlib", self.TAGS, ["zlib-1.3.2/"], texts=self.RELICENSED)
+            b.do_bump("fx-tarball", self.TAGS, ["fx-tarball-1.3.2/"], texts=self.RELICENSED)
         self.assertIn("[upstream] max_bump changed", str(cm.exception))
         self.assertNotIn(guard.LICENSE_DRIFT, str(cm.exception))          # the expected refusal is not listed as a problem
         self.assertEqual(b.status(), "")
 
     def test_self_check_expects_the_refusal_only_when_the_digest_changed(self):
         b = self.b
-        b.do_bump("zlib", self.TAGS, ["zlib-1.3.2/"])                   # unchanged license
-        self.assertEqual(watch.self_check(b.root, "zlib"), [])
-        self.assertTrue(any("internal error" in p for p in watch.self_check(b.root, "zlib", license_changed=True)))
+        b.do_bump("fx-tarball", self.TAGS, ["fx-tarball-1.3.2/"])                   # unchanged license
+        self.assertEqual(watch.self_check(b.root, "fx-tarball"), [])
+        self.assertTrue(any("internal error" in p for p in watch.self_check(b.root, "fx-tarball", license_changed=True)))
 
     def test_a_source_with_no_license_file_is_noted(self):
-        info, _ = self.b.do_bump("zlib", self.TAGS, ["zlib-1.3.2/"], texts={})
+        info, _ = self.b.do_bump("fx-tarball", self.TAGS, ["fx-tarball-1.3.2/"], texts={})
         self.assertTrue(info["license_changed"])
         self.assertTrue(any("empty list" in n for n in info["notes"]))
 
 
 class CrossCheck(unittest.TestCase):
-    URL = "https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz"
+    URL = "https://github.com/fx-upstream/fx-tarball/releases/download/v1.3.2/fx-tarball-1.3.2.tar.gz"
     SHA = "ab" * 32
     OTHER = "cd" * 32
 
     def api(self, assets):
         return json.dumps({"tag_name": "v1.3.2", "assets": assets}).encode()
 
-    def asset(self, name="zlib-1.3.2.tar.gz", digest=None):
+    def asset(self, name="fx-tarball-1.3.2.tar.gz", digest=None):
         return {"name": name, "digest": digest,
-                "browser_download_url": f"https://github.com/madler/zlib/releases/download/v1.3.2/{name}"}
+                "browser_download_url": f"https://github.com/fx-upstream/fx-tarball/releases/download/v1.3.2/{name}"}
 
     def getter(self, table):
         calls = []
@@ -1658,10 +1832,10 @@ class CrossCheck(unittest.TestCase):
             return v
         return get, calls
 
-    API_URL = "https://api.github.com/repos/madler/zlib/releases/tags/v1.3.2"
+    API_URL = "https://api.github.com/repos/fx-upstream/fx-tarball/releases/tags/v1.3.2"
 
     def test_release_asset_urls(self):
-        self.assertEqual(watch.github_release_asset(self.URL), ("madler/zlib", "v1.3.2", "zlib-1.3.2.tar.gz"))
+        self.assertEqual(watch.github_release_asset(self.URL), ("fx-upstream/fx-tarball", "v1.3.2", "fx-tarball-1.3.2.tar.gz"))
         self.assertEqual(watch.github_release_asset("https://github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.gz")[1], "curl-8_22_0")
         for no in ("https://github.com/DaveGamble/cJSON/archive/refs/tags/v1.7.18.tar.gz", "https://download.redis.io/releases/redis-7.2.16.tar.gz",
                    "https://evil.invalid/github.com/a/b/releases/download/t/f", "http://github.com/a/b/releases/download/t/f"):
@@ -1689,7 +1863,7 @@ class CrossCheck(unittest.TestCase):
     def test_one_agreeing_source_does_not_outvote_a_disagreeing_one(self):
         sums = self.asset("SHA256SUMS")
         get, _ = self.getter({self.API_URL: self.api([self.asset(digest="sha256:" + self.SHA), sums]),
-                              sums["browser_download_url"]: f"{self.OTHER}  zlib-1.3.2.tar.gz\n".encode()})
+                              sums["browser_download_url"]: f"{self.OTHER}  fx-tarball-1.3.2.tar.gz\n".encode()})
         with self.assertRaises(watch.WatchError):
             watch.cross_check(self.URL, self.SHA, get=get)
 
@@ -1714,13 +1888,13 @@ class CrossCheck(unittest.TestCase):
 
     def test_the_asset_must_be_the_one_downloaded(self):
         # Same name under another URL, or a digest in an unexpected shape: not a source.
-        other = dict(self.asset(digest="sha256:" + self.SHA), browser_download_url="https://github.com/x/y/releases/download/v1.3.2/zlib-1.3.2.tar.gz")
-        for assets in ([other], [self.asset(digest="md5:" + "0" * 32)], [self.asset(digest="sha256:xyz")], [self.asset("zlib-1.3.2.tar.xz", "sha256:" + self.SHA)]):
+        other = dict(self.asset(digest="sha256:" + self.SHA), browser_download_url="https://github.com/x/y/releases/download/v1.3.2/fx-tarball-1.3.2.tar.gz")
+        for assets in ([other], [self.asset(digest="md5:" + "0" * 32)], [self.asset(digest="sha256:xyz")], [self.asset("fx-tarball-1.3.2.tar.xz", "sha256:" + self.SHA)]):
             get, _ = self.getter({self.API_URL: self.api(assets)})
             self.assertEqual(watch.cross_check(self.URL, self.SHA, get=get)["status"], "none", assets)
 
     def test_checksum_assets_and_the_sibling_file_are_the_weaker_source(self):
-        named = self.asset("zlib-1.3.2.tar.gz.sha256")
+        named = self.asset("fx-tarball-1.3.2.tar.gz.sha256")
         get, calls = self.getter({self.API_URL: self.api([self.asset(), named]),
                                   named["browser_download_url"]: (self.SHA + "\n").encode()})
         out = watch.cross_check(self.URL, self.SHA, get=get)
@@ -1777,14 +1951,14 @@ class CrossCheck(unittest.TestCase):
         def disagree(url, sha256):
             raise watch.WatchError("the sha256 of the downloaded tarball DISAGREES with what upstream publishes")
         with self.assertRaises(watch.WatchError):
-            b.do_bump("zlib", tags, ["zlib-1.3.2/"], cross=disagree)
+            b.do_bump("fx-tarball", tags, ["fx-tarball-1.3.2/"], cross=disagree)
         self.assertEqual(b.status(), "")                              # nothing written
         seen = []
 
         def agree(url, sha256):
             seen.append((url, sha256))
-            return {"status": "agrees", "sources": [{"source": "github-api-digest", "detail": "GitHub releases API, asset `zlib-1.3.2.tar.gz`"}], "notes": []}
-        info, _ = b.do_bump("zlib", tags, ["zlib-1.3.2/"], cross=agree)
+            return {"status": "agrees", "sources": [{"source": "github-api-digest", "detail": "GitHub releases API, asset `fx-tarball-1.3.2.tar.gz`"}], "notes": []}
+        info, _ = b.do_bump("fx-tarball", tags, ["fx-tarball-1.3.2/"], cross=agree)
         self.assertEqual(seen, [(self.URL, "ab" * 32)])               # what was downloaded is what is checked
         self.assertEqual(info["cross_check"]["status"], "agrees")
         self.assertIn("cross-checked, agrees", watch.pr_body(info))
@@ -2218,19 +2392,10 @@ sha256 = "{patch_sha}"
         self.assertEqual(rec["format_version"], 2)
         self.assertEqual(rec["checksum"], rt.archives_checksum(shim))
         self.assertEqual(list(rec), ["format_version", "name", "version", "yanked", "deps", "checksum", "license", "shim"])
-        zlib = rt.load_package("zlib")
-        zshim = rt.parse_shim(rt.render_release(zlib, zlib.newest).files[f"z/zlib/{zlib.newest.version}.toml"].decode())
-        self.assertEqual(json.loads(rt.render_idx(zlib, {zlib.newest.version: zshim}, [], []))["format_version"], 1)
-
-    def test_every_existing_idx_line_is_reproduced(self):
-        # Records of source packages are unchanged: still format_version 1, byte for byte.
-        for name in rt.package_names():
-            pkg = rt.load_package(name)
-            if any(r.archives is not None for r in pkg.releases):
-                continue
-            for line in rt.idx_path(name).read_text().splitlines():
-                self.assertEqual(rt.serialize_record(json.loads(line)), line, name)
-                self.assertEqual(json.loads(line)["format_version"], 1, name)
+        for name in ("fx-tarball", "fx-gitrev"):        # a source package, pinned either way
+            src = rt.load_package(name)
+            sshim = rt.parse_shim(rt.render_release(src, src.newest).files[f"f/{name}/{src.newest.version}.toml"].decode())
+            self.assertEqual(json.loads(rt.render_idx(src, {src.newest.version: sshim}, [], []))["format_version"], 1)
 
     def test_a_typo_in_a_platform_key_is_an_error(self):
         for bad, needle in ((PREBUILT_TOML.replace("macos-aarch64 =", "macos-arm64 ="), "macos-arm64"),
@@ -2287,28 +2452,15 @@ class PrebuiltLint(unittest.TestCase):
         self.assertRefused("one-line string", toml_text=without + '[review]\nprebuilt = ""\n')
 
     def test_a_binary_target_in_a_source_package_needs_the_flag_too(self):
-        def zlib_errors(edit_manifest, extra_toml=""):
-            with tempfile.TemporaryDirectory() as tmp:
-                root = Path(tmp)
-                shutil.copytree(REPO / "packages/zlib", root / "packages/zlib")
-                m = root / "packages/zlib/Harbour.toml"
-                m.write_text(edit_manifest(m.read_text()))
-                p = root / "packages/zlib/package.toml"
-                p.write_text(p.read_text() + extra_toml)
-                old, rt.PACKAGES = rt.PACKAGES, root / "packages"
-                try:
-                    linter = lint.Linter()
-                    linter.lint("zlib")
-                    return [m for _, m in linter.errors]
-                finally:
-                    rt.PACKAGES = old
+        def source_errors(edit_manifest, extra_toml=""):
+            return lint_copy("fx-tarball", lambda s: s + extra_toml, edit_manifest)
 
         blob = '\n[targets.blob]\nkind = "prebuilt"\nprebuilt_libs = ["vendor/libblob.a"]\n'
-        self.assertTrue(any("[review] prebuilt" in m for m in zlib_errors(lambda s: s + blob)))
-        self.assertEqual(zlib_errors(lambda s: s + blob, '\n[review]\nprebuilt = "a reason"\n'), [])
+        self.assertTrue(any("[review] prebuilt" in m for m in source_errors(lambda s: s + blob)))
+        self.assertEqual(source_errors(lambda s: s + blob, '\n[review]\nprebuilt = "a reason"\n'), [])
         # The flag only marks a real exception: set on a package with nothing prebuilt, it is an error.
-        self.assertTrue(any("remove the flag" in m for m in zlib_errors(lambda s: s, '\n[review]\nprebuilt = "a reason"\n')))
-        self.assertEqual(zlib_errors(lambda s: s), [])
+        self.assertTrue(any("remove the flag" in m for m in source_errors(lambda s: s, '\n[review]\nprebuilt = "a reason"\n')))
+        self.assertEqual(source_errors(lambda s: s), [])
 
     def test_every_claimed_platform_needs_its_archive(self):
         no_win = PREBUILT_TOML.replace(f'windows-x86_64 = "{H3}"\n', "")
@@ -2355,19 +2507,10 @@ class PrebuiltLint(unittest.TestCase):
         # The license digest is required exactly as for a source release.
         self.assertRefused("license_sha256", toml_text=PREBUILT_TOML.replace(f'license_sha256 = "{LIC_A}"\n', ""))
 
-    def test_the_registrys_own_prebuilt_packages_are_gated(self):
-        for name in rt.package_names():
-            pkg = rt.load_package(name)
-            if any(r.archives is not None for r in pkg.releases):
-                self.assertTrue(pkg.review.get("prebuilt"), name)
-                self.assertEqual(pkg.test.get("objects"), 0, name)
-                self.assertIsNotNone(watch.not_watchable(pkg), name)
-
-
 class PrebuiltOnACopy(unittest.TestCase):
-    """render --check against a copy of this checkout holding a prebuilt package."""
+    """render --check against a copy of the fixture registry that gains a prebuilt package."""
 
-    py, edit = OnACopy.py, OnACopy.edit
+    py, edit, REGISTRY = OnACopy.py, OnACopy.edit, OnACopy.REGISTRY
 
     def setUp(self):
         OnACopy.setUp(self)
@@ -2580,8 +2723,19 @@ class PrebuiltTest(unittest.TestCase):
     def test_this_platforms_archive_is_selected(self):
         self.assertEqual(runner.platform_archive(self.pkg, "macos", "aarch64").url,
                          "https://dl.x.invalid/v1.2.0/binlib-macos-arm64.tar.xz")
-        self.assertIsNone(runner.platform_archive(rt.load_package("zlib"), "linux", "x86_64"))
+        self.assertIsNone(runner.platform_archive(rt.load_package("fx-tarball"), "linux", "x86_64"))
         self.assertEqual(runner.expected_objects(self.pkg, "linux", "x86_64"), 0)
+        # ... and the registry's own prebuilt package, which has no archive for Windows.
+        own = rt.load_package("fx-prebuilt")
+        self.assertTrue(runner.platform_archive(own, "linux", "x86_64").url.endswith("fx-prebuilt-2.12.1-linux-x86_64.zip"))
+        with self.assertRaises(runner.Failure):
+            runner.platform_archive(own, "windows", "x86_64")
+
+    def test_objects_are_resolved_per_platform(self):
+        multi = rt.load_package("fx-multi")           # objects = { default = 3, windows = 4 }
+        self.assertEqual([runner.expected_objects(multi, p, "x86_64") for p in ("linux", "macos", "windows")], [3, 3, 4])
+        self.assertEqual(runner.expected_objects(rt.load_package("fx-tarball"), "windows", "x86_64"), 15)
+        self.assertEqual(runner.expected_objects(rt.load_package("fx-header"), "linux", "aarch64"), 0)
 
     def test_no_archive_for_this_machine_is_a_failure_not_a_skip(self):
         with self.assertRaises(runner.Failure) as cm:
@@ -2615,6 +2769,191 @@ class PrebuiltTest(unittest.TestCase):
 
 
 
+# ---------------------------------------------------------------------------
+# The registries themselves: the fixture the tests above run against, and this checkout
+# ---------------------------------------------------------------------------
+
+class RegistryInvariants:
+    """What must hold for every package of a registry, whichever packages those are. Run against
+    the fixture (so each rule is exercised whatever this checkout holds) and against this checkout.
+    Nothing here may name a package or a version."""
+
+    def test_every_tag_template_round_trips(self):
+        for name in rt.package_names():
+            pkg = rt.load_package(name)
+            up = pkg.upstream
+            with self.subTest(name):
+                if up.get("watch") is False and not up.get("tag"):
+                    # A rolling release with no tags has nothing to follow: it opts out explicitly
+                    # and has no template. Anything else must be followable.
+                    self.assertTrue(up.get("git"), f"{name} opts out of the watcher but names no git")
+                    self.assertIn("opted out", watch.not_watchable(pkg) or "")
+                    continue
+                self.assertTrue(up.get("git") and up.get("tag"), f"{name} lacks what the watcher needs")
+                tag = rt.release_tag(pkg, pkg.newest)
+                verdict, cand = watch.classify_tag(tag, watch.tag_pattern(up["tag"]), up["tag"], up.get("scheme", "semver"))
+                self.assertEqual(verdict, "ok")
+                self.assertEqual(cand.version, pkg.newest.version)
+                self.assertEqual(cand.upstream_version, pkg.newest.upstream_version)
+
+    def test_every_package_records_a_digest(self):
+        for name in rt.package_names():
+            self.assertRegex(rt.load_package(name).newest.license_sha256 or "", r"^[0-9a-f]{64}$", name)
+
+    def test_every_existing_idx_line_is_reproduced(self):
+        # Records of source packages are format_version 1, and serialised byte for byte as committed.
+        for name in rt.package_names():
+            pkg = rt.load_package(name)
+            lines = rt.idx_path(name).read_text().splitlines()
+            self.assertEqual(len(lines), len(pkg.releases), name)
+            for line in lines:
+                self.assertEqual(rt.serialize_record(json.loads(line)), line, name)
+                want = 2 if any(r.archives is not None for r in pkg.releases) else 1
+                self.assertEqual(json.loads(line)["format_version"], want, name)
+
+    def test_prebuilt_packages_are_gated(self):
+        for name in rt.package_names():
+            pkg = rt.load_package(name)
+            if any(r.archives is not None for r in pkg.releases):
+                self.assertTrue(pkg.review.get("prebuilt"), name)
+                self.assertEqual(pkg.test.get("objects"), 0, name)
+                self.assertIsNotNone(watch.not_watchable(pkg), name)
+
+    def test_a_full_run_is_a_few_shards_that_cover_every_package_once(self):
+        names = set(rt.package_names())
+        rows = plan.build_shards(names)
+        per_plat = {}
+        for r in rows:
+            self.assertEqual(r["runner"], plan.RUNNERS[r["os"]])
+            self.assertRegex(r["packages"], r"^[a-z0-9_-]+( [a-z0-9_-]+)*$")
+            per_plat.setdefault(r["os"], []).extend(r["packages"].split())
+        self.assertLessEqual(len(rows), plan.MAX_SHARDS * len(plan.RUNNERS))
+        for plat, tested in per_plat.items():
+            want = sorted(n for n in names if plat in rt.load_package(n).platforms())
+            self.assertEqual(sorted(tested), want, plat)       # every package, exactly once
+        # ... and one package at a time is one row for each of its platforms.
+        rows = plan.build(names)
+        self.assertEqual(sorted((r["package"], r["os"]) for r in rows),
+                         sorted((n, plat) for n in names for plat in rt.load_package(n).platforms()))
+        self.assertTrue(all(r["packages"] == r["package"] for r in rows))
+
+
+class FixtureRegistry(RegistryInvariants, unittest.TestCase):
+    """tools/testdata/registry/ is a valid registry by the tools' own rules, and holds what the tests
+    above rely on. If this fails after a fixture package was edited: `test_tools.py --render-fixture`."""
+
+    def test_the_tools_in_this_process_see_the_fixture(self):
+        self.assertEqual((rt.ROOT, rt.PACKAGES, rt.INDEX), (FIXTURE, FIXTURE / "packages", FIXTURE / "index"))
+        names = rt.package_names()
+        self.assertEqual(names, sorted(p.name for p in (FIXTURE / "packages").iterdir()))
+        # Synthetic names, so nobody mistakes one for a real package.
+        self.assertTrue(names and all(n.startswith("fx-") for n in names), names)
+        self.assertEqual(rt.idx_path("fx-tarball"), FIXTURE / "index/f/fx-tarball.idx")
+        with self.assertRaises(rt.RegistryError):
+            rt.load_package("zlib")
+
+    def test_lint_passes_and_index_is_exactly_what_render_produces(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_checkout(Path(tmp))
+            commit_all(root)
+            py = lambda script, *a: run([sys.executable, str(root / "tools" / script), *a], root)  # noqa: E731
+            r = py("lint.py")
+            self.assertEqual(r.returncode, 0, r.stdout)
+            self.assertIn(f"lint: ok ({len(rt.package_names())} package(s))", r.stdout)
+            r = py("render.py", "--check", "--base", "HEAD")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            # Rendering writes nothing ...
+            r = py("render.py")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(run(["git", "status", "--porcelain"], root).stdout, "")
+            # ... and with every file a render can produce deleted (each package's .idx, its newest
+            # release's shim and patches, the README table), it brings them back byte for byte. An
+            # older release's files are the only ones it cannot: they are frozen, never re-rendered.
+            for name in rt.package_names():
+                pkg = rt.load_package(name)
+                (root / "index" / name[0] / f"{name}.idx").write_text(
+                    "".join(l + "\n" for l in (root / "index" / name[0] / f"{name}.idx").read_text().splitlines()
+                            if json.loads(l)["version"] != pkg.newest.version))
+                for f in (root / "index" / name[0] / name).iterdir():
+                    if f.name.startswith(pkg.newest.version + "."):
+                        f.unlink()
+            readme = root / "README.md"
+            readme.write_text(re.sub(r"(?s)(<!-- packages:begin[^\n]*\n).*(<!-- packages:end -->)", r"\1\2", readme.read_text()))
+            self.assertNotEqual(run(["git", "status", "--porcelain"], root).stdout, "")
+            r = py("render.py")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(run(["git", "status", "--porcelain"], root).stdout, "")
+
+    def test_it_holds_one_package_of_every_kind_the_tests_need(self):
+        load = rt.load_package
+        kinds = {n: watch.kind_of(load(n)) for n in rt.package_names()}
+        self.assertEqual({k: sorted(n for n in kinds if kinds[n] == k) for k in set(kinds.values())}, {
+            "tarball": ["fx-dep-c", "fx-multi", "fx-tarball"],
+            "git": ["fx-dep-a", "fx-dep-b", "fx-gitrev", "fx-header", "fx-nowatch"],
+            "archives": ["fx-prebuilt"]})
+        tarball = load("fx-tarball")
+        self.assertEqual((tarball.newest.version, len(tarball.releases), tarball.platforms()), ("1.3.1", 1, ["linux", "macos", "windows"]))
+        self.assertTrue(tarball.newest.republish and "{tag}" in tarball.upstream["url"] and tarball.upstream["strip_prefix"])
+        self.assertIsNone(watch.not_watchable(tarball))
+        self.assertIsNone(watch.not_watchable(load("fx-gitrev")))
+        self.assertEqual([r.version for r in load("fx-multi").releases], ["2.10.0", "2.9.0"])
+        self.assertEqual([r.upstream_version for r in load("fx-multi").releases], ["2.10", "2.9"])
+        self.assertIsInstance(load("fx-multi").test["objects"], dict)
+        manifest = lambda n: rt.read_toml(FIXTURE / "packages" / n / "Harbour.toml")  # noqa: E731
+        self.assertTrue(rt.is_header_only(manifest("fx-header")) and load("fx-header").test["objects"] == 0)
+        self.assertTrue(rt.is_prebuilt(manifest("fx-prebuilt")))
+        self.assertIn("opted out", watch.not_watchable(load("fx-nowatch")))
+        self.assertNotIn("tag", load("fx-nowatch").upstream)
+        self.assertEqual(load("fx-dep-b").platforms(), ["linux", "macos"])
+        self.assertIsNone(watch.github_slug(load("fx-dep-b").upstream["git"]))
+        self.assertEqual(watch.github_slug(tarball.upstream["git"]), "fx-upstream/fx-tarball")
+        deps = {n: sorted(d["name"] for d in rt.read_idx(rt.idx_path(n))[-1]["deps"]) for n in rt.package_names()}
+        self.assertEqual({n: d for n, d in deps.items() if d},
+                         {"fx-dep-a": ["fx-tarball"], "fx-dep-b": ["fx-dep-a", "fx-tarball"], "fx-dep-c": ["fx-dep-b"]})
+        # Nothing in it can be fetched by accident: every host is github.com/fx-upstream or `.invalid`.
+        for path in sorted((FIXTURE / "packages").rglob("*.toml")) + sorted((FIXTURE / "index").rglob("*.toml")):
+            for url in re.findall(r'https?://[^"\s{]+', path.read_text()):
+                self.assertRegex(url, r"^https://(github\.com/fx-upstream/|[a-z0-9.-]+\.invalid(/|$))", path)
+
+
+class RealRegistry(RegistryInvariants, unittest.TestCase):
+    """The tests whose subject is THIS checkout's packages/ and index/. Each holds for any valid
+    registry: none may name a package, a version, a count, a platform or a dependency, or the next
+    legitimate change to a package (a bump, a new platform, a removal) fails the tools' self-test."""
+
+    def setUp(self):
+        ctx = registry_at(REPO)
+        ctx.__enter__()
+        self.addCleanup(ctx.__exit__, None, None, None)
+
+    def test_the_tools_in_this_process_see_this_checkout(self):
+        self.assertEqual((rt.ROOT, rt.PACKAGES, rt.INDEX), (REPO, REPO / "packages", REPO / "index"))
+        # The fixture lives under tools/, where no tool looks for packages.
+        self.assertFalse(FIXTURE.relative_to(REPO).as_posix().startswith(("packages/", "index/")))
+        self.assertNotIn("testdata", rt.package_names())
+        self.assertNotIn("tools", rt.package_names())
+
+    def test_clean_copy_passes(self):
+        """lint accepts every package, and the committed index/ is what packages/ renders to."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_checkout(Path(tmp), REPO)
+            commit_all(root)
+            r = run([sys.executable, str(root / "tools/lint.py")], root)
+            self.assertEqual(r.returncode, 0, r.stdout)
+            r = run([sys.executable, str(root / "tools/render.py"), "--check", "--base", "HEAD"], root)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_template_lints_once_copied(self):
+        """packages/_template is the starting point of every new package: it must itself be valid."""
+        self.assertIn("_template", rt.NON_PACKAGES)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_checkout(Path(tmp))             # among the fixture's packages: only the template is this checkout's
+            shutil.copytree(REPO / "packages/_template", root / "packages/example")
+            r = run([sys.executable, str(root / "tools/lint.py"), "example"], root)
+            self.assertEqual(r.returncode, 0, r.stdout)
+            self.assertIn("lint: ok (1 package(s))", r.stdout)
+
+
 class Env(unittest.TestCase):
     def test_python_is_new_enough(self):
         self.assertGreaterEqual(sys.version_info[:2], (3, 11))
@@ -2624,5 +2963,23 @@ class Env(unittest.TestCase):
             self.assertNotIn(b"\r", p.read_bytes(), p.name)
 
 
+def render_fixture() -> int:
+    """Re-render tools/testdata/registry/index and its README table after a fixture package changed.
+
+    Like the real index, only each package's NEWEST release is rendered; an older release's files are
+    kept as they are (to give a fixture package a second release, bump it the way a real one is)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = make_checkout(Path(tmp))
+        r = run([sys.executable, str(root / "tools/render.py")], root)
+        print(r.stdout + r.stderr, end="")
+        if r.returncode == 0:
+            shutil.rmtree(FIXTURE / "index")
+            shutil.copytree(root / "index", FIXTURE / "index")
+            shutil.copy(root / "README.md", FIXTURE / "README.md")
+        return r.returncode
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--render-fixture"]:
+        sys.exit(render_fixture())
     unittest.main()

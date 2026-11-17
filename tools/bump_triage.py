@@ -38,6 +38,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -61,6 +62,21 @@ MAX_JOBS_SHOWN = 8
 MAX_COMMENT_CHARS = 60_000
 MAX_LOG_CHARS = 7_000
 FAILED = ("failure", "timed_out")
+# Reading a job's log (job_log). On the first real bump PR the summary had no log lines for either
+# failed job, and did not say why: the error was swallowed. The request itself is the documented one
+# and the job has `actions: read`, so the likeliest cause is timing: `triage` starts seconds after
+# the run completes, when a job's log may not be retrievable yet (404). So an answer that may change
+# is waited out, a few attempts with these pauses in between, and whatever the last answer was is
+# REPORTED. The pauses are spent in full once per triage; if they did not help the first job, each
+# later job gets one short retry only, so the job stays well inside its timeout.
+LOG_RETRY_SLEEP = (5.0, 15.0, 30.0)
+LOG_TIMEOUT = 60
+# Answers that waiting cannot change: asking again is pointless, and the summary says which it was.
+LOG_FINAL = {
+    401: "the token was not accepted",
+    403: "the token may not read Actions logs (the triage job needs `permissions: actions: read`)",
+    410: "the log has expired or was deleted",
+}
 
 Gh = Callable[..., str]
 
@@ -70,7 +86,10 @@ class TriageError(Exception):
 
 
 def gh(*args: str, input: str | None = None, timeout: int = 120) -> str:
-    p = subprocess.run(["gh", *args], input=input, capture_output=True, text=True, timeout=timeout)
+    # UTF-8 with replacement, whatever the locale: a job log is whatever a compiler printed, and one
+    # undecodable byte in it must not be an exception that ends the triage.
+    p = subprocess.run(["gh", *args], input=input, capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", timeout=timeout)
     if p.returncode:
         raise TriageError(f"gh {' '.join(args)} failed: {p.stderr.strip()}")
     return p.stdout
@@ -257,11 +276,68 @@ def run_jobs(run: Gh, repo: str, run_id: str) -> list[dict]:
     return [json.loads(l) for l in out.splitlines() if l.strip()]
 
 
-def job_log(run: Gh, repo: str, job_id: int) -> str:
-    try:
-        return run("api", f"repos/{repo}/actions/jobs/{job_id}/logs")
-    except (TriageError, subprocess.TimeoutExpired):
-        return "(log unavailable: expired or not retrievable)"
+_HTTP_STATUS = re.compile(r"\bHTTP (\d{3})\b")
+
+
+def log_failure(err: Exception) -> tuple[str, bool]:
+    """(why a job's log could not be read, whether asking again may help)."""
+    if isinstance(err, subprocess.TimeoutExpired):
+        return f"no answer within {int(err.timeout)} s", False
+    text = str(err)
+    said = safe(" ".join(text.split("failed:", 1)[-1].split()).removeprefix("gh: "), 160) or "no error text"
+    m = _HTTP_STATUS.search(text)
+    if not m:
+        return f"the request failed ({said})", True          # no status: the network, or gh itself
+    status = int(m.group(1))
+    if status in LOG_FINAL:
+        return f"HTTP {status}: {LOG_FINAL[status]} ({said})", False
+    if status == 404:
+        return f"HTTP 404: GitHub has no log for this job, or has not finished storing it yet ({said})", True
+    return f"HTTP {status} ({said})", status in (408, 425, 429) or status >= 500
+
+
+def job_log(run: Gh, repo: str, job_id: int, *, pauses: tuple[float, ...] = LOG_RETRY_SLEEP,
+            sleep: Callable[[float], None] = time.sleep) -> tuple[str, bool]:
+    """(the job's log, True), or (a one-line reason it could not be read, False).
+
+    `GET /repos/{repo}/actions/jobs/{id}/logs` answers 302 to a short-lived URL, which `gh api` follows
+    (without the token: it is another host). It needs `actions: read`. An answer that may change is
+    asked for again after each of `pauses`; the reason returned is the LAST answer, with how often it
+    was asked, so the failure summary says why it holds no log lines."""
+    why, attempts = "", 0
+    # A recent `gh` refuses to print a response holding terminal escape sequences unless told to, and
+    # a build log is full of colours: that refusal, not timing, is why the first summaries had no log
+    # lines. `tail` strips colours and control characters, so asking for them is safe. An older `gh`
+    # does not know the flag; it is then dropped, without spending an attempt.
+    flags = ["--allow-escape-sequences"]
+    for pause in (0.0, *pauses):
+        if pause:
+            sleep(pause)
+        attempts += 1
+        try:
+            try:
+                return run("api", *flags, f"repos/{repo}/actions/jobs/{job_id}/logs", timeout=LOG_TIMEOUT), True
+            except TriageError as e:
+                if not (flags and "unknown flag" in str(e)):
+                    raise
+                flags = []
+                return run("api", f"repos/{repo}/actions/jobs/{job_id}/logs", timeout=LOG_TIMEOUT), True
+        except (TriageError, subprocess.TimeoutExpired) as e:
+            why, again = log_failure(e)
+            if not again:
+                break
+    return f"(log unavailable after {attempts} attempt(s): {why})", False
+
+
+def job_logs(run: Gh, repo: str, jobs: list[dict], *, sleep: Callable[[float], None] = time.sleep) -> dict[int, str]:
+    """The log of each job, or the reason there is none. The full wait is spent once (see LOG_RETRY_SLEEP)."""
+    logs, pauses = {}, LOG_RETRY_SLEEP
+    for j in jobs:
+        logs[j["id"]], ok = job_log(run, repo, j["id"], pauses=pauses, sleep=sleep)
+        if not ok:
+            print(f"triage: job {j['id']} `{safe(j.get('name', ''))}`: {logs[j['id']]}")
+            pauses = pauses[:1]
+    return logs
 
 
 def upstream_diff(run: Gh, pkg: rt.Package, version: str,
@@ -330,7 +406,8 @@ def ensure_issue(run: Gh, repo: str, pkg: str, version: str, pr_url: str, why: s
 # The job
 # ---------------------------------------------------------------------------
 
-def triage(args, run: Gh = gh, ls_remote: Callable[[str], str] = watch.real_ls_remote) -> dict:
+def triage(args, run: Gh = gh, ls_remote: Callable[[str], str] = watch.real_ls_remote,
+           sleep: Callable[[float], None] = time.sleep) -> dict:
     result = {"repair": "false", "pr": "", "package": "", "version": "", "attempt": "0"}
     parsed = watch.parse_branch(args.head_branch)
     if not parsed:
@@ -361,7 +438,7 @@ def triage(args, run: Gh = gh, ls_remote: Callable[[str], str] = watch.real_ls_r
     pkg = rt.load_package(pkg_name)   # the DEFAULT branch's copy: the old release, the upstream settings
     run_url = f"https://github.com/{args.repo}/actions/runs/{args.run_id}"
     jobs = failed_jobs(run_jobs(run, args.repo, args.run_id))
-    logs = {j["id"]: job_log(run, args.repo, j["id"]) for j in jobs[:MAX_JOBS_SHOWN]}
+    logs = job_logs(run, args.repo, jobs[:MAX_JOBS_SHOWN], sleep=sleep)
     diff, diff_why = upstream_diff(run, pkg, version, ls_remote)
     body = summary_markdown(pkg=pkg_name, old=pkg.newest.version, new=version, run_url=run_url,
                             head_sha=args.head_sha, d=d, budget=args.budget, jobs=jobs, logs=logs,

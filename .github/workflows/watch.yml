@@ -27,8 +27,9 @@ name: Watch
 #                                  repository only, with Contents: read and write, Pull requests: read
 #                                  and write, Issues: read and write (labels). Required, see below.
 #   variable  REGISTRY_AUTO_MERGE  `true` to enable auto-merge on bump PRs. Default off.
-#   variable  REGISTRY_REPAIR_ENABLED   `true` once the `Openrouter` environment below has its key. Default off:
-#                                  a failed bump then goes straight to `needs-human`.
+#   variable  REGISTRY_REPAIR_ENABLED   optional OFF switch. Repair is on by default (declared in the
+#                                  triage job); set this to `false` and a failed bump goes straight
+#                                  to `needs-human`.
 #   variable  REGISTRY_REPAIR_ATTEMPTS  repair attempts per bump PR before `needs-human`. Default 2.
 #   environment `Openrouter`       a GitHub environment (Settings > Environments) holding the two
 #                                  settings below. Only the `repair` job declares it, so only that job can
@@ -39,9 +40,10 @@ name: Watch
 #                                  manifest` step sees it, as REPAIR_API_KEY.
 #   variable  OPENROUTER_BASE      in that environment: the API base, https://openrouter.ai/api/v1
 #                                  (the URL up to and including the version segment; https only).
-#   (declared in the repair job)   the model, openrouter/free. Changing it is a reviewed change to
+#   (declared in the repair job)   the model, openai/gpt-oss-20b. Changing it is a reviewed change to
 #                                  this file.
-#   variable  REPAIR_TEMPERATURE, REPAIR_MAX_TOKENS, REPAIR_TIMEOUT, REPAIR_MAX_PROMPT_CHARS
+#   variable  REPAIR_TEMPERATURE, REPAIR_MAX_TOKENS, REPAIR_TIMEOUT, REPAIR_TOTAL_TIMEOUT,
+#             REPAIR_MAX_PROMPT_CHARS
 #                                  optional tuning; defaults and meaning in tools/repair.py's docstring.
 #   labels    bot, bump, needs-repair, needs-human, license-changed, keep (and repair-attempt-N):
 #             created by this workflow when missing (`tools/bump_triage.py ensure-labels`), nothing to
@@ -412,7 +414,10 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           BUDGET: ${{ vars.REGISTRY_REPAIR_ATTEMPTS || '2' }}
-          ENABLED: ${{ vars.REGISTRY_REPAIR_ENABLED || 'false' }}
+          # Repair is on. It is declared here rather than left to a setting, like the model the
+          # repair job uses. The variable remains as an off switch: set REGISTRY_REPAIR_ENABLED to
+          # `false` and a failed bump goes straight to `needs-human`.
+          ENABLED: ${{ vars.REGISTRY_REPAIR_ENABLED || 'true' }}
         run: |
           python tools/bump_triage.py triage --repo "$GH_REPO" --run-id "$RUN_ID" \
             --head-branch "$HEAD_BRANCH" --head-sha "$HEAD_SHA" --conclusion "$CONCLUSION" \
@@ -532,20 +537,24 @@ jobs:
         env:
           # The key and the endpoint come from the `Openrouter` environment. The model is declared
           # here, in a reviewed file: changing the model that rewrites manifests is a change to this
-          # workflow. `openrouter/free` is OpenRouter's router over whichever free models it
-          # currently serves.
+          # workflow. A named model, not OpenRouter's free router: the router's choice on the
+          # first real repair took twenty minutes and returned no text. This one is billed to
+          # the account's credits (a repair prompt is roughly 8,000 tokens).
           REPAIR_API_BASE: ${{ vars.OPENROUTER_BASE }}
           REPAIR_API_KEY: ${{ secrets.OPENROUTER_KEY }}
-          REPAIR_MODEL: openrouter/free
+          REPAIR_MODEL: openai/gpt-oss-20b
           REPAIR_TEMPERATURE: ${{ vars.REPAIR_TEMPERATURE }}
-          REPAIR_MAX_TOKENS: ${{ vars.REPAIR_MAX_TOKENS }}
+          # A reasoning model spends reply tokens on thinking first: at 8192 gpt-oss-20b used the whole
+          # budget three rounds running and returned no text at all.
+          REPAIR_MAX_TOKENS: ${{ vars.REPAIR_MAX_TOKENS || '32768' }}
           REPAIR_TIMEOUT: ${{ vars.REPAIR_TIMEOUT }}
           REPAIR_MAX_PROMPT_CHARS: ${{ vars.REPAIR_MAX_PROMPT_CHARS }}
+          REPAIR_TOTAL_TIMEOUT: ${{ vars.REPAIR_TOTAL_TIMEOUT }}
         run: |
           mkdir -p "$RUNNER_TEMP/out"
           keep=("PATH=$PATH" "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}")
           for v in REPAIR_API_BASE REPAIR_API_KEY REPAIR_MODEL REPAIR_TEMPERATURE REPAIR_MAX_TOKENS \
-                   REPAIR_TIMEOUT REPAIR_MAX_PROMPT_CHARS; do
+                   REPAIR_TIMEOUT REPAIR_MAX_PROMPT_CHARS REPAIR_TOTAL_TIMEOUT; do
             if [ -n "${!v:-}" ]; then keep+=("$v=${!v}"); fi
           done
           env -i "${keep[@]}" python -I tools/repair.py --package "$PKG" --attempt "$ATTEMPT" \
