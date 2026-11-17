@@ -9,6 +9,11 @@ git = "https://gitlab.freedesktop.org/freetype/freetype.git"
 tag = "VER-{major}-{minor}-{patch}"
 
 [[release]]
+version = "2.15.0"
+rev = "37515cf56ba3349656049edbed89ffc6f6466f2d"
+license_sha256 = "55addddfc84bc6e24a89ca290e1b71c7d2f5fc372b614fbc98b3c54948e955bc"
+
+[[release]]
 version = "2.14.3"
 rev = "0a0221a1347e2f1e07c395263540026e9a0aa7c7"
 license_sha256 = "55addddfc84bc6e24a89ca290e1b71c7d2f5fc372b614fbc98b3c54948e955bc"
