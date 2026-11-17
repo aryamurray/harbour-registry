@@ -7,7 +7,7 @@
 
 [package]
 name = "cjson"
-version = "1.7.18"
+version = "1.7.19"
 description = "Ultralightweight JSON parser in ANSI C"
 license = "MIT"
 homepage = "https://github.com/DaveGamble/cJSON"
