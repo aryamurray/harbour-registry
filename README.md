@@ -45,7 +45,7 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [tinyxml2](packages/tinyxml2) | 11.0.0 | `Zlib` | linux, macos, windows | Simple, small, efficient C++ XML parser (DOM-style) |
 | [xxhash](packages/xxhash) | 0.8.4 | `BSD-2-Clause` | linux, macos, windows | Extremely fast non-cryptographic hash algorithm: XXH32, XXH64, XXH3 and XXH128 |
 | [yaml-cpp](packages/yaml-cpp) | 0.9.0 | `MIT` | linux, macos, windows | YAML 1.2 parser and emitter in C++ |
-| [zlib](packages/zlib) | 1.3.1 | `Zlib` | linux, macos, windows | General-purpose lossless compression library (deflate/inflate, gzip, crc32, adler32) |
+| [zlib](packages/zlib) | 1.4.0 | `Zlib` | linux, macos, windows | General-purpose lossless compression library (deflate/inflate, gzip, crc32, adler32) |
 | [zstd](packages/zstd) | 1.5.7 | `BSD-3-Clause OR GPL-2.0-only` | linux, macos, windows | Zstandard, fast real-time compression |
 <!-- packages:end -->
 
