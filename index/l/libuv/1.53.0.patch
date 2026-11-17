@@ -1,6 +1,6 @@
 diff --git a/Harbour.toml b/Harbour.toml
 new file mode 100644
-index 0000000..903ed7b
+index 0000000..a14593f
 --- /dev/null
 +++ b/Harbour.toml
 @@ -0,0 +1,149 @@
@@ -152,4 +152,4 @@ index 0000000..903ed7b
 +[[targets.uv.surface.when]]
 +os = "windows"
 +[targets.uv.surface.when."link.public"]
-+libs = ["psapi", "user32", "advapi32", "iphlpapi", "userenv", "ws2_32", "dbghelp", "ole32", "shell32"]
++libs = ["psapi", "user32", "advapi32", "iphlpapi", "userenv", "ws2_32", "dbghelp", "ole32", "shell32", "synchronization"]
