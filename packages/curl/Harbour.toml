@@ -57,7 +57,7 @@ include_dirs = ["lib", "include"]
 # `curl_config.h` instead of falling back to one of curl's hand-written
 # `config-win32.h` / `config-mac.h`. It is the single define that decides
 # whether this whole subsystem is in the build or not.
-defines = ["HAVE_CONFIG_H", "BUILDING_LIBCURL", "HAVE_GETADDRINFO=1"]
+defines = ["HAVE_CONFIG_H", "BUILDING_LIBCURL", "HAVE_GETADDRINFO=1", "CURLU_STRICT=1"]
 
 [targets.curl.public]
 include_dirs = ["include"]
