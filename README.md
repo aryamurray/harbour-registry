@@ -611,7 +611,7 @@ What to create:
 | environment `Openrouter` | a GitHub environment (Settings > Environments). Only the `repair` job declares it, so what it holds can be read by that job and by nothing else in the repository. Do not add required reviewers (every repair would wait for approval); restricting it to the default branch is fine |
 | secret `OPENROUTER_KEY`, **in that environment** | the OpenRouter key, sent as `Authorization: Bearer <key>`. Only the one step that calls the model sees it |
 | variable `OPENROUTER_BASE`, **in that environment** | the API base, `https://openrouter.ai/api/v1`: the URL up to and including the version segment, https only. The repair step POSTs to `<base>/chat/completions` and contacts nothing else |
-| the model | not a setting: `openrouter/free` is written in the `repair` job of `watch.yml`, so changing the model that rewrites manifests is a reviewed change to that file |
+| the model | not a setting: `openai/gpt-oss-20b` is written in the `repair` job of `watch.yml`, so changing the model that rewrites manifests is a reviewed change to that file |
 | variables `REPAIR_TEMPERATURE`, `REPAIR_MAX_TOKENS`, `REPAIR_TIMEOUT`, `REPAIR_TOTAL_TIMEOUT`, `REPAIR_MAX_PROMPT_CHARS` | optional; see below |
 | labels `bot`, `bump`, `needs-repair`, `needs-human`, `license-changed`, `keep`, `repair-attempt-N` | created by the workflow when missing. `keep` is the one a person applies (a bump PR carrying it is never closed as superseded) |
 
@@ -692,8 +692,9 @@ vendor SDK is involved and nothing but the Python standard library is used.
 1. In the GitHub environment `Openrouter` (create it if it does not exist), store the OpenRouter key as the
    secret `OPENROUTER_KEY` and set the variable `OPENROUTER_BASE` to `https://openrouter.ai/api/v1`.
 2. The model is declared in the `repair` job of `.github/workflows/watch.yml` (`REPAIR_MODEL`).
-   `openrouter/free` routes to whichever free models OpenRouter currently serves, so which model answers can
-   differ from one repair to the next. To use another provider, change what the job maps to `REPAIR_API_BASE`,
+   It is a named model (`openai/gpt-oss-20b`), billed to the OpenRouter account, so the same model answers
+   every repair. OpenRouter's free router (`openrouter/free`) was tried first: on the first real repair its
+   choice took twenty minutes and returned no text. To use another provider, change what the job maps to `REPAIR_API_BASE`,
    `REPAIR_API_KEY` and `REPAIR_MODEL`.
 3. Optional variables: `REPAIR_TEMPERATURE` (default `0`), `REPAIR_MAX_TOKENS` (reply tokens, default `8192`;
    either accepts `omit` for providers that reject the field), `REPAIR_TIMEOUT` (seconds of wall clock per request, default `300`), `REPAIR_TOTAL_TIMEOUT` (seconds for the
