@@ -1,0 +1,15 @@
+[package]
+name = "openssl"
+version = "3.6.5"
+
+[source.tarball]
+url = "https://github.com/openssl/openssl/releases/download/openssl-3.6.5/openssl-3.6.5.tar.gz"
+sha256 = "a2157c2830efdec3788939b00c9b0638306d3f0bbb76dc4832ee503bb397df98"
+strip_prefix = "openssl-3.6.5"
+
+[metadata]
+license = "Apache-2.0"
+
+[[patches]]
+file = "3.6.5.patch"
+sha256 = "8a6c5bc3d1a2dfdeb7824e63069ea4a176ff5e5d6d5c8ee937d818bad6f0bc43"

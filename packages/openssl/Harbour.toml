@@ -50,7 +50,7 @@
 
 [package]
 name = "openssl"
-version = "3.5.4"
+version = "3.6.5"
 description = "OpenSSL SHA-2 and AES primitives (slice; see comment above)"
 license = "Apache-2.0"
 homepage = "https://www.openssl.org"

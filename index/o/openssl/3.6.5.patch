@@ -1,0 +1,587 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..a0c6745
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,535 @@
++# openssl 3.5.4 -- the generated-sources canary.
++#
++# SCOPE, stated first because it is the thing a reader will assume wrongly:
++# this shim builds openssl's **SHA-1, SHA-2 and AES primitives**, not all of
++# libcrypto. One target, `crypto`, with the nine C files those primitives
++# need and the five per-architecture assembly sources that supersede three of
++# their block functions (and, on x86_64, replace one outright). It is a
++# deliberate slice, chosen because it is the smallest configuration that
++# exercises the one thing no other package in `ci/canary/` does:
++#
++#   **openssl has no source list. Its crypto primitives and most of its
++#   public headers do not exist in the tarball; they are generated.**
++#
++# Nothing here is vendored. Every generated file is produced on the user's
++# machine by openssl's own generator scripts, driven from this manifest:
++#
++#   1. `configdata.pm` -- 18 lines of perl written by the first prebuild step
++#      below. This is openssl's configuration, expressed once, here. It is
++#      what `./Configure` would otherwise write, minus the Makefile: the
++#      build decisions live in this Harbour.toml and nowhere else.
++#   2. 31 `.h.in` templates -> 31 headers, via openssl's `util/dofile.pl`.
++#      `include/openssl/crypto.h`, `safestack.h`, `configuration.h` and 28
++#      more are absent from a pristine tarball. `crypto/sha/sha256.c` does
++#      not compile without them, so this is not optional for *any* build
++#      strategy, assembly or not.
++#   3. The perlasm scripts, per (os, arch) -- `asm/sha512-armv8.pl` and
++#      friends. These take a flavour argument (`ios64`, `linux64`, `macosx`,
++#      `elf`) and an output path, and need no configdata at all.
++#
++# What that costs: **perl becomes a build dependency of this package.** That
++# is a dependency of openssl, not of Harbour, and openssl's own build has
++# required perl since 1998. The alternative -- vendoring ~5.6 MB of generated
++# `.s` per architecture into the shim -- was rejected: see
++# `docs/superpowers/specs/2026-09-12-openssl-generated-sources.md`.
++#
++# Windows (MSVC, x86_64): the portable no-assembly baseline below, which is what
++# `Configure VC-WIN64A no-asm` builds for these primitives. Harbour rejects a target
++# with assembly sources under MSVC (MANIFEST.md, "Assembly Sources"), and openssl's
++# perlasm would need the `nasm`/`masm` flavours and an assembler Harbour does not
++# drive, so no `when` block adds assembly there. What `VC-WIN64A` (10-main.conf,
++# `VC-common`, `VC-noCE-common`, `VC-WIN64-common`) changes for this slice: the
++# defines OPENSSL_SYS_WIN32, WIN32_LEAN_AND_MEAN, UNICODE, _UNICODE,
++# _CRT_SECURE_NO_DEPRECATE, _WINSOCK_DEPRECATED_NO_WARNINGS and (lib_defines)
++# L_ENDIAN; bn_ops SIXTY_FOUR_BIT (LLP64: `long` is 32-bit but BN_ULONG is 64-bit,
++# so `bn_conf.h` is generated from `b64`, not `b64l`); dso_scheme win32 and
++# perl_platform Windows::MSVC for `dso_conf.h`; and `no-asm`, which puts
++# OPENSSL_NO_ASM in `configuration.h`. Step 1 below writes those into configdata.pm
++# when HARBOUR_TARGET_OS is windows. The generators are still perl (Strawberry
++# Perl is on the Windows runners' PATH).
++
++[package]
++name = "openssl"
++version = "3.6.5"
++description = "OpenSSL SHA-2 and AES primitives (slice; see comment above)"
++license = "Apache-2.0"
++homepage = "https://www.openssl.org"
++requires = "hosted"
++
++# What the generators below run on the build machine. Declared so a machine
++# without perl is told so in one sentence before any generator runs, instead of
++# a prebuild step failing with `No such file or directory`.
++build_tools = ["perl"]
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
++
++[targets.crypto]
++kind = "staticlib"
++
++# The unconditional set is the **portable, no-assembly baseline**, and that is
++# load-bearing rather than incidental. `when` blocks are additive with no
++# "else", so an architecture that matches no block below compiles exactly this
++# list -- pure C, correct, slower. Verified on 32-bit ARM
++# (`arm-unknown-linux-gnueabihf`, which matches neither arch block below):
++# it compiles exactly these nine files, no object matching `*armv8*` or
++# `*x86_64*` exists, `sha256.o` *defines* `sha256_block_data_order` instead
++# of importing it, and the consumer computes the same digests.
++#
++# The opposite arrangement -- intersecting the harvested platforms --
++# would drop `aes_core.c`, because on x86_64 the assembly *replaces* it, and
++# an unlisted architecture would then fail to link on `AES_encrypt`.
++sources = [
++  "crypto/sha/sha1dgst.c",
++  "crypto/sha/sha256.c",
++  "crypto/sha/sha512.c",
++  "crypto/aes/aes_core.c",
++  "crypto/aes/aes_cbc.c",
++  "crypto/aes/aes_ecb.c",
++  "crypto/aes/aes_misc.c",
++  "crypto/modes/cbc128.c",
++  "crypto/mem_clr.c",
++]
++
++# Generated by prebuild step 2. Globbed rather than listed because `sources`
++# and `public_headers` are expanded after the generators run.
++public_headers = ["include/openssl/*.h"]
++
++[targets.crypto.public]
++include_dirs = ["include"]
++
++# `.` for `e_os.h`, `include` for `openssl/` and `internal/`, `crypto` for
++# `arm_arch.h` -- which `arm64cpuid.S` and `aesv8-armx.S` `#include`, so it is
++# needed by the assembly and not only by the C.
++[targets.crypto.private]
++include_dirs = [".", "include", "crypto"]
++
++# ---------------------------------------------------------------------------
++# The one genuine measurement of the target in openssl's generated config.
++#
++# `sizeof(long)` decides `SIXTY_FOUR_BIT_LONG` vs `THIRTY_TWO_BIT` in
++# `include/crypto/bn_conf.h`, which is the layout of every bignum. It is a
++# question about the machine being built *for*, and it is the one thing in
++# `configdata.pm` below that is not a decision this manifest can simply make.
++#
++# It is a probe rather than a `when arch = ...` list because the probe is
++# answered by compiling for the real target -- `char x[(sizeof(long) <= N) ? 1
++# : -1]`, bisected, never executed -- so it is right when cross-compiling,
++# and right on the next 32-bit architecture nobody thought to enumerate. This
++# manifest used to enumerate `arm`, `armv7` and `i686`, and was silently
++# wrong for `armv7r`, `thumbv7`, `mips` and `powerpc`.
++#
++# perl could measure it too, and that is exactly the trap: perl runs on the
++# *host*.
++[targets.crypto.probes]
++check_sizeof = ["long"]
++
++# ---------------------------------------------------------------------------
++# Step 1: openssl's configuration, as a 18-line perl module.
++#
++# `util/dofile.pl` insists on `-Mconfigdata` and dies without `$config{target}`
++# (it is openssl's template engine, and the templates read `%config`). Rather
++# than run `./Configure` to produce a 3000-line configdata.pm -- which would
++# also produce a Makefile and hand the build back to openssl -- this writes the
++# 14 variables the 31 templates actually reference. They were found by grepping
++# the templates, not guessed: `$config{b64l,b64,b32,processor,rc4_int,version,
++# full_version,major,minor,patch,prerelease,release_date,shlib_version,
++# build_metadata,openssl_{sys,api,feature}_defines}` and `$target{dso_scheme,
++# perl_platform}`.
++#
++# Two of those are real decisions and are worth reading:
++#
++#   * `openssl_api_defines` must carry `OPENSSL_CONFIGURED_API`. Without it
++#     `include/openssl/macros.h` fails with "The requested API level higher
++#     than the configured API compatibility level" -- a genuinely confusing
++#     error for a missing config variable.
++#   * `b64l`/`b64`/`b32` decide `SIXTY_FOUR_BIT_LONG` vs `THIRTY_TWO_BIT` in
++#     `include/crypto/bn_conf.h`. That is a *measurement*, not a decision, so
++#     it is the one line here that is not written by hand: it comes from the
++#     `check_sizeof` probe above, via `HARBOUR_PROBE_SIZEOF_LONG`. The step
++#     dies if that variable is absent or is a size it has no mapping for,
++#     because the alternative is a 32-bit build claiming
++#     `SIXTY_FOUR_BIT_LONG` and nothing downstream noticing.
++[[targets.crypto.prebuild]]
++program = "perl"
++outputs = ["configdata.pm"]
++args = [
++  "-e",
++  '''
++my $size = $ENV{HARBOUR_PROBE_SIZEOF_LONG};
++die "HARBOUR_PROBE_SIZEOF_LONG is not set. It is answered by the\n"
++  . "`check_sizeof` probe in Harbour.toml and passed to this generator;\n"
++  . "without it `bn_conf.h` would have to guess the target's word size,\n"
++  . "and a wrong SIXTY_FOUR_BIT_LONG is a miscompiled bignum layout that\n"
++  . "nothing downstream would report.\n"
++  unless defined $size && $size =~ /^[0-9]+$/;
++my $win = (lc($ENV{HARBOUR_TARGET_OS} // "") eq "windows");
++my ($b64l, $b64, $b32) =
++    $win         ? (0, 1, 0)   # VC-WIN64A: bn_ops SIXTY_FOUR_BIT; `long` is 4 bytes there
++  : $size == 8 ? (1, 0, 0)
++  : $size == 4 ? (0, 0, 1)
++  : die "sizeof(long) = $size: openssl's bn_conf.h has no layout for that\n";
++
++my $pm = <<'PM';
++package configdata;
++use strict; use warnings; use Exporter;
++our @ISA = qw(Exporter);
++our @EXPORT = qw(%config %target %disabled %withargs %unified_info);
++our %config = (
++  target => "harbour", builddir => ".", sourcedir => ".", perl_platform => "Unix",
++  version => "3.5.4", full_version => "3.5.4", major => 3, minor => 5, patch => 4,
++  prerelease => "", release_date => "", shlib_version => "3", build_metadata => "",
++PM
++$pm .= "  b64l => $b64l, b64 => $b64, b32 => $b32, "
++     . "processor => \"\", rc4_int => \"unsigned int\",\n";
++$pm .= <<'PM';
++  openssl_sys_defines => [], openssl_feature_defines => [],
++  openssl_api_defines => ["OPENSSL_CONFIGURED_API=30500"],
++  api => 30500,
++);
++our %target = ( dso_scheme => "dlfcn", perl_platform => "Unix" );
++our %disabled = ();
++our %withargs = ();
++our %unified_info = ();
++1;
++PM
++if ($win) {
++  $pm =~ s/perl_platform => "Unix"/perl_platform => "Windows::MSVC"/g;
++  $pm =~ s/dso_scheme => "dlfcn"/dso_scheme => "win32"/;
++  $pm =~ s/openssl_sys_defines => \[\]/openssl_sys_defines => ["OPENSSL_SYS_WIN32"]/;
++  $pm =~ s/openssl_feature_defines => \[\]/openssl_feature_defines => ["OPENSSL_NO_ASM"]/;
++  $pm =~ s/our %disabled = \(\);/our %disabled = (asm => "option");/;
++}
++open(my $fh, ">", "configdata.pm") or die "configdata.pm: $!";
++print $fh $pm;
++close($fh) or die "configdata.pm: $!";
++''',
++]
++
++# ---------------------------------------------------------------------------
++# Step 2: the 31 generated headers.
++#
++# `-i.in` is dofile.pl's edit-in-place flag: it strips the `.in` and writes the
++# result, so no shell redirection is needed and every output is a declared
++# path Harbour can check. All 31 are generated, not the handful this slice's
++# `.c` files happen to need, because these are openssl's *public API* -- a
++# shim whose header set depended on which sources it compiled would be a
++# worse artefact than one that always ships the full API.
++[[targets.crypto.prebuild]]
++program = "perl"
++args = [
++  "-I.", "-Mconfigdata", "util/dofile.pl", "-oHarbour", "-i.in",
++  "include/crypto/bn_conf.h.in",
++  "include/crypto/dso_conf.h.in",
++  "include/internal/param_names.h.in",
++  "include/openssl/asn1.h.in",
++  "include/openssl/asn1t.h.in",
++  "include/openssl/bio.h.in",
++  "include/openssl/cmp.h.in",
++  "include/openssl/cms.h.in",
++  "include/openssl/comp.h.in",
++  "include/openssl/conf.h.in",
++  "include/openssl/configuration.h.in",
++  "include/openssl/core_names.h.in",
++  "include/openssl/crmf.h.in",
++  "include/openssl/crypto.h.in",
++  "include/openssl/ct.h.in",
++  "include/openssl/err.h.in",
++  "include/openssl/ess.h.in",
++  "include/openssl/fipskey.h.in",
++  "include/openssl/lhash.h.in",
++  "include/openssl/ocsp.h.in",
++  "include/openssl/opensslv.h.in",
++  "include/openssl/pkcs12.h.in",
++  "include/openssl/pkcs7.h.in",
++  "include/openssl/safestack.h.in",
++  "include/openssl/srp.h.in",
++  "include/openssl/ssl.h.in",
++  "include/openssl/ui.h.in",
++  "include/openssl/x509.h.in",
++  "include/openssl/x509_acert.h.in",
++  "include/openssl/x509_vfy.h.in",
++  "include/openssl/x509v3.h.in",
++]
++outputs = [
++  "include/crypto/bn_conf.h",
++  "include/crypto/dso_conf.h",
++  "include/internal/param_names.h",
++  "include/openssl/asn1.h",
++  "include/openssl/asn1t.h",
++  "include/openssl/bio.h",
++  "include/openssl/cmp.h",
++  "include/openssl/cms.h",
++  "include/openssl/comp.h",
++  "include/openssl/conf.h",
++  "include/openssl/configuration.h",
++  "include/openssl/core_names.h",
++  "include/openssl/crmf.h",
++  "include/openssl/crypto.h",
++  "include/openssl/ct.h",
++  "include/openssl/err.h",
++  "include/openssl/ess.h",
++  "include/openssl/fipskey.h",
++  "include/openssl/lhash.h",
++  "include/openssl/ocsp.h",
++  "include/openssl/opensslv.h",
++  "include/openssl/pkcs12.h",
++  "include/openssl/pkcs7.h",
++  "include/openssl/safestack.h",
++  "include/openssl/srp.h",
++  "include/openssl/ssl.h",
++  "include/openssl/ui.h",
++  "include/openssl/x509.h",
++  "include/openssl/x509_acert.h",
++  "include/openssl/x509_vfy.h",
++  "include/openssl/x509v3.h",
++]
++
++# ---------------------------------------------------------------------------
++# aarch64: the assembly *adds* to the baseline.
++#
++# Keyed on `arch` alone, not on (os, arch): the same five files build on macOS
++# and on Linux, and only the perlasm *flavour* differs, which is why the
++# generators are in the two os+arch blocks below and the sources are here.
++# This is the layering `tools/harvest/README.md` describes, and the reason it
++# matters: a fourth aarch64 platform reuses this block rather than needing a
++# copy of it.
++#
++# `armcap.c` is not decoration. It defines `OPENSSL_armcap_P`, which
++# `sha256-armv8.S` reads to decide between the ARMv8 SHA-2 instructions and
++# its own NEON fallback, and it runs `arm64cpuid.S`'s probes to fill it in
++# (via a constructor). Note what that means for verification: with the
++# capability word left at zero the assembly still computes correct digests,
++# which is exactly the silent-degradation failure this canary is shaped to
++# catch. The consumer therefore asserts on symbols and the run script on
++# object files, not only on the digest.
++[[targets.crypto.when]]
++arch = "aarch64"
++sources = [
++  "crypto/sha/sha1-armv8.S",
++  "crypto/sha/sha256-armv8.S",
++  "crypto/sha/sha512-armv8.S",
++  "crypto/aes/aesv8-armx.S",
++  "crypto/arm64cpuid.S",
++  "crypto/armcap.c",
++]
++defines = ["SHA1_ASM", "SHA256_ASM", "SHA512_ASM", "OPENSSL_CPUID_OBJ"]
++
++# x86_64: the assembly *replaces* generic C, which is the harder shape.
++#
++# `aes-x86_64.s` implements `AES_encrypt`/`AES_decrypt` itself, so
++# `aes_core.c` must not also be compiled -- two definitions of the same
++# symbol. `exclude` removes it. openssl's own build.info does the same thing
++# by building a different `$AESASM` list per architecture; the difference is
++# that a `when` block cannot subtract from a list it cannot see, so the
++# baseline has to include `aes_core.c` and this block has to name it.
++#
++# This is also why the baseline is a *portable configure*, not an
++# intersection of the harvested platforms: `aes_core.c` appears in no
++# assembly-enabled platform's source list.
++# (The sources, `exclude` and defines of this assembly are in the two
++# `os` + `arch = "x86_64"` blocks below, next to the perlasm generators that
++# write them, and not in one `arch = "x86_64"` block: Windows is also x86_64,
++# and is the portable baseline, with no assembly.)
++
++# ---------------------------------------------------------------------------
++# Linux: mark the assembly as not needing an executable stack.
++#
++# DO NOT REMOVE THIS AS A SIMPLIFICATION. It is not a warning-silencer: it is
++# the difference between shipping a binary with a writable, executable stack
++# and not. Every other assertion in this canary -- 17 known-answer digests and
++# ciphertexts, the object names, the `nm` checks -- passed on the binary that
++# had one. The only witness was one line of linker output.
++#
++# Found by reading a real link, not by review. GNU ld said:
++#
++#   /usr/bin/ld: warning: sha512-x86_64.o: missing .note.GNU-stack section
++#                implies executable stack
++#
++# openssl 3.5.4 emits no `.note.GNU-stack` from perlasm and passes no
++# assembler flag for it -- `grep -rn noexecstack` over the whole tree finds
++# nothing -- so an ELF link of its assembly silently produces a binary with a
++# writable, executable stack. That is a security regression a green build
++# will not tell you about, which makes it exactly this canary's kind of bug.
++# `-Wa,--noexecstack` reaches the assembler through the compiler driver and
++# is accepted by gcc and clang alike; it is harmless on the C sources.
++#
++# Not keyed on arch, because it is a property of the ELF toolchain rather
++# than of any one assembly file. Not applied on macOS, where Mach-O has no
++# such note and clang warns about the unknown assembler argument.
++[[targets.crypto.when]]
++os = "linux"
++cflags = ["-Wa,--noexecstack"]
++
++# ---------------------------------------------------------------------------
++# The perlasm generators, one block per (os, arch).
++#
++# The only thing that differs per OS is the flavour argument, and it is not
++# cosmetic: it decides symbol decoration, section directives and whether
++# constants go in `.rodata` or `__TEXT,__const`. A macOS build handed `elf`
++# assembles to objects the Mach-O linker rejects.
++#
++# No `env` sets `CC`, and that is the interesting part. openssl's x86_64
++# perlasm scripts *run the assembler* to decide which instruction encodings it
++# accepts (`$avx`, `$addx`), reading `$ENV{CC}`. This is not a small effect and
++# it is silent: measured on 3.5.4,
++#
++#   perl crypto/sha/asm/sha512-x86_64.pl elf out.s     ->  49,912 bytes
++#   CC=cc perl crypto/sha/asm/sha512-x86_64.pl elf ... ->  97,936 bytes
++#
++# The short one is missing the AVX2 and SHA-extension code paths entirely. It
++# assembles, links, and computes correct digests -- slower.
++#
++# These blocks used to carry `env = { CC = "cc" }` -- a guess, and under
++# cross-compilation a wrong one: it would have had the generator probe the
++# *host* assembler for target code. Harbour now sets `CC` to the compiler it
++# resolved for the target being built, along with `HARBOUR_TARGET_*`, so the
++# guess is gone and the fact is inherited. `run.sh` asserts the generated
++# assembly still carries the AVX2 and SHA-extension paths, so if that
++# inheritance ever breaks, the canary fails rather than shipping a slower
++# library with correct digests.
++
++[[targets.crypto.when]]
++os = "macos"
++arch = "aarch64"
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/sha/asm/sha1-armv8.pl", "ios64", "crypto/sha/sha1-armv8.S"]
++outputs = ["crypto/sha/sha1-armv8.S"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/sha/asm/sha512-armv8.pl", "ios64", "crypto/sha/sha256-armv8.S"]
++outputs = ["crypto/sha/sha256-armv8.S"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/sha/asm/sha512-armv8.pl", "ios64", "crypto/sha/sha512-armv8.S"]
++outputs = ["crypto/sha/sha512-armv8.S"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/aes/asm/aesv8-armx.pl", "ios64", "crypto/aes/aesv8-armx.S"]
++outputs = ["crypto/aes/aesv8-armx.S"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/arm64cpuid.pl", "ios64", "crypto/arm64cpuid.S"]
++outputs = ["crypto/arm64cpuid.S"]
++
++[[targets.crypto.when]]
++os = "linux"
++arch = "aarch64"
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/sha/asm/sha1-armv8.pl", "linux64", "crypto/sha/sha1-armv8.S"]
++outputs = ["crypto/sha/sha1-armv8.S"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/sha/asm/sha512-armv8.pl", "linux64", "crypto/sha/sha256-armv8.S"]
++outputs = ["crypto/sha/sha256-armv8.S"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/sha/asm/sha512-armv8.pl", "linux64", "crypto/sha/sha512-armv8.S"]
++outputs = ["crypto/sha/sha512-armv8.S"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/aes/asm/aesv8-armx.pl", "linux64", "crypto/aes/aesv8-armx.S"]
++outputs = ["crypto/aes/aesv8-armx.S"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/arm64cpuid.pl", "linux64", "crypto/arm64cpuid.S"]
++outputs = ["crypto/arm64cpuid.S"]
++
++[[targets.crypto.when]]
++os = "macos"
++arch = "x86_64"
++sources = [
++  "crypto/sha/sha1-x86_64.s",
++  "crypto/sha/sha256-x86_64.s",
++  "crypto/sha/sha512-x86_64.s",
++  "crypto/aes/aes-x86_64.s",
++  "crypto/x86_64cpuid.s",
++  "crypto/cpuid.c",
++  "crypto/ctype.c",
++]
++exclude = ["crypto/aes/aes_core.c"]
++defines = ["SHA1_ASM", "SHA256_ASM", "SHA512_ASM", "AES_ASM", "OPENSSL_CPUID_OBJ"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/sha/asm/sha1-x86_64.pl", "macosx", "crypto/sha/sha1-x86_64.s"]
++outputs = ["crypto/sha/sha1-x86_64.s"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/sha/asm/sha512-x86_64.pl", "macosx", "crypto/sha/sha256-x86_64.s"]
++outputs = ["crypto/sha/sha256-x86_64.s"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/sha/asm/sha512-x86_64.pl", "macosx", "crypto/sha/sha512-x86_64.s"]
++outputs = ["crypto/sha/sha512-x86_64.s"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/aes/asm/aes-x86_64.pl", "macosx", "crypto/aes/aes-x86_64.s"]
++outputs = ["crypto/aes/aes-x86_64.s"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/x86_64cpuid.pl", "macosx", "crypto/x86_64cpuid.s"]
++outputs = ["crypto/x86_64cpuid.s"]
++
++[[targets.crypto.when]]
++os = "linux"
++arch = "x86_64"
++sources = [
++  "crypto/sha/sha1-x86_64.s",
++  "crypto/sha/sha256-x86_64.s",
++  "crypto/sha/sha512-x86_64.s",
++  "crypto/aes/aes-x86_64.s",
++  "crypto/x86_64cpuid.s",
++  "crypto/cpuid.c",
++  "crypto/ctype.c",
++]
++exclude = ["crypto/aes/aes_core.c"]
++defines = ["SHA1_ASM", "SHA256_ASM", "SHA512_ASM", "AES_ASM", "OPENSSL_CPUID_OBJ"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/sha/asm/sha1-x86_64.pl", "elf", "crypto/sha/sha1-x86_64.s"]
++outputs = ["crypto/sha/sha1-x86_64.s"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/sha/asm/sha512-x86_64.pl", "elf", "crypto/sha/sha256-x86_64.s"]
++outputs = ["crypto/sha/sha256-x86_64.s"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/sha/asm/sha512-x86_64.pl", "elf", "crypto/sha/sha512-x86_64.s"]
++outputs = ["crypto/sha/sha512-x86_64.s"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/aes/asm/aes-x86_64.pl", "elf", "crypto/aes/aes-x86_64.s"]
++outputs = ["crypto/aes/aes-x86_64.s"]
++[[targets.crypto.when.prebuild]]
++program = "perl"
++args = ["crypto/x86_64cpuid.pl", "elf", "crypto/x86_64cpuid.s"]
++outputs = ["crypto/x86_64cpuid.s"]
++
++# Windows: `Configure VC-WIN64A no-asm`. No sources are added (the baseline is the
++# build) and no generators run besides the two above. The defines are `VC-common`'s
++# `defines` and `lib_defines` (see the comment at the top).
++[[targets.crypto.when]]
++os = "windows"
++defines = [
++  "OPENSSL_SYS_WIN32", "WIN32_LEAN_AND_MEAN", "UNICODE", "_UNICODE",
++  "_CRT_SECURE_NO_DEPRECATE", "_WINSOCK_DEPRECATED_NO_WARNINGS", "L_ENDIAN",
++]
++
++# ---------------------------------------------------------------------------
++# There is deliberately no 32-bit `when` block.
++#
++# There used to be three -- `arch = "arm"`, `arch = "armv7"` and
++# `arch = "i686"` -- each rewriting `configdata.pm` and regenerating
++# `bn_conf.h` with `b32`, because `configdata.pm` hardcoded `b64l = 1` and a
++# generator could not read a probe answer. That list was the enumeration trap
++# `tools/harvest/README.md` names: right for the three architectures someone
++# thought of, silently wrong for `armv7r`, `thumbv7`, `mips` and `powerpc`,
++# and a wrong `SIXTY_FOUR_BIT_LONG` is a miscompiled bignum layout with no
++# witness anywhere in the build.
++#
++# It was also machine-specific in a way nothing warned about: `arch` is the
++# literal first component of the triple, so Debian's one armhf cross compiler
++# is `arch = "arm"` through `arm-unknown-linux-gnueabihf` and
++# `arch = "armv7"` through `armv7-unknown-linux-gnueabihf`.
++#
++# The probe replaces all of it with one measurement of the actual target.
+diff --git a/util/dofile.pl b/util/dofile.pl
+new file mode 100644
+index 0000000..9afecd0
+--- /dev/null
++++ b/util/dofile.pl
+@@ -0,0 +1,40 @@
++#!/usr/bin/perl
++use strict;
++use warnings;
++use Text::Template;
++
++# Skip any -I. or -Mconfigdata arguments that may be passed
++while (@ARGV && ($ARGV[0] eq '-I.' || $ARGV[0] eq '-Mconfigdata')) {
++    shift @ARGV;
++}
++
++# Skip the output directory flag (e.g., -oHarbour)
++if (@ARGV && $ARGV[0] =~ /^-o/) {
++    shift @ARGV;
++}
++
++# Skip the -i.in flag
++if (@ARGV && $ARGV[0] eq '-i.in') {
++    shift @ARGV;
++}
++
++# Remaining arguments are the list of .in files to process
++my @files = @ARGV;
++
++foreach my $file (@files) {
++    open my $fh, '<', $file or die "Cannot open $file: $!";
++    local $/;
++    my $content = <$fh>;
++    close $fh;
++
++    # Create a Text::Template object for the file content
++    my $template = Text::Template->new($content, 'FILE');
++    my $output = $template->fill_in();
++
++    # Write the processed content to the same path without the .in suffix
++    my $out_file = $file;
++    $out_file =~ s/\.in$//;
++    open my $outfh, '>', $out_file or die "Cannot write $out_file: $!";
++    print $outfh $output;
++    close $outfh;
++}

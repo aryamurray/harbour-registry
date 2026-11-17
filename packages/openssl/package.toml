@@ -11,6 +11,11 @@ url = "https://github.com/openssl/openssl/releases/download/{tag}/openssl-{versi
 strip_prefix = "openssl-{version}"
 
 [[release]]
+version = "3.6.5"
+sha256 = "a2157c2830efdec3788939b00c9b0638306d3f0bbb76dc4832ee503bb397df98"
+license_sha256 = "9959b21fe1824c71cb523273330276f54c6a86a5da244657febf5d0e425e4eb0"
+
+[[release]]
 version = "3.5.4"
 sha256 = "967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99"
 license_sha256 = "9959b21fe1824c71cb523273330276f54c6a86a5da244657febf5d0e425e4eb0"
