@@ -1,0 +1,15 @@
+[package]
+name = "cpython"
+version = "3.15.2"
+
+[source.tarball]
+url = "https://www.python.org/ftp/python/3.15.2/Python-3.15.2.tgz"
+sha256 = "f74e1db0eabd651cd01e4e2a00201bd41866abe74869ab716f9bf33cbbaa0943"
+strip_prefix = "Python-3.15.2"
+
+[metadata]
+license = "PSF-2.0"
+
+[[patches]]
+file = "3.15.2.patch"
+sha256 = "661bba0389deb4187ed0ba5fbc5950e46e147f26b31962a68ddb21ea09974922"

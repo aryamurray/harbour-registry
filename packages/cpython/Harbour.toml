@@ -41,7 +41,7 @@
 
 [package]
 name = "cpython"
-version = "3.14.9"
+version = "3.15.2"
 license = "PSF-2.0"
 
 [dependencies]
@@ -1089,7 +1089,6 @@ outputs = [
     "Python/frozen_modules/_sitebuiltins.h",
     "Python/frozen_modules/abc.h",
     "Python/frozen_modules/codecs.h",
-    "Python/frozen_modules/frozen_only.h",
     "Python/frozen_modules/genericpath.h",
     "Python/frozen_modules/importlib.machinery.h",
     "Python/frozen_modules/importlib.util.h",
