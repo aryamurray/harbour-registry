@@ -8,7 +8,7 @@ What it checks (each is a rule a bot-authored change must not be able to slip pa
 
   package.toml    schema (unknown keys are errors), SPDX license (allowlist + expression
                   grammar), https-only URLs without credentials, semver versions, 64-hex
-                  sha256 / 40-hex rev, `license_sha256` on the newest release (format only;
+                  sha256 / 40-hex rev / per-platform archive sha256s, `license_sha256` on the newest release (format only;
                   the PR workflow re-derives it), `upstream_version` consistent with `version`,
                   `[test]` present and coherent with the manifest's `supports`.
   Harbour.toml    parses; name, version and license agree with package.toml; the
@@ -17,6 +17,11 @@ What it checks (each is a rule a bot-authored change must not be able to slip pa
                   overlay files or patches that add scripts: allowed only when
                   package.toml says `[review] generators = true`, so a human sees the
                   flag flip in review (CODEOWNERS can route it).
+  prebuilt        a package whose library is upstream's BINARY (a release with `archives`, a
+                  `kind = "prebuilt"` target) is the exception to "built from source": allowed
+                  only when package.toml says `[review] prebuilt = "<reason>"`. Such a release
+                  has one https archive with a sha256 per platform, no platform twice, one for
+                  every platform in `[test] platforms`, and none of a source release's fields.
   files           overlay/ and patches/ are LF text, safe paths, no secrets anywhere in
                   the package (including test/), nothing unexpected in the directory.
   test            test/ exists with a consumer (Harbour.toml + sources) or a run.sh, and
@@ -215,6 +220,7 @@ class Linter:
         for key in ("git", "url"):
             if key in up:
                 self.https(name, f"[upstream] {key}", up[key], ptoml)
+        self.lint_upstream_archives(pkg)
         for key in ("git", "tag", "url", "strip_prefix"):
             if key in up and not isinstance(up[key], str):
                 self.err(name, f"[upstream] {key} must be a string", ptoml)
@@ -231,8 +237,11 @@ class Linter:
         # Releases.
         for r in pkg.releases:
             where = f"release {r.version}"
-            if (r.sha256 is None) == (r.rev is None):
-                self.err(name, f"{where}: set exactly one of `sha256` (tarball) or `rev` (git commit)", ptoml)
+            if sum(x is not None for x in (r.sha256, r.rev, r.archives)) != 1:
+                self.err(name, f"{where}: set exactly one of `sha256` (tarball), `rev` (git commit) or `archives` "
+                               "(prebuilt binaries: one sha256 per platform)", ptoml)
+            if r.archives is not None:
+                self.lint_release_archives(pkg, r)
             if r.sha256 is not None and not SHA256_RE.match(r.sha256):
                 self.err(name, f"{where}: sha256 must be 64 lowercase hex digits", ptoml)
             if r.rev is not None and not REV_RE.match(r.rev):
@@ -260,7 +269,12 @@ class Linter:
                 self.https(name, f"release {r.version} url", r.url, ptoml)
             try:
                 src = rt.release_source(pkg, r)
-                self.https(name, f"release {r.version}: source url", src.url, ptoml)
+                for a in src.archives:
+                    self.https(name, f"release {r.version}: {a.key} archive url", a.url, ptoml)
+                    if a.strip_prefix and (a.strip_prefix.startswith("/") or ".." in a.strip_prefix.split("/")):
+                        self.err(name, f"{where}: {a.key} strip_prefix must be a plain relative directory", ptoml)
+                if src.kind != "archives":
+                    self.https(name, f"release {r.version}: source url", src.url, ptoml)
                 if src.strip_prefix and (src.strip_prefix.startswith("/") or ".." in src.strip_prefix.split("/")):
                     self.err(name, f"{where}: strip_prefix must be a plain relative directory", ptoml)
             except RegistryError as e:
@@ -273,6 +287,99 @@ class Linter:
         self.lint_test_table(pkg)
         self.lint_files(pkg)
         self.lint_test_dir(pkg)
+
+    # -- prebuilt releases: one archive per platform ---------------------
+    def lint_upstream_archives(self, pkg: rt.Package) -> None:
+        """`[[upstream.archive]]`: where each platform's binary comes from (URL and prefix templates)."""
+        name, ptoml = pkg.name, f"packages/{pkg.name}/package.toml"
+        up = pkg.upstream
+        if "archive" not in up:
+            return
+        try:
+            entries = rt.upstream_archives(pkg)
+        except RegistryError as e:
+            self.err(name, str(e), ptoml)
+            return
+        if not entries:
+            self.err(name, "[upstream] archive is empty: list one [[upstream.archive]] per platform, or remove it", ptoml)
+        for key in ("url", "strip_prefix"):
+            if key in up:
+                self.err(name, f"[upstream] {key} is a source tarball's; a prebuilt package states `url` and "
+                               "`strip_prefix` per platform in [[upstream.archive]]", ptoml)
+        seen: set[str] = set()
+        for a in entries:
+            key = f"{a['os']}-{a['arch']}"
+            if a["os"] not in rt.PLATFORMS or a["arch"] not in rt.ARCHES:
+                self.err(name, f"[[upstream.archive]] {key}: os is one of {list(rt.PLATFORMS)} and arch one of "
+                               f"{list(rt.ARCHES)}", ptoml)
+            if key in seen:
+                self.err(name, f"two [[upstream.archive]] entries for {key}: exactly one archive may match a platform", ptoml)
+            seen.add(key)
+            for t in (a["url"], a.get("strip_prefix")):
+                if isinstance(t, str):
+                    self.template(name, t, ptoml)
+            self.https(name, f"[[upstream.archive]] {key} url", a["url"], ptoml)
+            if not rt.placeholders(a["url"]) & {"version", "major", "minor", "patch", "tag"}:
+                self.err(name, f"[[upstream.archive]] {key}: url names no version ({{version}}, {{tag}}...), so every "
+                               "release would pin the same file", ptoml)
+        for r in pkg.releases:
+            if r.archives is None:
+                self.err(name, f"release {r.version}: this package has [[upstream.archive]] (prebuilt binaries), so "
+                               "every release pins `archives`, not `sha256` or `rev`", ptoml)
+
+    def lint_release_archives(self, pkg: rt.Package, r: rt.Release) -> None:
+        name, ptoml, where = pkg.name, f"packages/{pkg.name}/package.toml", f"release {r.version}"
+        for field_ in ("url", "strip_prefix"):
+            if getattr(r, field_) is not None:
+                self.err(name, f"{where}: `{field_}` belongs to a source release; a prebuilt release takes its URLs "
+                               "from [[upstream.archive]]", ptoml)
+        if not isinstance(r.archives, dict) or not r.archives:
+            self.err(name, f"{where}: `archives` must be a non-empty table of \"<os>-<arch>\" = \"<sha256>\"", ptoml)
+            return
+        for key, digest in r.archives.items():
+            if not isinstance(digest, str) or not SHA256_RE.match(digest):
+                self.err(name, f"{where}: archives.{key} must be a sha256 (64 lowercase hex digits)", ptoml)
+        try:
+            archives = rt.release_archives(pkg, r)
+        except RegistryError:
+            return      # reported once, by the release_source() call in lint()
+        urls: dict[str, str] = {}
+        for a in archives:
+            if a.url in urls:
+                self.err(name, f"{where}: {a.key} and {urls[a.url]} pin the same URL ({a.url})", ptoml)
+            urls[a.url] = a.key
+        if r is pkg.newest:
+            have = {a.key for a in archives}
+            for plat in pkg.platforms():
+                want = f"{plat}-{rt.CI_ARCH.get(plat)}"
+                if plat in rt.CI_ARCH and want not in have:
+                    self.err(name, f"{where}: [test] platforms lists `{plat}` but the release has no archive for "
+                                   f"{want} (CI tests {plat} on {rt.CI_ARCH[plat]}). A prebuilt package can claim only "
+                                   f"the platforms upstream publishes a binary for (have: {', '.join(sorted(have))})", ptoml)
+
+    def lint_prebuilt(self, pkg: rt.Package, manifest: dict, mfile: str) -> None:
+        """The trust gate. The registry's rule is that a package is built from upstream's SOURCE by a
+        manifest we wrote; a prebuilt package instead trusts upstream's binary, pinned by sha256. That
+        is a deliberate exception, so a human must have written down why: `[review] prebuilt`."""
+        name, ptoml = pkg.name, f"packages/{pkg.name}/package.toml"
+        reason = pkg.review.get("prebuilt")
+        archives = any(r.archives is not None for r in pkg.releases)
+        binary_target = rt.has_prebuilt_target(manifest)
+        if "prebuilt" in pkg.review and not (isinstance(reason, str) and reason.strip() and "\n" not in reason):
+            self.err(name, "[review] prebuilt must be a one-line string saying why this package ships upstream's "
+                           "binaries instead of being built from source", ptoml)
+        if (archives or binary_target) and not reason:
+            what = "pins prebuilt archives" if archives else "has a `prebuilt` target"
+            self.err(name, f"this package {what}: it links upstream's binary instead of compiling upstream's source. "
+                           "That is an exception to the registry's built-from-source rule and needs "
+                           "`[review] prebuilt = \"<reason>\"` in package.toml, which a human must approve",
+                     ptoml if archives else mfile)
+        if reason and not (archives or binary_target):
+            self.err(name, "[review] prebuilt is set, but no release pins `archives` and no target is prebuilt: "
+                           "remove the flag (it must only mark a real exception)", ptoml)
+        if archives and not rt.is_prebuilt(manifest):
+            self.err(name, "the releases pin prebuilt archives, so nothing may be compiled for the package: every "
+                           "target in Harbour.toml must be `kind = \"prebuilt\"` (or `header-only`), at least one prebuilt", mfile)
 
     def template(self, name: str, template: str, file: str) -> None:
         unknown = rt.placeholders(template) - rt.KNOWN_PLACEHOLDERS
@@ -314,6 +421,7 @@ class Linter:
                            "`[review] generators = true` in package.toml, which a human must approve", mfile)
         if flagged and not isinstance(pkg.review.get("generators"), bool):
             self.err(name, "[review] generators must be true or false", f"packages/{name}/package.toml")
+        self.lint_prebuilt(pkg, manifest, mfile)
 
         # Registry packages depend on registry packages by version only.
         for dep, spec in (manifest.get("dependencies") or {}).items():
@@ -344,9 +452,10 @@ class Linter:
             self.err(name, "[test] platforms lists a platform twice", ptoml)
         objects = test.get("objects")
         try:
-            header_only = rt.is_header_only(rt.read_toml(pkg.dir / "Harbour.toml"))
+            manifest = rt.read_toml(pkg.dir / "Harbour.toml")
+            header_only, prebuilt = rt.is_header_only(manifest), rt.is_prebuilt(manifest)
         except (RegistryError, OSError):
-            header_only = False  # lint_manifest reports an unreadable Harbour.toml
+            header_only = prebuilt = False  # lint_manifest reports an unreadable Harbour.toml
         valid_keys = {"default"} | set(rt.PLATFORMS) | {f"{o}-{a}" for o in rt.PLATFORMS for a in ("x86_64", "aarch64")}
         if isinstance(objects, bool) or objects is None:
             self.err(name, "[test] objects is required: an integer, or a table of integers keyed by "
@@ -357,10 +466,16 @@ class Linter:
             if objects != 0 or isinstance(objects, bool):
                 self.err(name, "every target in Harbour.toml is `header-only`, which compiles nothing: "
                                "[test] objects must be 0", ptoml)
+        elif prebuilt:
+            # Nothing is compiled for a prebuilt package either: its library is downloaded. The count is
+            # exactly 0, and tools/test.py checks that no object was built for it.
+            if objects != 0 or isinstance(objects, bool):
+                self.err(name, "every target in Harbour.toml is `prebuilt` (or header-only), which compiles nothing: "
+                               "[test] objects must be 0", ptoml)
         elif isinstance(objects, int):
             if objects < 1:
                 self.err(name, "[test] objects must be at least 1 (0 is only for a package whose targets are all "
-                               "`kind = \"header-only\"`)", ptoml)
+                               "`kind = \"header-only\"` or `\"prebuilt\"`)", ptoml)
         elif isinstance(objects, dict):
             for k, v in objects.items():
                 if k not in valid_keys or isinstance(v, bool) or not isinstance(v, int) or v < 1:

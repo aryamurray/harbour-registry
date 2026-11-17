@@ -29,6 +29,8 @@ strip_prefix = "example-{version}"     # the tarball's single top-level director
 version = "1.0.0"                      # semver. Must equal [package] version in Harbour.toml for the newest release
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"   # of the tarball, 64 hex digits
 # rev = "<40-digit commit>"            # instead of sha256: pin a git commit (needs [upstream] git)
+# (A PREBUILT package has neither: it has `[[upstream.archive]]` entries and a `[release.archives]` table of one
+# sha256 per platform, and needs `[review] prebuilt`. See README "Prebuilt packages"; packages/libtorch is one.)
 # Digest of upstream's top-level license files (LICENSE*, COPYING*, ...) at this release. Do not write it by
 # hand: `python3 tools/watch.py license-digest <name> --write` computes it from the pinned source and adds
 # the line. Required on the newest release; a bump whose digest differs from it is handed to a human.
@@ -49,3 +51,5 @@ objects = 1                            # EXACT translation units the library com
 # generators = true                    # REQUIRED if Harbour.toml runs code during the build (prebuild, host
 #                                      # targets, recipe) or overlay/ holds scripts. A human must approve it;
 #                                      # a bot's PR may never change this table.
+# prebuilt = "why it cannot be built"  # REQUIRED if the package links upstream's binary instead of building
+#                                      # upstream's source (README "Prebuilt packages"). The reviewed exception.

@@ -2047,6 +2047,574 @@ class Republish(unittest.TestCase):
         self.assertEqual(render.newly_republished(pkg, b"not toml ["), {"1.0.0"})
 
 
+# ---------------------------------------------------------------------------
+# Prebuilt packages: a release that is one upstream binary archive per platform
+# ---------------------------------------------------------------------------
+
+H1, H2, H3 = "11" * 32, "22" * 32, "33" * 32
+
+PREBUILT_TOML = f"""[package]
+name = "binlib"
+description = "d"
+license = "MIT"
+
+[upstream]
+git = "https://x.invalid/binlib"
+tag = "v{{version}}"
+watch = false
+
+[[upstream.archive]]
+os = "linux"
+arch = "x86_64"
+url = "https://dl.x.invalid/binlib-{{version}}%2Bcpu-linux.zip"
+strip_prefix = "binlib"
+
+[[upstream.archive]]
+os = "macos"
+arch = "aarch64"
+url = "https://dl.x.invalid/{{tag}}/binlib-macos-arm64.tar.xz"
+
+[[upstream.archive]]
+os = "windows"
+arch = "x86_64"
+url = "https://dl.x.invalid/binlib-{{version}}-win.zip"
+strip_prefix = "binlib-{{version}}"
+
+[[release]]
+version = "1.2.0"
+license_sha256 = "{LIC_A}"
+[release.archives]
+linux-x86_64 = "{H1}"
+macos-aarch64 = "{H2}"
+windows-x86_64 = "{H3}"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 0
+
+[review]
+prebuilt = "cannot be built from source in a manifest"
+"""
+
+PREBUILT_MANIFEST = """[package]
+name = "binlib"
+version = "1.2.0"
+license = "MIT"
+
+[targets.bin]
+kind = "prebuilt"
+
+[targets.bin.public]
+include_dirs = ["include"]
+
+[[targets.bin.when]]
+os = "linux"
+prebuilt_libs = ["lib/libbin.so"]
+
+[[targets.bin.when]]
+os = "macos"
+prebuilt_libs = ["lib/libbin.dylib"]
+
+[[targets.bin.when]]
+os = "windows"
+prebuilt_libs = ["lib/bin.lib"]
+runtime_libs = ["lib/bin.dll"]
+"""
+
+
+def make_prebuilt(root: Path, toml_text: str = PREBUILT_TOML, manifest: str = PREBUILT_MANIFEST) -> rt.Package:
+    d = root / "packages" / "binlib"
+    (d / "test" / "src").mkdir(parents=True, exist_ok=True)
+    (d / "package.toml").write_text(toml_text)
+    (d / "Harbour.toml").write_text(manifest)
+    (d / "test" / "Harbour.toml").write_text('[package]\nname = "t"\nversion = "0.1.0"\n[dependencies]\nbinlib = "*"\n'
+                                             '[targets.t]\nkind = "exe"\nsources = ["src/main.c"]\n')
+    (d / "test" / "src" / "main.c").write_text("int main(void){return 0;}\n")
+    return rt.load_package("binlib", root=root / "packages")
+
+
+class PrebuiltRendering(unittest.TestCase):
+    """regtools: package.toml `[[upstream.archive]]` + `[release.archives]` -> `[[source.archive]]` shim."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.pkg = make_prebuilt(self.root)
+
+    def test_archives_are_expanded_in_upstream_order(self):
+        src = rt.release_source(self.pkg, self.pkg.newest)
+        self.assertEqual(src.kind, "archives")
+        self.assertEqual([(a.key, a.url, a.sha256, a.strip_prefix) for a in src.archives], [
+            ("linux-x86_64", "https://dl.x.invalid/binlib-1.2.0%2Bcpu-linux.zip", H1, "binlib"),
+            ("macos-aarch64", "https://dl.x.invalid/v1.2.0/binlib-macos-arm64.tar.xz", H2, None),
+            ("windows-x86_64", "https://dl.x.invalid/binlib-1.2.0-win.zip", H3, "binlib-1.2.0"),
+        ])
+
+    def test_the_shim_is_what_harbour_reads(self):
+        r = rt.render_release(self.pkg, self.pkg.newest)
+        text = r.files["b/binlib/1.2.0.toml"].decode()
+        patch_sha = hashlib.sha256(r.files["b/binlib/1.2.0.patch"]).hexdigest()
+        self.assertEqual(text, f"""[package]
+name = "binlib"
+version = "1.2.0"
+
+[[source.archive]]
+os = "linux"
+arch = "x86_64"
+url = "https://dl.x.invalid/binlib-1.2.0%2Bcpu-linux.zip"
+sha256 = "{H1}"
+strip_prefix = "binlib"
+
+[[source.archive]]
+os = "macos"
+arch = "aarch64"
+url = "https://dl.x.invalid/v1.2.0/binlib-macos-arm64.tar.xz"
+sha256 = "{H2}"
+
+[[source.archive]]
+os = "windows"
+arch = "x86_64"
+url = "https://dl.x.invalid/binlib-1.2.0-win.zip"
+sha256 = "{H3}"
+strip_prefix = "binlib-1.2.0"
+
+[metadata]
+license = "MIT"
+
+[[patches]]
+file = "1.2.0.patch"
+sha256 = "{patch_sha}"
+""")
+        shim = rt.parse_shim(text)
+        self.assertNotIn("tarball", shim["source"])
+        self.assertNotIn("git", shim["source"])
+        # The patch adds the manifest, as for any other package.
+        self.assertIn(b"+++ b/Harbour.toml", r.files["b/binlib/1.2.0.patch"])
+
+    def test_the_checksum_is_harbours_archives_checksum(self):
+        # Written out by hand from Harbour's Shim::archives_checksum (src/sources/registry/shim.rs):
+        # one line per archive `os=|arch=|env=|archive:<url>:<sha256>:<strip_prefix>:<format>`, then
+        # one `patch|<file>|<sha256>` per patch; the sha256 of that text, prefixed.
+        shim = {"source": {"archive": [
+            {"os": "linux", "arch": "x86_64", "url": "https://e.invalid/a.zip", "sha256": H1, "strip_prefix": "p"},
+            {"os": "macos", "url": "https://e.invalid/b", "sha256": H2, "format": "tar.xz", "env": "gnu"}]},
+            "patches": [{"file": "1.0.0.patch", "sha256": H3}]}
+        text = (f"os=linux|arch=x86_64|env=|archive:https://e.invalid/a.zip:{H1}:p:\n"
+                f"os=macos|arch=|env=gnu|archive:https://e.invalid/b:{H2}::tar.xz\n"
+                f"patch|1.0.0.patch|{H3}\n")
+        want = "archives-sha256:" + hashlib.sha256(text.encode()).hexdigest()
+        self.assertEqual(rt.archives_checksum(shim), want)
+        self.assertEqual(rt.shim_checksum(shim), want)
+        # A change to any platform's hash, or to the patch, changes the one checksum.
+        other = json.loads(json.dumps(shim))
+        other["source"]["archive"][1]["sha256"] = H3
+        self.assertNotEqual(rt.archives_checksum(other), want)
+
+    def test_the_idx_record_is_format_version_2_and_only_for_prebuilt(self):
+        r = rt.render_release(self.pkg, self.pkg.newest)
+        shim = rt.parse_shim(r.files[r.shim_rel].decode())
+        rec = json.loads(rt.render_idx(self.pkg, {"1.2.0": shim}, [], []))
+        self.assertEqual(rec["format_version"], 2)
+        self.assertEqual(rec["checksum"], rt.archives_checksum(shim))
+        self.assertEqual(list(rec), ["format_version", "name", "version", "yanked", "deps", "checksum", "license", "shim"])
+        zlib = rt.load_package("zlib")
+        zshim = rt.parse_shim(rt.render_release(zlib, zlib.newest).files[f"z/zlib/{zlib.newest.version}.toml"].decode())
+        self.assertEqual(json.loads(rt.render_idx(zlib, {zlib.newest.version: zshim}, [], []))["format_version"], 1)
+
+    def test_every_existing_idx_line_is_reproduced(self):
+        # Records of source packages are unchanged: still format_version 1, byte for byte.
+        for name in rt.package_names():
+            pkg = rt.load_package(name)
+            if any(r.archives is not None for r in pkg.releases):
+                continue
+            for line in rt.idx_path(name).read_text().splitlines():
+                self.assertEqual(rt.serialize_record(json.loads(line)), line, name)
+                self.assertEqual(json.loads(line)["format_version"], 1, name)
+
+    def test_a_typo_in_a_platform_key_is_an_error(self):
+        for bad, needle in ((PREBUILT_TOML.replace("macos-aarch64 =", "macos-arm64 ="), "macos-arm64"),
+                            (PREBUILT_TOML.replace(f'linux-x86_64 = "{H1}"', f'linux-x86_64 = "{H1}"\nsha256 = "{H1}"', 1)
+                             .replace("[release.archives]\n", "", 1)
+                             .replace(f'license_sha256 = "{LIC_A}"', f'license_sha256 = "{LIC_A}"\narchives = {{ linux-x86_64 = "{H1}" }}'),
+                             "cannot also set")):
+            with self.subTest(needle):
+                pkg = make_prebuilt(self.root, bad)
+                with self.assertRaises(rt.RegistryError) as cm:
+                    rt.release_source(pkg, pkg.newest)
+                self.assertIn(needle, str(cm.exception))
+
+    def test_kinds(self):
+        manifest = rt.tomllib.loads(PREBUILT_MANIFEST)
+        self.assertTrue(rt.is_prebuilt(manifest))
+        self.assertTrue(rt.has_prebuilt_target(manifest))
+        self.assertFalse(rt.is_header_only(manifest))
+        mixed = {"targets": {"a": {"kind": "prebuilt"}, "b": {"kind": "staticlib"}}}
+        self.assertFalse(rt.is_prebuilt(mixed))          # it compiles something: objects are counted
+        self.assertTrue(rt.has_prebuilt_target(mixed))   # ... and it still needs the review flag
+        self.assertTrue(rt.is_prebuilt({"targets": {"a": {"kind": "prebuilt"}, "h": {"kind": "header-only"}}}))
+        self.assertFalse(rt.is_prebuilt({"targets": {"h": {"kind": "header-only"}}}))
+        self.assertFalse(rt.has_prebuilt_target({"targets": {"a": {"kind": "staticlib"}}}))
+        self.assertTrue(rt.has_prebuilt_target({"targets": {"a": {"kind": "staticlib", "when": [{"runtime_libs": ["x.dll"]}]}}}))
+
+
+class PrebuiltLint(unittest.TestCase):
+    """lint: the trust gate and the shape of a prebuilt release."""
+
+    def lint(self, toml_text=PREBUILT_TOML, manifest=PREBUILT_MANIFEST):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_prebuilt(root, toml_text, manifest)
+            old, rt.PACKAGES = rt.PACKAGES, root / "packages"
+            try:
+                linter = lint.Linter()
+                linter.lint("binlib")
+                return [m for _, m in linter.errors]
+            finally:
+                rt.PACKAGES = old
+
+    def assertRefused(self, needle, **kw):
+        errors = self.lint(**kw)
+        self.assertTrue(any(needle in m for m in errors), f"no error containing {needle!r} in {errors}")
+
+    def test_a_well_formed_prebuilt_package_passes(self):
+        self.assertEqual(self.lint(), [])
+
+    def test_the_review_flag_is_required(self):
+        without = PREBUILT_TOML[:PREBUILT_TOML.index("[review]")]
+        self.assertRefused("[review] prebuilt", toml_text=without)
+        self.assertRefused("one-line string", toml_text=without + "[review]\nprebuilt = true\n")
+        self.assertRefused("one-line string", toml_text=without + '[review]\nprebuilt = ""\n')
+
+    def test_a_binary_target_in_a_source_package_needs_the_flag_too(self):
+        def zlib_errors(edit_manifest, extra_toml=""):
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                shutil.copytree(REPO / "packages/zlib", root / "packages/zlib")
+                m = root / "packages/zlib/Harbour.toml"
+                m.write_text(edit_manifest(m.read_text()))
+                p = root / "packages/zlib/package.toml"
+                p.write_text(p.read_text() + extra_toml)
+                old, rt.PACKAGES = rt.PACKAGES, root / "packages"
+                try:
+                    linter = lint.Linter()
+                    linter.lint("zlib")
+                    return [m for _, m in linter.errors]
+                finally:
+                    rt.PACKAGES = old
+
+        blob = '\n[targets.blob]\nkind = "prebuilt"\nprebuilt_libs = ["vendor/libblob.a"]\n'
+        self.assertTrue(any("[review] prebuilt" in m for m in zlib_errors(lambda s: s + blob)))
+        self.assertEqual(zlib_errors(lambda s: s + blob, '\n[review]\nprebuilt = "a reason"\n'), [])
+        # The flag only marks a real exception: set on a package with nothing prebuilt, it is an error.
+        self.assertTrue(any("remove the flag" in m for m in zlib_errors(lambda s: s, '\n[review]\nprebuilt = "a reason"\n')))
+        self.assertEqual(zlib_errors(lambda s: s), [])
+
+    def test_every_claimed_platform_needs_its_archive(self):
+        no_win = PREBUILT_TOML.replace(f'windows-x86_64 = "{H3}"\n', "")
+        self.assertRefused("no archive for windows-x86_64", toml_text=no_win)
+        # ... and it is fine once the platform is not claimed (an unclaimed archive may stay listed).
+        self.assertEqual(self.lint(toml_text=no_win.replace('"linux", "macos", "windows"', '"linux", "macos"')), [])
+        self.assertEqual(self.lint(toml_text=PREBUILT_TOML.replace('"linux", "macos", "windows"', '"linux"')), [])
+        # The archive must be for the architecture CI tests that platform on.
+        arm = PREBUILT_TOML.replace('os = "linux"\narch = "x86_64"', 'os = "linux"\narch = "aarch64"').replace(
+            "linux-x86_64 =", "linux-aarch64 =")
+        self.assertRefused("no archive for linux-x86_64", toml_text=arm)
+
+    def test_archive_entries_are_checked(self):
+        dup = PREBUILT_TOML.replace('os = "macos"\narch = "aarch64"', 'os = "linux"\narch = "x86_64"')
+        self.assertRefused("two [[upstream.archive]] entries for linux-x86_64", toml_text=dup)
+        self.assertRefused("https://", toml_text=PREBUILT_TOML.replace("https://dl.x.invalid/binlib-{version}-win", "http://dl.x.invalid/binlib-{version}-win"))
+        self.assertRefused("archives.linux-x86_64 must be a sha256", toml_text=PREBUILT_TOML.replace(H1, "abc"))
+        self.assertRefused("archives.linux-x86_64 must be a sha256", toml_text=PREBUILT_TOML.replace(H1, H1.upper().replace("1", "A")))
+        self.assertRefused("unknown key(s) in [[upstream.archive]]", toml_text=PREBUILT_TOML.replace('strip_prefix = "binlib"', 'strip_prefx = "binlib"'))
+        self.assertRefused("os is one of", toml_text=PREBUILT_TOML.replace('os = "macos"\narch = "aarch64"', 'os = "macos"\narch = "arm64"').replace("macos-aarch64", "macos-arm64"))
+        self.assertRefused("plain relative directory", toml_text=PREBUILT_TOML.replace('strip_prefix = "binlib"', 'strip_prefix = "../x"'))
+        self.assertRefused("names no version", toml_text=PREBUILT_TOML.replace("binlib-{version}-win.zip", "binlib-win.zip"))
+        self.assertRefused("unknown placeholder", toml_text=PREBUILT_TOML.replace("binlib-{version}-win.zip", "binlib-{verison}-win.zip"))
+        same = PREBUILT_TOML.replace("https://dl.x.invalid/{tag}/binlib-macos-arm64.tar.xz", "https://dl.x.invalid/binlib-{version}-win.zip")
+        self.assertRefused("pin the same URL", toml_text=same)
+        self.assertRefused("no [[upstream.archive]]", toml_text=PREBUILT_TOML.replace("[release.archives]", '[release.archives]\nlinux-riscv64 = "' + H1 + '"'))
+
+    def test_a_prebuilt_release_has_none_of_a_source_releases_fields(self):
+        add = lambda line: PREBUILT_TOML.replace(f'license_sha256 = "{LIC_A}"', f'license_sha256 = "{LIC_A}"\n{line}')  # noqa: E731
+        self.assertRefused("exactly one of", toml_text=add(f'sha256 = "{H1}"'))
+        self.assertRefused("exactly one of", toml_text=add(f'rev = "{"a" * 40}"'))
+        self.assertRefused("`url` belongs to a source release", toml_text=add('url = "https://dl.x.invalid/other-{version}.zip"'))
+        self.assertRefused("`strip_prefix` belongs to a source release", toml_text=add('strip_prefix = "x"'))
+        self.assertRefused("[upstream] url is a source tarball's", toml_text=PREBUILT_TOML.replace(
+            "watch = false", 'watch = false\nurl = "https://dl.x.invalid/src-{version}.tar.gz"'))
+        # A package with [[upstream.archive]] cannot also have a source release.
+        mixed = PREBUILT_TOML.replace("[test]", f'[[release]]\nversion = "1.1.0"\nsha256 = "{H1}"\n\n[test]')
+        self.assertRefused("every release pins `archives`", toml_text=mixed)
+
+    def test_nothing_is_compiled_for_it(self):
+        self.assertRefused("[test] objects must be 0", toml_text=PREBUILT_TOML.replace("objects = 0", "objects = 1"))
+        compiled = PREBUILT_MANIFEST + '\n[targets.glue]\nkind = "staticlib"\nsources = ["glue.c"]\n'
+        self.assertRefused("nothing may be compiled for the package", manifest=compiled)
+        # The license digest is required exactly as for a source release.
+        self.assertRefused("license_sha256", toml_text=PREBUILT_TOML.replace(f'license_sha256 = "{LIC_A}"\n', ""))
+
+    def test_the_registrys_own_prebuilt_packages_are_gated(self):
+        for name in rt.package_names():
+            pkg = rt.load_package(name)
+            if any(r.archives is not None for r in pkg.releases):
+                self.assertTrue(pkg.review.get("prebuilt"), name)
+                self.assertEqual(pkg.test.get("objects"), 0, name)
+                self.assertIsNotNone(watch.not_watchable(pkg), name)
+
+
+class PrebuiltOnACopy(unittest.TestCase):
+    """render --check against a copy of this checkout holding a prebuilt package."""
+
+    py, edit = OnACopy.py, OnACopy.edit
+
+    def setUp(self):
+        OnACopy.setUp(self)
+        make_prebuilt(self.root)
+        r = self.py("render.py", "binlib")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        run(GIT + ["add", "-A"], self.root)
+        run(GIT + ["commit", "-q", "-m", "binlib"], self.root)
+
+    def test_rendering_it_changes_no_other_package(self):
+        d = run(["git", "show", "--stat", "--format=", "HEAD", "--", "index/"], self.root).stdout
+        self.assertEqual(sorted(l.split("|")[0].strip() for l in d.splitlines() if "|" in l),
+                         ["index/b/binlib.idx", "index/b/binlib/1.2.0.patch", "index/b/binlib/1.2.0.toml"])
+        self.assertEqual(self.py("lint.py").returncode, 0, self.py("lint.py").stdout)
+        r = self.py("render.py", "--check", "--base", "HEAD")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rec = json.loads((self.root / "index/b/binlib.idx").read_text())
+        self.assertEqual((rec["format_version"], rec["checksum"][:16]), (2, "archives-sha256:"))
+
+    def test_a_published_archive_pin_is_immutable(self):
+        self.edit("packages/binlib/package.toml", lambda s: s.replace(H2, "44" * 32))
+        r = self.py("render.py", "--check")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("index/b/binlib/1.2.0.toml", r.stdout)
+        self.assertEqual(self.py("render.py", "binlib").returncode, 0)
+        r = self.py("render.py", "--check", "--base", "HEAD")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("published at HEAD but would change", r.stdout)
+
+    def test_a_new_release_appends_and_the_old_ones_pins_are_checked(self):
+        self.edit("packages/binlib/Harbour.toml", lambda s: s.replace('version = "1.2.0"', 'version = "1.3.0"', 1))
+        self.edit("packages/binlib/package.toml", lambda s: s.replace(
+            '[[release]]\nversion = "1.2.0"',
+            f'[[release]]\nversion = "1.3.0"\nlicense_sha256 = "{LIC_A}"\n[release.archives]\nlinux-x86_64 = "{"aa" * 32}"\n'
+            f'macos-aarch64 = "{"bb" * 32}"\nwindows-x86_64 = "{"cc" * 32}"\n\n[[release]]\nversion = "1.2.0"'))
+        r = self.py("render.py", "binlib")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        d = run(["git", "diff", "--exit-code", "--name-only", "--", "index/b/binlib/1.2.0.patch", "index/b/binlib/1.2.0.toml"], self.root)
+        self.assertEqual(d.returncode, 0, d.stdout)
+        recs = [json.loads(l) for l in (self.root / "index/b/binlib.idx").read_text().splitlines()]
+        self.assertEqual([(r["version"], r["format_version"]) for r in recs], [("1.2.0", 2), ("1.3.0", 2)])
+        self.assertIn("binlib-1.3.0-win.zip", (self.root / "index/b/binlib/1.3.0.toml").read_text())
+        self.assertEqual(self.py("render.py", "--check", "--base", "HEAD").returncode, 0)
+        # The older release is frozen, and package.toml must still say what was published for it.
+        self.edit("packages/binlib/package.toml", lambda s: s.replace(H3, "55" * 32))
+        r = self.py("render.py", "--check")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("binlib 1.2.0: package.toml pins the archives", r.stdout)
+
+
+class PrebuiltGuard(unittest.TestCase):
+    """guard: a bot may not pin, re-pin or repoint a prebuilt binary."""
+
+    def setUp(self):
+        self.g = Guard("test_identifying_bots")
+        self.g.setUp()
+        self.addCleanup(self.g.doCleanups)
+        g = self.g
+        g.write("packages/binlib/package.toml", PREBUILT_TOML)
+        g.write("packages/binlib/Harbour.toml", PREBUILT_MANIFEST)
+        g.write("index/b/binlib/1.2.0.toml", "shim\n")
+        g.commit("a human adds a prebuilt package")
+        g.base = g.rev()
+
+    def refused(self, text, needle):
+        g = self.g
+        run(["git", "checkout", "-q", g.base, "--", "."], g.root)
+        g.write("packages/binlib/package.toml", text)
+        g.commit(needle)
+        bad = g.verdict()
+        self.assertTrue(any(needle in b for b in bad), bad)
+
+    def test_an_existing_releases_archive_hashes_are_frozen(self):
+        self.refused(PREBUILT_TOML.replace(H2, "44" * 32), "release 1.2.0 `archives` changed")
+        self.refused(PREBUILT_TOML.replace(f'windows-x86_64 = "{H3}"\n', ""), "release 1.2.0 `archives` changed")
+
+    def test_a_bot_cannot_add_a_prebuilt_release(self):
+        new = PREBUILT_TOML.replace(
+            '[[release]]\nversion = "1.2.0"',
+            f'[[release]]\nversion = "1.3.0"\nlicense_sha256 = "{LIC_A}"\n[release.archives]\nlinux-x86_64 = "{"aa" * 32}"\n\n'
+            '[[release]]\nversion = "1.2.0"')
+        self.refused(new, "release 1.3.0 `archives` added")
+
+    def test_archive_urls_are_upstream_and_upstream_is_a_humans(self):
+        self.refused(PREBUILT_TOML.replace("https://dl.x.invalid/binlib-{version}-win.zip", "https://evil.invalid/binlib-{version}-win.zip"),
+                     "[upstream] archive changed")
+        self.refused(PREBUILT_TOML.replace('strip_prefix = "binlib"\n', ""), "[upstream] archive changed")
+        self.refused(PREBUILT_TOML.replace("cannot be built from source in a manifest", "trust me"), "[review] changed")
+
+    def test_a_source_package_cannot_become_prebuilt_by_a_bot(self):
+        g = self.g
+        base = (g.root / "packages/foo/package.toml").read_text()
+        g.write("packages/foo/package.toml", base.replace('version = "1.0.0"\n', f'version = "1.0.0"\narchives = {{ linux-x86_64 = "{H1}" }}\n'))
+        g.commit("x")
+        self.assertTrue(any("release 1.0.0 `archives` added" in b for b in g.verdict()), g.verdict())
+
+    def test_a_bot_may_still_touch_what_it_always_could(self):
+        g = self.g
+        g.write("packages/binlib/package.toml", PREBUILT_TOML.replace('description = "d"', 'description = "better"'))
+        g.commit("description")
+        self.assertEqual(g.verdict(), [])
+
+
+class PrebuiltWatch(unittest.TestCase):
+    """watch: never bumps a prebuilt package; computes and verifies its license digest."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def archive(self, files, sha=None):
+        data = make_archive(files, kind="zip")
+        path = self.root / f"a{len(list(self.root.glob('a*')))}.zip"
+        path.write_bytes(data)
+        entries = watch.list_archive(path)
+        return lambda prefix: watch.ArchiveInfo(sha or hashlib.sha256(data).hexdigest(), len(data), entries,
+                                                {} if watch.check_strip_prefix(entries, prefix) else watch.license_texts_of(path, prefix))
+
+    def test_it_is_not_watchable_with_or_without_the_opt_out(self):
+        pkg = make_prebuilt(self.root)
+        self.assertIn("watch = false", watch.not_watchable(pkg))
+        pkg = make_prebuilt(self.root, PREBUILT_TOML.replace("watch = false\n", ""))
+        self.assertIn("prebuilt package", watch.not_watchable(pkg))
+        self.assertEqual(watch.kind_of(pkg), "archives")
+        found = watch.scan(["binlib"], ls_remote=lambda url: ls(("v1.2.0", sha(1)), ("v1.3.0", sha(2))),
+                           packages_dir=self.root / "packages")
+        self.assertEqual((found[0].status, found[0].target), ("not-watchable", None))
+        with self.assertRaises(watch.WatchError) as cm:
+            watch.bump("binlib", root=self.root, ls_remote=lambda url: ls(("v1.3.0", sha(2))), run_checks=False)
+        self.assertIn("prebuilt package", str(cm.exception))
+
+    def test_the_license_digest_covers_every_platforms_archive(self):
+        pkg = make_prebuilt(self.root)
+        served = {
+            "https://dl.x.invalid/binlib-1.2.0%2Bcpu-linux.zip": self.archive({"binlib/LICENSE": MIT, "binlib/lib/libbin.so": b"elf"}, H1),
+            "https://dl.x.invalid/v1.2.0/binlib-macos-arm64.tar.xz": self.archive({"LICENSE": MIT, "NOTICE": b"n", "lib/libbin.dylib": b"m"}, H2),
+            "https://dl.x.invalid/binlib-1.2.0-win.zip": self.archive({"binlib-1.2.0/lib/bin.dll": b"pe"}, H3),
+        }
+        asked = []
+
+        def fetch(url, *, strip_prefix=None):
+            asked.append((url, strip_prefix))
+            return served[url](strip_prefix)
+
+        info = watch.release_license(pkg, pkg.newest, fetch=fetch)
+        self.assertEqual([u for u, _ in asked], list(served))        # all three, each with its own prefix
+        self.assertEqual([p for _, p in asked], ["binlib", None, "binlib-1.2.0"])
+        self.assertEqual([f for f, _ in info.files], ["linux-x86_64/LICENSE", "macos-aarch64/LICENSE"])
+        self.assertEqual(info.digest, watch.license_info({"linux-x86_64/LICENSE": MIT, "macos-aarch64/LICENSE": MIT}).digest)
+        # A license file appearing in one platform's archive changes the digest.
+        served["https://dl.x.invalid/binlib-1.2.0-win.zip"] = self.archive({"binlib-1.2.0/LICENSE.txt": b"EULA"}, H3)
+        self.assertNotEqual(watch.release_license(pkg, pkg.newest, fetch=fetch).digest, info.digest)
+
+    def test_every_archive_must_hash_to_its_pin_and_match_its_prefix(self):
+        pkg = make_prebuilt(self.root)
+        good = {"binlib/LICENSE": MIT}
+
+        def fetch_with(win_sha, win_files):
+            served = {"linux": self.archive(good, H1), "macos": self.archive({"LICENSE": MIT}, H2), "win": self.archive(win_files, win_sha)}
+            return lambda url, *, strip_prefix=None: served[next(k for k in served if k in url)](strip_prefix)
+
+        with self.assertRaises(watch.WatchError) as cm:
+            watch.release_license(pkg, pkg.newest, fetch=fetch_with("99" * 32, {"binlib-1.2.0/x": b"x"}))
+        self.assertIn("windows-x86_64 archive", str(cm.exception))
+        self.assertIn("not the pinned " + H3, str(cm.exception))
+        with self.assertRaises(watch.WatchError) as cm:
+            watch.release_license(pkg, pkg.newest, fetch=fetch_with(H3, {"other/x": b"x"}))
+        self.assertIn("strip_prefix `binlib-1.2.0` does not match", str(cm.exception))
+
+    def test_an_empty_digest_is_the_digest_of_no_files(self):
+        pkg = make_prebuilt(self.root)
+        info = watch.release_license(pkg, pkg.newest, fetch=lambda url, *, strip_prefix=None: watch.ArchiveInfo(
+            {"linux": H1, "macos": H2, "win": H3}[next(k for k in ("linux", "macos", "win") if k in url)], 1,
+            [f"{strip_prefix}/lib/x"] if strip_prefix else ["lib/x"], {}))
+        self.assertEqual((info.files, info.digest), ([], hashlib.sha256(b"").hexdigest()))
+
+    def test_a_changed_archive_pin_is_re_verified(self):
+        pkg = make_prebuilt(self.root)
+        base = PREBUILT_TOML.encode()
+        self.assertEqual(watch.releases_to_verify(pkg, base), [])
+        self.assertEqual([r.version for r in watch.releases_to_verify(pkg, None)], ["1.2.0"])
+        self.assertEqual([r.version for r in watch.releases_to_verify(pkg, PREBUILT_TOML.replace(H2, "44" * 32).encode())], ["1.2.0"])
+
+    def test_license_sha256_is_written_into_the_releases_own_table(self):
+        text = PREBUILT_TOML.replace(f'license_sha256 = "{LIC_A}"\n', "")
+        new = watch.set_release_field(text, "1.2.0", "license_sha256", LIC_B, replace=True)
+        want = rt.tomllib.loads(text)
+        want["release"][0]["license_sha256"] = LIC_B
+        self.assertEqual(rt.tomllib.loads(new), want)           # not inside [release.archives]
+        self.assertEqual(new.replace(f'license_sha256 = "{LIC_B}"\n', ""), text)
+        again = watch.set_release_field(new, "1.2.0", "license_sha256", LIC_A, replace=True)
+        self.assertEqual(again, PREBUILT_TOML)
+
+
+class PrebuiltTest(unittest.TestCase):
+    """tools/test.py: which archive is this machine's, and the evidence that it is the one fetched."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.pkg = make_prebuilt(Path(self.tmp.name))
+        self.archives = rt.release_archives(self.pkg, self.pkg.newest)
+        self.linux, self.macos, self.windows = self.archives
+        self.sum = "archives-sha256:" + "ab" * 32
+
+    def out(self, *archives):
+        return "".join(f" INFO Downloading binlib 1.2.0 for some-triple (12.3 MB) from {a.url}\n" for a in archives)
+
+    def test_this_platforms_archive_is_selected(self):
+        self.assertEqual(runner.platform_archive(self.pkg, "macos", "aarch64").url,
+                         "https://dl.x.invalid/v1.2.0/binlib-macos-arm64.tar.xz")
+        self.assertIsNone(runner.platform_archive(rt.load_package("zlib"), "linux", "x86_64"))
+        self.assertEqual(runner.expected_objects(self.pkg, "linux", "x86_64"), 0)
+
+    def test_no_archive_for_this_machine_is_a_failure_not_a_skip(self):
+        with self.assertRaises(runner.Failure) as cm:
+            runner.platform_archive(self.pkg, "linux", "aarch64")
+        self.assertIn("no archive for linux-aarch64", str(cm.exception))
+
+    def test_the_right_archive_pinned_by_the_index_checksum_passes(self):
+        self.assertEqual(runner.prebuilt_problems(self.archives, self.linux, self.out(self.linux), self.sum, self.sum, True), [])
+        # A warm cache downloads nothing, which is fine where the cache is not this run's own.
+        self.assertEqual(runner.prebuilt_problems(self.archives, self.linux, "", self.sum, self.sum, False), [])
+
+    def test_another_platforms_archive_is_a_failure(self):
+        bad = runner.prebuilt_problems(self.archives, self.linux, self.out(self.linux, self.windows), self.sum, self.sum, True)
+        self.assertEqual(len(bad), 1)
+        self.assertIn("fetched the windows-x86_64 archive", bad[0])
+        bad = runner.prebuilt_problems(self.archives, self.macos, self.out(self.linux), self.sum, self.sum, True)
+        self.assertEqual(len(bad), 2)        # the wrong one was fetched, and the right one never was
+
+    def test_nothing_downloaded_into_an_empty_cache_is_a_failure(self):
+        bad = runner.prebuilt_problems(self.archives, self.linux, "Finished\n", self.sum, self.sum, True)
+        self.assertIn("never names this platform's archive", bad[0])
+
+    def test_the_lock_must_carry_the_archives_checksum(self):
+        for lock, index, needle in ((None, self.sum, "Harbour.lock pins checksum `None`"),
+                                    ("archives-sha256:" + "cd" * 32, self.sum, "but the index records"),
+                                    (H1, H1, "not an `archives-sha256:` one"),
+                                    (self.sum, None, "not an `archives-sha256:` one")):
+            with self.subTest(needle):
+                bad = runner.prebuilt_problems(self.archives, self.linux, self.out(self.linux), lock, index, True)
+                self.assertTrue(any(needle in b for b in bad), bad)
+
+
+
 class Env(unittest.TestCase):
     def test_python_is_new_enough(self):
         self.assertGreaterEqual(sys.version_info[:2], (3, 11))

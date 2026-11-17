@@ -1,0 +1,31 @@
+[package]
+name = "libtorch"
+version = "2.15.0"
+
+[[source.archive]]
+os = "linux"
+arch = "x86_64"
+url = "https://download.pytorch.org/libtorch/cpu/libtorch-shared-with-deps-2.15.0%2Bcpu.zip"
+sha256 = "f26d7550019005bac238fec4ae316b220b006cfcca29b40d7313c50f26875f60"
+strip_prefix = "libtorch"
+
+[[source.archive]]
+os = "macos"
+arch = "aarch64"
+url = "https://download.pytorch.org/libtorch/cpu/libtorch-macos-arm64-2.15.0.zip"
+sha256 = "9fb883c4defb251733a068c6776bc9937e5a20543ed9d5d9c88a395c287a6b70"
+strip_prefix = "libtorch"
+
+[[source.archive]]
+os = "windows"
+arch = "x86_64"
+url = "https://download.pytorch.org/libtorch/cpu/libtorch-win-shared-with-deps-2.15.0%2Bcpu.zip"
+sha256 = "390bdedd984c71c6b8120a99f7179269f8c17c4d53a3b00c76c73915eba5412f"
+strip_prefix = "libtorch"
+
+[metadata]
+license = "BSD-3-Clause"
+
+[[patches]]
+file = "2.15.0.patch"
+sha256 = "01b7be492985107fe62937e9468b4fe91bf9d8ada5d9597567e57dfa546e2141"

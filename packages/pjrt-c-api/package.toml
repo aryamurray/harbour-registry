@@ -1,0 +1,34 @@
+[package]
+name = "pjrt-c-api"
+description = "PJRT C API of OpenXLA: the C interface between ML frameworks and XLA devices and plugins (headers only)"
+license = "Apache-2.0"
+homepage = "https://openxla.org/xla/pjrt"
+
+[upstream]
+git = "https://github.com/openxla/xla.git"
+# openxla/xla has no release tags and no release assets (`git ls-remote --tags` is empty), only `main`.
+# The release is pinned by commit, and its version is the API version the header itself declares:
+# `PJRT_API_MAJOR` / `PJRT_API_MINOR` in xla/pjrt/c/pjrt_c_api.h, mapped as `<MAJOR>.<MINOR>.0`
+# (MAJOR is 0 and has been since the API began, so this reads 0.118.0 for "API 0.118"; if upstream ever
+# moves MAJOR to 1 the version becomes 1.<minor>.0, which still orders correctly). `upstream_version`
+# records upstream's own spelling "<MAJOR>.<MINOR>" ("0.118"), which is also what the test compares
+# with the macros. Upstream's own changelog is xla/pjrt/c/CHANGELOG.md ("## 0.118").
+# The watcher has no tags to follow, so it is opted out: a new revision is a human decision (see
+# README "Bump a version by hand"): pick a commit on `main`, set `rev`, read PJRT_API_MAJOR/MINOR from
+# its pjrt_c_api.h for `version` and `upstream_version`, re-run `watch.py license-digest --write`, and
+# check the public header list in Harbour.toml against xla/pjrt/c/ (new *_extension.h files, and
+# whether callback/collectives/megascale are still C++-only).
+watch = false
+
+[[release]]
+version = "0.118.0"
+upstream_version = "0.118"
+# Commit 45c7aaa on main, committed 2026-11-15T19:49:41-08:00 ("[IFRT IR] Support input donation on
+# `ifrt.Assemble` and `ifrt.Disassemble`"). pjrt_c_api.h at this commit: PJRT_API_MAJOR 0, PJRT_API_MINOR 118.
+rev = "45c7aaa287a6ae052dbd5a2230befecfe301bce7"
+license_sha256 = "1483c42c6b86ba587170fe14b641ca1cf9a0608c887900086706c8280149f2dd"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 0
+verify = true
