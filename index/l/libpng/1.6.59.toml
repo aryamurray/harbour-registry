@@ -1,0 +1,15 @@
+[package]
+name = "libpng"
+version = "1.6.59"
+
+[source.git]
+url = "https://github.com/pnggroup/libpng.git"
+rev = "cd952f49f95bb27154ae77dbb103032d95f6e580"
+
+[metadata]
+license = "libpng-2.0"
+upstream_url = "https://github.com/pnggroup/libpng.git"
+
+[[patches]]
+file = "1.6.59.patch"
+sha256 = "c407e1f5bef7261704339dea1bb9c776dc3baf385eda62dae35a73e09d6d52af"

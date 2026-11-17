@@ -25,7 +25,7 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [jsoncpp](packages/jsoncpp) | 1.9.8 | `MIT` | linux, macos, windows | C++ library for reading, writing and manipulating JSON |
 | [libdeflate](packages/libdeflate) | 1.26.0 | `MIT` | linux, macos, windows | Fast whole-buffer DEFLATE, zlib and gzip compression and decompression |
 | [libjpeg-turbo](packages/libjpeg-turbo) | 3.2.1 | `IJG AND BSD-3-Clause AND Zlib` | linux, macos, windows | JPEG image codec: the libjpeg and TurboJPEG APIs, built without SIMD |
-| [libpng](packages/libpng) | 1.6.50 | `libpng-2.0` | linux, macos, windows | Reference implementation of the PNG image format |
+| [libpng](packages/libpng) | 1.6.59 | `libpng-2.0` | linux, macos, windows | Reference implementation of the PNG image format |
 | [libtorch](packages/libtorch) | 2.15.0 | `BSD-3-Clause` | linux, macos, windows | PyTorch's C++ library (LibTorch), CPU build: upstream's official prebuilt binaries, not built from source |
 | [libuv](packages/libuv) | 1.53.0 | `MIT` | linux, macos, windows | Cross-platform asynchronous I/O |
 | [libwebp](packages/libwebp) | 1.6.0 | `BSD-3-Clause` | linux, macos, windows | WebP image codec: encoder, decoder, sharp YUV conversion, demux and mux libraries |

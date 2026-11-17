@@ -1,6 +1,6 @@
 [package]
 name = "libpng"
-version = "1.6.50"
+version = "1.6.59"
 license = "libpng-2.0"
 
 [dependencies]
