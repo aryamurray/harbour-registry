@@ -7,7 +7,7 @@
     repair.py --package NAME --candidate-dir DIR --out-dir DIR --verify-only
 
 Run by the `repair` job of .github/workflows/watch.yml when the repository variable
-REGISTRY_REPAIR_ENABLED is `true` and the triage job granted an attempt.
+REGISTRY_REPAIR_ENABLED is not `false` and the triage job granted an attempt.
 
 CONFIGURATION, by environment only (this script reads no other environment variable):
     REPAIR_API_BASE          base URL of an OpenAI-compatible API, e.g. https://api.example.com/v1 ; the
@@ -279,10 +279,10 @@ def load_config(environ: Mapping[str, str]) -> Config:
         raise NotConfigured(
             "not configured: set " + ", ".join(missing) + ". REPAIR_API_BASE is the base URL of an "
             "OpenAI-compatible API (the script POSTs to {base}/chat/completions), REPAIR_API_KEY its key, "
-            "REPAIR_MODEL the model name. In the workflow: the secret REPAIR_API_KEY and the variables "
-            "REPAIR_API_BASE and REPAIR_MODEL (README, \"Keeping packages current\"). Set the variable "
-            "REGISTRY_REPAIR_ENABLED to anything but `true` to stop invoking the repair step; a failed bump "
-            "then goes to `needs-human` instead.")
+            "REPAIR_MODEL the model name. In the workflow they are mapped from the `Openrouter` environment's "
+            "secret OPENROUTER_KEY and variable OPENROUTER_BASE, and the model is declared in the repair job "
+            "(README, \"Keeping packages current\"). Set the repository variable REGISTRY_REPAIR_ENABLED to "
+            "`false` to stop invoking the repair step; a failed bump then goes to `needs-human` instead.")
     check_api_base(env["REPAIR_API_BASE"])
     if re.search(r"\s", env["REPAIR_API_KEY"]) or re.search(r"\s", env["REPAIR_MODEL"]):
         raise RepairError("REPAIR_API_KEY and REPAIR_MODEL must not contain whitespace")

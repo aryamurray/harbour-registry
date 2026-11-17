@@ -488,6 +488,8 @@ class Workflow(unittest.TestCase):
         # The endpoint comes from the same environment; the model is declared in the workflow.
         self.assertEqual(with_key[0]["env"]["REPAIR_API_BASE"], "${{ vars.OPENROUTER_BASE }}")
         self.assertEqual(with_key[0]["env"]["REPAIR_MODEL"], "openrouter/free")
+        # Repair is on unless the repository variable says otherwise: the default is in the workflow.
+        self.assertIn("ENABLED: ${{ vars.REGISTRY_REPAIR_ENABLED || 'true' }}", text)
         names = [s.get("name", "") for s in steps]
         push = next(s for s in steps if "REGISTRY_BOT_TOKEN" in json.dumps(s.get("env", {})))
         self.assertGreater(names.index(push["name"]), names.index(with_key[0]["name"]))

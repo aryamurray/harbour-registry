@@ -606,7 +606,7 @@ What to create:
 | --- | --- |
 | secret `REGISTRY_BOT_TOKEN` | a fine-grained PAT (or GitHub App installation token) scoped to this repository only: Contents read+write, Pull requests read+write, Issues read+write (for labels). Only the push, label, PR, supersede (comment on, close and delete the branch of a bump PR that a newer one replaces) and auto-merge steps see it; keep that account **out of the branch-protection bypass list** |
 | variable `REGISTRY_AUTO_MERGE` | `true` to run `gh pr merge --auto --squash` on each bump PR, **except one whose upstream license files changed** (never requested for those). Default off. Needs "Allow auto-merge" in the repository settings and `PR result` required by branch protection; otherwise it is a warning and the PR waits for a human. **Nothing in the workflow merges anything itself.** Flip it once you trust the gate |
-| variable `REGISTRY_REPAIR_ENABLED` | `true` once the `Openrouter` environment below holds its key. A **repository** variable, not an environment one: the triage job reads it, and that job does not use the environment. Default off: a failed bump then goes straight to `needs-human` |
+| variable `REGISTRY_REPAIR_ENABLED` | optional **off switch**. Repair is on by default, declared in the triage job of `watch.yml`. Set this **repository** variable to `false` and a failed bump goes straight to `needs-human` |
 | variable `REGISTRY_REPAIR_ATTEMPTS` | repair attempts per bump PR, default `2` |
 | environment `Openrouter` | a GitHub environment (Settings > Environments). Only the `repair` job declares it, so what it holds can be read by that job and by nothing else in the repository. Do not add required reviewers (every repair would wait for approval); restricting it to the default branch is fine |
 | secret `OPENROUTER_KEY`, **in that environment** | the OpenRouter key, sent as `Authorization: Bearer <key>`. Only the one step that calls the model sees it |
@@ -699,9 +699,10 @@ vendor SDK is involved and nothing but the Python standard library is used.
    either accepts `omit` for providers that reject the field), `REPAIR_TIMEOUT` (seconds, default `300`),
    `REPAIR_MAX_PROMPT_CHARS` (default `150000`; lower it for a model with a small context window. A prompt is
    about a quarter as many tokens as characters; curl's is about 32,000 characters).
-4. Set `REGISTRY_REPAIR_ENABLED` to `true`.
+4. Nothing to switch on: repair runs by default. To stop it, set the repository variable
+   `REGISTRY_REPAIR_ENABLED` to `false`.
 
-With `REGISTRY_REPAIR_ENABLED=true` and the key or the base missing (or the environment misnamed, which GitHub creates empty), the repair job fails with "not configured: set ...",
+With the key or the base missing (or the environment misnamed, which GitHub creates empty), the repair job fails with "not configured: set ...",
 and the PR is handed to a human. To try a provider before enabling anything, export the three variables in a
 shell and run `tools/repair.py` on a directory laid out as above; `http://localhost` is accepted as a base for a
 local model server.
