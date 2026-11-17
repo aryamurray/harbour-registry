@@ -105,7 +105,8 @@ def make_checkout(root: Path, registry: Path = FIXTURE) -> Path:
     for tool in sorted(HERE.glob("*.py")):
         shutil.copy(tool, root / "tools" / tool.name)
     for item in ("packages", "index"):
-        shutil.copytree(registry / item, root / item)
+        if (registry / item).is_dir():           # git keeps no empty directory: a registry with no package has no index/
+            shutil.copytree(registry / item, root / item)
     shutil.copy(registry / "README.md", root / "README.md")
     for item in ("config.toml", ".gitattributes", ".gitignore"):      # of the repository, not of its packages
         shutil.copy(REPO / item, root / item)
