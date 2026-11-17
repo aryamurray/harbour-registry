@@ -13,7 +13,7 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [brotli](packages/brotli) | 1.2.1 | `MIT` | linux, macos, windows | Brotli compression: the common, decoder and encoder libraries as three targets |
 | [bzip2](packages/bzip2) | 1.0.8 | `bzip2-1.0.6` | linux, macos, windows | High-quality block-sorting file compressor: the libbz2 library |
 | [c-ares](packages/c-ares) | 1.34.9 | `MIT` | linux, macos, windows | Asynchronous DNS resolver library, configured by Harbour probes |
-| [cjson](packages/cjson) | 1.7.18 | `MIT` | linux, macos, windows | Ultralightweight JSON parser in ANSI C |
+| [cjson](packages/cjson) | 1.7.19 | `MIT` | linux, macos, windows | Ultralightweight JSON parser in ANSI C |
 | [cpython](packages/cpython) | 3.14.9 | `PSF-2.0` | linux, macos | The Python interpreter, built from its generated sources |
 | [crc32c](packages/crc32c) | 1.1.2 | `BSD-3-Clause` | linux, macos, windows | CRC32C implementation with support for CPU-specific acceleration instructions |
 | [curl](packages/curl) | 8.22.0 | `curl` | linux, macos, windows | Command-line tool and library for transferring data with URLs, configured by Harbour probes |
