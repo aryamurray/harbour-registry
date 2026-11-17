@@ -1,0 +1,1 @@
+{"format_version":1,"name":"fx-dep-a","version":"1.6.50","yanked":false,"deps":[{"name":"fx-tarball","version_req":"^1.3","optional":false,"default_features":true,"kind":"normal","registry":null}],"checksum":null,"license":"MIT","shim":"f/fx-dep-a/1.6.50.toml"}

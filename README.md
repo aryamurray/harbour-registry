@@ -313,7 +313,7 @@ All are Python 3.11+, standard library only, and run on Linux, macOS and Windows
 | `tools/watch.py supersede --package P --version V` | close the open bump PRs that the open bump PR for `V` replaces |
 | `tools/bump_triage.py` | what happens when the gate finishes on a bump PR (labels, one failure summary, repair budget) |
 | `tools/repair.py` | the repair step: asks a language model (any OpenAI-compatible endpoint, `REPAIR_*` settings) for a rewritten manifest and accepts only files inside its output contract. `--print-prompt` shows what would be sent without sending it |
-| `python3 -m unittest discover -s tools -p "test_*.py"` | tests of the tools (the patch renderer against real `git diff`, the guard against real git history, lint and render against mutated copies of this checkout) |
+| `python3 -m unittest discover -s tools -p "test_*.py"` | tests of the tools (the patch renderer against real `git diff`, the guard against real git history, lint, render and the watcher against mutated copies of the fixture registry in `tools/testdata/registry/`: synthetic `fx-*` packages, so that no change to a real package can fail the tools' self-test) |
 
 ### Rendering is byte-exact
 

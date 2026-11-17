@@ -1,0 +1,19 @@
+# Fixture: depends on fx-dep-a, and optionally on fx-tarball. Its upstream is not on GitHub, and
+# its manifest supports Linux and macOS only.
+[package]
+name = "fx-dep-b"
+description = "Fixture: depends on fx-dep-a and (optionally) fx-tarball; Linux and macOS only"
+license = "FTL OR GPL-2.0-or-later"
+
+[upstream]
+git = "https://git.fx-upstream.invalid/fx-dep-b.git"
+tag = "VER-{major}-{minor}-{patch}"
+
+[[release]]
+version = "2.14.3"
+rev = "7202054a6f224b2f47b58ba043b560a0ab975d3a"
+license_sha256 = "81c33aad988b665762cd50c02df39eac6c49253de645e0da869e04b8bfa73611"
+
+[test]
+platforms = ["linux", "macos"]
+objects = 4

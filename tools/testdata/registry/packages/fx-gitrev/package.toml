@@ -1,0 +1,18 @@
+# Fixture: a package pinned by git commit, with no dependencies and no dependents.
+[package]
+name = "fx-gitrev"
+description = "Fixture: pinned by git rev, tag is the bare version"
+license = "MIT"
+
+[upstream]
+git = "https://github.com/fx-upstream/fx-gitrev.git"
+tag = "{version}"
+
+[[release]]
+version = "15.0.0"
+rev = "4a1d9f75934f82c553e3ddd66c8f9067db5f2704"
+license_sha256 = "a0507c9fda0e7f6efdd6b7ca45b07227dbd26cc330d3d8cf65796c739663b425"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 1

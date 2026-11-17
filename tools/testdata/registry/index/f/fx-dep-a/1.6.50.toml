@@ -1,0 +1,15 @@
+[package]
+name = "fx-dep-a"
+version = "1.6.50"
+
+[source.git]
+url = "https://github.com/fx-upstream/fx-dep-a.git"
+rev = "52a0711b9ecf324b4ea03d5fcb38a0b2f4147308"
+
+[metadata]
+license = "MIT"
+upstream_url = "https://github.com/fx-upstream/fx-dep-a.git"
+
+[[patches]]
+file = "1.6.50.patch"
+sha256 = "a6b07d861fea65647fb6848fef6fca1abee64c9bafdc33acee9c2df65583d74a"

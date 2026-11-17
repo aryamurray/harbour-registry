@@ -1,0 +1,19 @@
+# Fixture: depends on fx-dep-b only, so it reaches fx-tarball through two other packages.
+[package]
+name = "fx-dep-c"
+description = "Fixture: depends on fx-dep-b (the end of the dependency chain); tarball not on GitHub"
+license = "MIT"
+
+[upstream]
+git = "https://git.fx-upstream.invalid/fx-dep-c.git"
+tag = "v{version}"
+url = "https://dl.fx-upstream.invalid/fx-dep-c/fx-dep-c-{version}.tar.xz"
+
+[[release]]
+version = "0.4.0"
+sha256 = "e31a151899257510abfa94515c6b0875960146ccb6980e7d4de09d5c7e8b1e58"
+license_sha256 = "706a1715445e1c57c7d2688f545687f059b1525811cad78c46e35c6b4774b127"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = 1
