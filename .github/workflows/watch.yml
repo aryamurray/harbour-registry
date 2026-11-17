@@ -544,7 +544,9 @@ jobs:
           REPAIR_API_KEY: ${{ secrets.OPENROUTER_KEY }}
           REPAIR_MODEL: openai/gpt-oss-20b
           REPAIR_TEMPERATURE: ${{ vars.REPAIR_TEMPERATURE }}
-          REPAIR_MAX_TOKENS: ${{ vars.REPAIR_MAX_TOKENS }}
+          # A reasoning model spends reply tokens on thinking first: at 8192 gpt-oss-20b used the whole
+          # budget three rounds running and returned no text at all.
+          REPAIR_MAX_TOKENS: ${{ vars.REPAIR_MAX_TOKENS || '32768' }}
           REPAIR_TIMEOUT: ${{ vars.REPAIR_TIMEOUT }}
           REPAIR_MAX_PROMPT_CHARS: ${{ vars.REPAIR_MAX_PROMPT_CHARS }}
           REPAIR_TOTAL_TIMEOUT: ${{ vars.REPAIR_TOTAL_TIMEOUT }}
