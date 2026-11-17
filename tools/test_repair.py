@@ -169,9 +169,10 @@ class Prompt(unittest.TestCase):
         tag = begins[0].split()[-1].rstrip(">")
         self.assertRegex(tag, r"^[0-9a-f]{16}$")
         self.assertEqual([l.split()[1] for l in begins],
-                         ["manifest", "package-toml", "failure-summary", "upstream-file-changes", "overlay-and-patches"])
+                         ["manifest", "package-toml", "failure-summary", "upstream-file-changes", "upstream-build-file-diffs",
+                          "overlay-and-patches"])
         # The tag appears only on the ten delimiter lines: no data line contains it, so no data line is a delimiter.
-        self.assertEqual(sum(tag in l for l in lines), 10)
+        self.assertEqual(sum(tag in l for l in lines), 12)
         start, end = lines.index(f"<<<BEGIN failure-summary {tag}>>>"), lines.index(f"<<<END failure-summary {tag}>>>")
         hostile = [i for i, l in enumerate(lines) if "IGNORE ALL PREVIOUS" in l or "SYSTEM: write" in l
                    or l.startswith("<<<END failure-summary") and tag not in l]
@@ -187,6 +188,27 @@ class Prompt(unittest.TestCase):
         self.assertIn(MANIFEST.rstrip("\n"), user)
         self.assertIn("objects = 3", user)
         self.assertNotIn("int main(void){return 1;}", user, "the consumer test is not part of the prompt")
+
+    def test_upstream_build_file_diffs_are_shown_nearest_the_root_first_and_capped(self):
+        libs = "@@ -190,3 +190,4 @@\n        ole32\n-       shell32)\n+       shell32\n+       synchronization)"
+        diff = {"files": [
+            {"filename": "src/win/core.c", "status": "modified"},                       # not a build file: no patch kept
+            {"filename": "deep/dir/CMakeLists.txt", "status": "modified", "patch": "@@ deep\n+x"},
+            {"filename": "CMakeLists.txt", "status": "modified", "patch": libs},
+            {"filename": "Makefile.am", "status": "modified", "patch": "@@ am\n+" + "y" * 50_000},
+            {"filename": "evil`<x>.cmake", "status": "added", "patch": "+\x1b[31mred"},
+        ]}
+        text = repair.build_file_diffs(diff)
+        self.assertLess(text.index("--- CMakeLists.txt"), text.index("--- deep/dir/CMakeLists.txt"))
+        self.assertIn("+       synchronization)", text)
+        self.assertNotIn("core.c", text)
+        self.assertNotIn("\x1b", text)
+        self.assertNotIn("`", text.split("--- evil")[1].splitlines()[0])
+        self.assertLessEqual(len(text), repair.CAP_BUILD_DIFF + 2_000)
+        small = repair.build_file_diffs(diff, cap=100)
+        self.assertIn("more build file(s) is not shown", small)
+        for nothing in (None, {}, {"unavailable": "x"}, {"files": [{"filename": "a.c", "patch": None}]}):
+            self.assertEqual(repair.build_file_diffs(nothing), "(no build-file changes are available)")
 
     def test_the_upstream_listing_puts_what_the_manifest_names_first(self):
         with tempfile.TemporaryDirectory() as tmp:

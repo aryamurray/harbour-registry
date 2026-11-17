@@ -70,6 +70,10 @@ FAILED = ("failure", "timed_out")
 # REPORTED. The pauses are spent in full once per triage; if they did not help the first job, each
 # later job gets one short retry only, so the job stays well inside its timeout.
 LOG_RETRY_SLEEP = (5.0, 15.0, 30.0)
+# Upstream build files whose diff text is kept with the compare (a jq regex, matched on the path).
+BUILD_FILE = (r"(^|/)(CMakeLists\.txt|Makefile[^/]*|GNUmakefile|meson\.build|meson_options\.txt|meson\.options|"
+              r"configure\.ac|BUILD|BUILD\.bazel|SConstruct|[^/]*\.(cmake|am|mk|gyp|gypi))$")
+MAX_PATCH_CHARS = 20_000
 LOG_TIMEOUT = 60
 # Answers that waiting cannot change: asking again is pointless, and the summary says which it was.
 LOG_FINAL = {
@@ -366,7 +370,10 @@ def upstream_diff(run: Gh, pkg: rt.Package, version: str,
     try:
         q = lambda t: urllib.parse.quote(t, safe="")  # noqa: E731
         out = run("api", f"repos/{slug}/compare/{q(old_tag)}...{q(new_tag)}", "--jq",
-                  "{html_url, total_commits, files: [.files[]? | {filename, status, additions, deletions, previous_filename}]}",
+                  "{html_url, total_commits, files: [.files[]? | {filename, status, additions, deletions, previous_filename}"
+                  # The diff text of upstream's own build files only: that is where a new system library,
+                  # define or source list shows up, and it is what the repair step most needs to see.
+                  f" + (if (.filename | test({json.dumps(BUILD_FILE)})) and .patch then {{patch: .patch[0:{MAX_PATCH_CHARS}]}} else {{}} end)]}}",
                   timeout=90)
         return json.loads(out), ""
     except (TriageError, subprocess.TimeoutExpired, json.JSONDecodeError) as e:
