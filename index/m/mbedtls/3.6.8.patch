@@ -1,0 +1,230 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..1e931fa
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,224 @@
++# Mbed TLS 3.6.7 (the 3.6 LTS line), as upstream ships it: three libraries, here three targets.
++#
++# Which line, and why. 4.x moved the cryptography into the TF-PSA-Crypto submodule and generates
++# part of its source tree at configure time; its release asset is only a .tar.bz2, which Harbour
++# cannot unpack (tar.gz only), and a git checkout lacks both submodules. 3.6 is the long-term
++# support line, and its git tree is self-contained for the library: unlike 2.x/3.0-3.5 the files
++# the scripts generate (library/error.c, version_features.c, ssl_debug_helpers_generated.c,
++# psa_crypto_driver_wrappers_no_static.c and psa_crypto_driver_wrappers.h) are committed, so a
++# plain `rev` pin builds with no generator. (The `framework` submodule is only the test framework.)
++#
++# Source lists are `src_crypto`, `src_x509` and `src_tls` of library/CMakeLists.txt, verbatim
++# (81 + 9 + 18 files). The chain is upstream's too: mbedx509 links mbedcrypto, mbedtls links
++# mbedx509, here as `local = true` edges so that selecting one target links the ones below it.
++# The default target is the full TLS library, which brings the other two.
++#
++# Not compiled: 3rdparty/everest and 3rdparty/p256-m. Upstream's CMake builds them into
++# libeverest/libp256m and links them into mbedcrypto, but their code sits behind
++# MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED and MBEDTLS_PSA_P256M_DRIVER_ENABLED, both off in the default
++# mbedtls_config.h that this package uses unmodified, so every one of their translation units is empty.
++#
++# Config: the default include/mbedtls/mbedtls_config.h; no MBEDTLS_CONFIG_FILE. Threading is off
++# by default, so no pthread. library/ is private only (psa_crypto_driver_wrappers.h and the
++# internal headers live there); `include/` carries both mbedtls/ and psa/ for consumers.
++#
++# Windows: library/CMakeLists.txt does `if(WIN32) set(libs ${libs} ws2_32 bcrypt)` on all three
++# libraries, PUBLIC (entropy_poll.c uses BCryptGenRandom, net_sockets.c winsock). The top-level
++# CMakeLists.txt adds `/W3 /utf-8` for MSVC; only /utf-8 changes what is compiled, so only it is
++# carried over.
++[package]
++name = "mbedtls"
++version = "3.6.8"
++description = "Mbed TLS (3.6 LTS): the crypto, X.509 and TLS libraries as three targets"
++license = "Apache-2.0 OR GPL-2.0-or-later"
++homepage = "https://www.trustedfirmware.org/projects/mbed-tls/"
++requires = "hosted"
++default_target = "mbedtls"
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
++
++# ---- libmbedcrypto ------------------------------------------------------------------------------
++[targets.mbedcrypto]
++kind = "staticlib"
++lang = "c"
++sources = [
++  "library/aes.c",
++  "library/aesni.c",
++  "library/aesce.c",
++  "library/aria.c",
++  "library/asn1parse.c",
++  "library/asn1write.c",
++  "library/base64.c",
++  "library/bignum.c",
++  "library/bignum_core.c",
++  "library/bignum_mod.c",
++  "library/bignum_mod_raw.c",
++  "library/block_cipher.c",
++  "library/camellia.c",
++  "library/ccm.c",
++  "library/chacha20.c",
++  "library/chachapoly.c",
++  "library/cipher.c",
++  "library/cipher_wrap.c",
++  "library/constant_time.c",
++  "library/cmac.c",
++  "library/ctr_drbg.c",
++  "library/des.c",
++  "library/dhm.c",
++  "library/ecdh.c",
++  "library/ecdsa.c",
++  "library/ecjpake.c",
++  "library/ecp.c",
++  "library/ecp_curves.c",
++  "library/entropy.c",
++  "library/entropy_poll.c",
++  "library/error.c",
++  "library/gcm.c",
++  "library/hkdf.c",
++  "library/hmac_drbg.c",
++  "library/lmots.c",
++  "library/lms.c",
++  "library/md.c",
++  "library/md5.c",
++  "library/memory_buffer_alloc.c",
++  "library/nist_kw.c",
++  "library/oid.c",
++  "library/padlock.c",
++  "library/pem.c",
++  "library/pk.c",
++  "library/pk_ecc.c",
++  "library/pk_wrap.c",
++  "library/pkcs12.c",
++  "library/pkcs5.c",
++  "library/pkparse.c",
++  "library/pkwrite.c",
++  "library/platform.c",
++  "library/platform_util.c",
++  "library/poly1305.c",
++  "library/psa_crypto.c",
++  "library/psa_crypto_aead.c",
++  "library/psa_crypto_cipher.c",
++  "library/psa_crypto_client.c",
++  "library/psa_crypto_driver_wrappers_no_static.c",
++  "library/psa_crypto_ecp.c",
++  "library/psa_crypto_ffdh.c",
++  "library/psa_crypto_hash.c",
++  "library/psa_crypto_mac.c",
++  "library/psa_crypto_pake.c",
++  "library/psa_crypto_rsa.c",
++  "library/psa_crypto_random.c",
++  "library/psa_crypto_se.c",
++  "library/psa_crypto_slot_management.c",
++  "library/psa_crypto_storage.c",
++  "library/psa_its_file.c",
++  "library/psa_util.c",
++  "library/ripemd160.c",
++  "library/rsa.c",
++  "library/rsa_alt_helpers.c",
++  "library/sha1.c",
++  "library/sha256.c",
++  "library/sha512.c",
++  "library/sha3.c",
++  "library/threading.c",
++  "library/timing.c",
++  "library/version.c",
++  "library/version_features.c",
++]
++public_headers = ["include/mbedtls/*.h", "include/psa/*.h"]
++
++[targets.mbedcrypto.public]
++include_dirs = ["include"]
++
++[targets.mbedcrypto.private]
++include_dirs = ["library"]
++
++# ---- libmbedx509 -----------------------------------------------------------------------------
++[targets.mbedx509]
++kind = "staticlib"
++lang = "c"
++sources = [
++  "library/pkcs7.c",
++  "library/x509.c",
++  "library/x509_create.c",
++  "library/x509_crl.c",
++  "library/x509_crt.c",
++  "library/x509_csr.c",
++  "library/x509write.c",
++  "library/x509write_crt.c",
++  "library/x509write_csr.c",
++]
++public_headers = ["include/mbedtls/x509*.h", "include/mbedtls/pkcs7.h"]
++
++[targets.mbedx509.public]
++include_dirs = ["include"]
++
++[targets.mbedx509.private]
++include_dirs = ["library"]
++
++[targets.mbedx509.deps]
++mbedcrypto = { local = true }
++
++# ---- libmbedtls -------------------------------------------------------------------------------
++[targets.mbedtls]
++kind = "staticlib"
++lang = "c"
++sources = [
++  "library/debug.c",
++  "library/mps_reader.c",
++  "library/mps_trace.c",
++  "library/net_sockets.c",
++  "library/ssl_cache.c",
++  "library/ssl_ciphersuites.c",
++  "library/ssl_client.c",
++  "library/ssl_cookie.c",
++  "library/ssl_debug_helpers_generated.c",
++  "library/ssl_msg.c",
++  "library/ssl_ticket.c",
++  "library/ssl_tls.c",
++  "library/ssl_tls12_client.c",
++  "library/ssl_tls12_server.c",
++  "library/ssl_tls13_keys.c",
++  "library/ssl_tls13_server.c",
++  "library/ssl_tls13_client.c",
++  "library/ssl_tls13_generic.c",
++]
++public_headers = [
++  "include/mbedtls/ssl*.h",
++  "include/mbedtls/debug.h",
++  "include/mbedtls/net_sockets.h",
++]
++
++[targets.mbedtls.public]
++include_dirs = ["include"]
++
++[targets.mbedtls.private]
++include_dirs = ["library"]
++
++[targets.mbedtls.deps]
++mbedx509 = { local = true }
++
++[[targets.mbedcrypto.when]]
++compiler = "msvc"
++cflags = ["/utf-8"]
++
++[[targets.mbedcrypto.surface.when]]
++os = "windows"
++[targets.mbedcrypto.surface.when."link.public"]
++libs = ["ws2_32", "bcrypt"]
++
++[[targets.mbedx509.when]]
++compiler = "msvc"
++cflags = ["/utf-8"]
++
++[[targets.mbedx509.surface.when]]
++os = "windows"
++[targets.mbedx509.surface.when."link.public"]
++libs = ["ws2_32", "bcrypt"]
++
++[[targets.mbedtls.when]]
++compiler = "msvc"
++cflags = ["/utf-8"]
++
++[[targets.mbedtls.surface.when]]
++os = "windows"
++[targets.mbedtls.surface.when."link.public"]
++libs = ["ws2_32", "bcrypt"]
