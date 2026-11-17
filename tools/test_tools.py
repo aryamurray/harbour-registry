@@ -1357,7 +1357,7 @@ class Triage(unittest.TestCase):
             if "/actions/runs/42/jobs" in path:
                 return "\n".join(json.dumps(j) for j in jobs) + "\n"
             if "/actions/jobs/" in path:
-                self.assertEqual(a, ("api", path), "the documented endpoint, nothing else on the command line")
+                self.assertEqual(a, ("api", "--allow-escape-sequences", path), "the documented endpoint, and colours allowed")
                 job = int(re.fullmatch(r"repos/o/r/actions/jobs/(\d+)/logs", path).group(1))
                 asked.append((job, timeout))
                 script = answers[job]
@@ -1431,6 +1431,19 @@ class Triage(unittest.TestCase):
             self.assertEqual(bump_triage.job_log(gh, "o/r", 1, sleep=slept.append), (self.LOG, True), err)
             self.assertEqual(slept, [bump_triage.LOG_RETRY_SLEEP[0]])
         self.assertEqual(bump_triage.log_failure(E("gh api x failed: gh: Unprocessable (HTTP 422)")), ("HTTP 422 (Unprocessable (HTTP 422))", False))
+
+    def test_a_gh_without_the_escape_flag_is_asked_again_without_it(self):
+        seen = []
+
+        def gh(*a, input=None, timeout=120):
+            seen.append(a)
+            if "--allow-escape-sequences" in a:
+                raise bump_triage.TriageError("gh api failed: unknown flag: --allow-escape-sequences")
+            return self.LOG
+
+        slept = []
+        self.assertEqual(bump_triage.job_log(gh, "o/r", 1, sleep=slept.append), (self.LOG, True))
+        self.assertEqual((slept, len(seen), seen[-1]), ([], 2, ("api", "repos/o/r/actions/jobs/1/logs")))
 
     def test_the_reason_is_untrusted_text_like_the_log_it_replaces(self):
         hostile = bump_triage.TriageError("gh api x failed: gh: ```\n## injected <b>|` (HTTP 404)\n" + "x" * 5000)
