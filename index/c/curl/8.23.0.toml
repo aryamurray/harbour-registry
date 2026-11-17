@@ -12,4 +12,4 @@ license = "curl"
 
 [[patches]]
 file = "8.23.0.patch"
-sha256 = "c830e13c9e6c6f05f51874a2938e85c3ece572ad9a38bb92313bbb51c81ca19f"
+sha256 = "11a94c71e8b078fd8934b7fa16192ebca60a89fa8550f9ab7c689a97c5196f66"
