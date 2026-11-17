@@ -968,9 +968,16 @@ def chat(cfg: Config, messages: list[dict], sleep: Callable[[float], None] = tim
             content = choice["message"]["content"]
             if isinstance(content, list):       # some servers return typed parts
                 content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+            finish = str(choice.get("finish_reason") or "")
+            if content is None:
+                # A completion with no text: a reasoning model that spent its whole token budget
+                # thinking answers `content: null`. That is an empty reply, not a broken endpoint, so
+                # it goes back to the model like any other reply that cannot be used. The first real
+                # repair ended here after twenty minutes, without a second round.
+                return "", finish or "no-content"
             if not isinstance(content, str):
                 raise TypeError("message.content is not text")
-            return content, str(choice.get("finish_reason") or "")
+            return content, finish
         except (ValueError, KeyError, IndexError, TypeError, AttributeError) as e:
             err = doc.get("error") if isinstance(doc, dict) else None
             raise EndpointError("the response is not a chat completion: " + hide(err or e)) from None
@@ -1011,6 +1018,10 @@ def propose(inp: Inputs, cfg: Config, call: Callable[[Config, list[dict]], tuple
             return materialise(inp, p), ""
         except ReplyError as e:
             problems = list(e.problems)
+            if not reply.strip():
+                problems.insert(0, "the reply contained no text at all" +
+                                   (f" (finish_reason: {finish})" if finish else "") +
+                                   ": answer with the blocks only, and keep any reasoning short")
             if finish == "length":
                 problems.insert(0, "the reply was cut off at the token limit: use EDIT blocks with small "
                                    "SEARCH/REPLACE hunks instead of rewriting whole files")

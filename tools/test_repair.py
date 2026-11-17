@@ -542,6 +542,16 @@ class TimeLimits(unittest.TestCase):
                 repair.chat(cfg, [], sleep=lambda s: None)
         self.assertEqual(ep.requests, 0)
 
+    def test_a_completion_with_no_text_is_an_empty_reply_not_a_broken_endpoint(self):
+        # What a reasoning model returns when its token budget went on thinking.
+        null = {"choices": [{"index": 0, "message": {"role": "assistant", "content": None},
+                             "finish_reason": "length"}]}
+        with FakeEndpoint([null]) as ep:
+            text, finish = repair.chat(repair.Config(base=ep.base, key="k", model="m"), [])
+        self.assertEqual((text, finish), ("", "length"))
+        with self.assertRaises(repair.ReplyError):
+            repair.parse_reply("")                       # so the round is refused and the model is asked again
+
     def test_the_total_timeout_is_configurable_and_bounded(self):
         base = {"REPAIR_API_BASE": "https://api.example.com/v1", "REPAIR_API_KEY": "k", "REPAIR_MODEL": "m"}
         self.assertEqual(repair.load_config(base).total_timeout, 900.0)
