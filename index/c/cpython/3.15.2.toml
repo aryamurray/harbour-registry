@@ -12,4 +12,4 @@ license = "PSF-2.0"
 
 [[patches]]
 file = "3.15.2.patch"
-sha256 = "f82b464c2bd3460fbbe016d37affbcaf13c6d5fba2154c50ba396ddd85de1b5d"
+sha256 = "487a67c519e8ee16306f53137b01e50a1e75b77de2f3631b4a1c8d46f8d244d2"

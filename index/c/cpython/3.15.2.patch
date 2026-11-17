@@ -1171,10 +1171,10 @@ index 0000000..70ef6b2
 +"$HARBOUR_TOOL_FREEZE_MODULE" zipimport ./Lib/zipimport.py Python/frozen_modules/zipimport.h
 diff --git a/harbour/freeze2.sh b/harbour/freeze2.sh
 new file mode 100644
-index 0000000..1942c2d
+index 0000000..21d7e59
 --- /dev/null
 +++ b/harbour/freeze2.sh
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,32 @@
 +#!/bin/sh
 +# Stage 2: freeze the rest, using _bootstrap_python.
 +#
@@ -1205,6 +1205,7 @@ index 0000000..1942c2d
 +./_bootstrap_python ./Programs/_freeze_module.py __phello__.ham ./Lib/__phello__/ham/__init__.py Python/frozen_modules/__phello__.ham.h
 +./_bootstrap_python ./Programs/_freeze_module.py __phello__.ham.eggs ./Lib/__phello__/ham/eggs.py Python/frozen_modules/__phello__.ham.eggs.h
 +./_bootstrap_python ./Programs/_freeze_module.py __phello__.spam ./Lib/__phello__/spam.py Python/frozen_modules/__phello__.spam.h
++./_bootstrap_python ./Programs/_freeze_module.py linecache ./Lib/linecache.py Python/frozen_modules/linecache.h
 +./_bootstrap_python ./Programs/_freeze_module.py frozen_only ./Tools/freeze/flag.py Python/frozen_modules/frozen_only.h
 diff --git a/harbour/pyconfig.sh b/harbour/pyconfig.sh
 new file mode 100644
