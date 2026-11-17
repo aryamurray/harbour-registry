@@ -30,16 +30,17 @@ name: Watch
 #   variable  REGISTRY_REPAIR_ENABLED   `true` once the `openrouter` environment below has its key. Default off:
 #                                  a failed bump then goes straight to `needs-human`.
 #   variable  REGISTRY_REPAIR_ATTEMPTS  repair attempts per bump PR before `needs-human`. Default 2.
-#   environment `openrouter`       a GitHub environment (Settings > Environments) holding the one
-#                                  secret below. Only the `repair` job declares it, so only that job can
-#                                  read the key. Do not give it required reviewers (every repair would
+#   environment `openrouter`       a GitHub environment (Settings > Environments) holding the two
+#                                  settings below. Only the `repair` job declares it, so only that job can
+#                                  read them. Do not give it required reviewers (every repair would
 #                                  wait for approval); restricting it to the default branch is fine, the
 #                                  job always runs from there.
-#   secret    OPENROUTER_API_KEY   in that environment: the OpenRouter key. Only the `Propose a repaired
+#   secret    OPENROUTER_KEY       in that environment: the OpenRouter key. Only the `Propose a repaired
 #                                  manifest` step sees it, as REPAIR_API_KEY.
-#   (declared in the repair job)   the endpoint, https://openrouter.ai/api/v1, and the model,
-#                                  openrouter/free. To use another OpenAI-compatible provider or model,
-#                                  change them there, in a reviewed change to this file.
+#   variable  OPENROUTER_BASE      in that environment: the API base, https://openrouter.ai/api/v1
+#                                  (the URL up to and including the version segment; https only).
+#   (declared in the repair job)   the model, openrouter/free. Changing it is a reviewed change to
+#                                  this file.
 #   variable  REPAIR_TEMPERATURE, REPAIR_MAX_TOKENS, REPAIR_TIMEOUT, REPAIR_MAX_PROMPT_CHARS
 #                                  optional tuning; defaults and meaning in tools/repair.py's docstring.
 #   labels    bot, bump, needs-repair, needs-human, license-changed, keep (and repair-attempt-N):
@@ -529,12 +530,13 @@ jobs:
       - name: Propose a repaired manifest
         if: steps.fetch.outputs.go == 'true'
         env:
-          # Where the model is and which one it is are declared here, in a reviewed file, not in
-          # settings: changing the model that rewrites manifests is a change to this workflow.
-          # `openrouter/free` is OpenRouter's router over whichever free models it currently serves.
-          REPAIR_API_BASE: https://openrouter.ai/api/v1
+          # The key and the endpoint come from the `openrouter` environment. The model is declared
+          # here, in a reviewed file: changing the model that rewrites manifests is a change to this
+          # workflow. `openrouter/free` is OpenRouter's router over whichever free models it
+          # currently serves.
+          REPAIR_API_BASE: ${{ vars.OPENROUTER_BASE }}
+          REPAIR_API_KEY: ${{ secrets.OPENROUTER_KEY }}
           REPAIR_MODEL: openrouter/free
-          REPAIR_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           REPAIR_TEMPERATURE: ${{ vars.REPAIR_TEMPERATURE }}
           REPAIR_MAX_TOKENS: ${{ vars.REPAIR_MAX_TOKENS }}
           REPAIR_TIMEOUT: ${{ vars.REPAIR_TIMEOUT }}

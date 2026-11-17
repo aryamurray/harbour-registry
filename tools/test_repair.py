@@ -483,10 +483,10 @@ class Workflow(unittest.TestCase):
         # The key comes from a GitHub environment only this job declares, and is named once.
         jobs = yaml.safe_load(text)["jobs"]
         self.assertEqual([n for n, j in jobs.items() if "environment" in j], ["repair"])
-        self.assertEqual(text.count("secrets.OPENROUTER_API_KEY"), 1)
+        self.assertEqual(text.count("secrets.OPENROUTER_KEY"), 1)
         self.assertNotIn("secrets.REPAIR_API_KEY", text)
-        # The endpoint and the model are declared in the workflow, not read from settings.
-        self.assertEqual(with_key[0]["env"]["REPAIR_API_BASE"], "https://openrouter.ai/api/v1")
+        # The endpoint comes from the same environment; the model is declared in the workflow.
+        self.assertEqual(with_key[0]["env"]["REPAIR_API_BASE"], "${{ vars.OPENROUTER_BASE }}")
         self.assertEqual(with_key[0]["env"]["REPAIR_MODEL"], "openrouter/free")
         names = [s.get("name", "") for s in steps]
         push = next(s for s in steps if "REGISTRY_BOT_TOKEN" in json.dumps(s.get("env", {})))
