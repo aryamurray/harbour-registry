@@ -39,7 +39,7 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [pjrt-c-api](packages/pjrt-c-api) | 0.118.0 | `Apache-2.0` | linux, macos, windows | PJRT C API of OpenXLA: the C interface between ML frameworks and XLA devices and plugins (headers only) |
 | [protobuf](packages/protobuf) | 36.2.0 | `BSD-3-Clause AND MIT` | linux, macos | Protocol Buffers C++ runtime (lite and full libraries); no protoc |
 | [pugixml](packages/pugixml) | 1.16.0 | `MIT` | linux, macos, windows | Light-weight, fast C++ XML parser with a DOM-like interface and XPath 1.0 |
-| [redis](packages/redis) | 7.2.16 | `BSD-3-Clause` | linux, macos | In-memory data structure store |
+| [redis](packages/redis) | 7.2.17 | `BSD-3-Clause` | linux, macos | In-memory data structure store |
 | [snappy](packages/snappy) | 1.2.1 | `BSD-3-Clause` | linux, macos, windows | A fast compressor/decompressor |
 | [spdlog](packages/spdlog) | 1.17.0 | `MIT` | linux, macos | Fast C++ logging library, built in compiled mode against the registry's fmt |
 | [tinyxml2](packages/tinyxml2) | 11.0.0 | `Zlib` | linux, macos, windows | Simple, small, efficient C++ XML parser (DOM-style) |
