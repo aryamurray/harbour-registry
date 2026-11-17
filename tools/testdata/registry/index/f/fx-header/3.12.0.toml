@@ -1,0 +1,15 @@
+[package]
+name = "fx-header"
+version = "3.12.0"
+
+[source.git]
+url = "https://github.com/fx-upstream/fx-header"
+rev = "30085ec9946877c27a4e675980a702cddf93cd78"
+
+[metadata]
+license = "BSL-1.0"
+upstream_url = "https://github.com/fx-upstream/fx-header"
+
+[[patches]]
+file = "3.12.0.patch"
+sha256 = "a9e75808ae1ea4480b3bbe6dca46d00464e0f6b8b25615630d21b5dee51003dc"

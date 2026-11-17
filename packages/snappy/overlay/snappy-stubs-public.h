@@ -26,7 +26,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // NOTE (Harbour canary overlay): this is snappy-stubs-public.h.in as cmake
-// instantiates it for snappy 1.2.1 on a target that has <sys/uio.h> (macOS and
+// instantiates it for snappy 1.3.1 on a target that has <sys/uio.h> (macOS and
 // Linux). The three `${...}` substitutions are replaced and nothing else is
 // changed. Windows has no <sys/uio.h>, where upstream's configure answers
 // HAVE_SYS_UIO_H as 0, so both conditionals are keyed on _WIN32 here.
@@ -48,7 +48,7 @@
 #endif  // HAVE_SYS_UIO_H
 
 #define SNAPPY_MAJOR 1
-#define SNAPPY_MINOR 2
+#define SNAPPY_MINOR 3
 #define SNAPPY_PATCHLEVEL 1
 #define SNAPPY_VERSION \
     ((SNAPPY_MAJOR << 16) | (SNAPPY_MINOR << 8) | SNAPPY_PATCHLEVEL)

@@ -1,0 +1,29 @@
+# Fixture: two published releases (only the newest is rendered; the older one's files are frozen),
+# an upstream spelling that is not semver, and a translation-unit count that differs per platform.
+[package]
+name = "fx-multi"
+description = "Fixture: two releases, upstream_version, per-platform objects"
+license = "BSD-3-Clause"
+
+[upstream]
+git = "https://github.com/fx-upstream/fx-multi"
+tag = "release-{version}"
+url = "https://github.com/fx-upstream/fx-multi/archive/refs/tags/{tag}.tar.gz"
+strip_prefix = "fx-multi-{tag}"
+max_bump = "minor"
+
+[[release]]
+version = "2.10.0"
+upstream_version = "2.10"
+sha256 = "961a79b9423e4e20c84ed85e5ed53ca82750c0666cba2f4572aeaf42ac674ccf"
+license_sha256 = "cb7b13e6846af3b1759b8d0df04d221fd59992736eaa7c702d7d509bd17c2437"
+
+[[release]]
+version = "2.9.0"
+upstream_version = "2.9"
+sha256 = "ce8e92c6d647a470650cf60e7438308791e7bb654a6a0e69f1e149a1a1b49758"
+license_sha256 = "cb7b13e6846af3b1759b8d0df04d221fd59992736eaa7c702d7d509bd17c2437"
+
+[test]
+platforms = ["linux", "macos", "windows"]
+objects = { default = 3, windows = 4 }

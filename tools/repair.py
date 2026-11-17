@@ -7,7 +7,7 @@
     repair.py --package NAME --candidate-dir DIR --out-dir DIR --verify-only
 
 Run by the `repair` job of .github/workflows/watch.yml when the repository variable
-REGISTRY_REPAIR_ENABLED is `true` and the triage job granted an attempt.
+REGISTRY_REPAIR_ENABLED is not `false` and the triage job granted an attempt.
 
 CONFIGURATION, by environment only (this script reads no other environment variable):
     REPAIR_API_BASE          base URL of an OpenAI-compatible API, e.g. https://api.example.com/v1 ; the
@@ -17,7 +17,9 @@ CONFIGURATION, by environment only (this script reads no other environment varia
     REPAIR_MODEL             the model name the provider expects
     REPAIR_TEMPERATURE       optional, default 0 ; `omit` leaves the field out of the request
     REPAIR_MAX_TOKENS        optional, default 8192 (reply tokens) ; `omit` leaves the field out
-    REPAIR_TIMEOUT           optional, seconds per request, default 300
+    REPAIR_TIMEOUT           optional, seconds per request, default 300. Wall clock: a server that
+                             keeps the connection alive with filler bytes does not extend it
+    REPAIR_TOTAL_TIMEOUT     optional, seconds for the whole attempt (all rounds and retries), default 900
     REPAIR_MAX_PROMPT_CHARS  optional, default 150000 ; the prompt is trimmed (deterministically, and it
                              says where) to fit, never the manifest itself
 If any of the first three is missing the script exits 3, "not configured", naming what to set.
@@ -102,6 +104,7 @@ Standalone on purpose (standard library only, no import of the other tools): the
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import json
 import os
@@ -228,6 +231,8 @@ class Config:
     max_tokens: int | None = 8192
     timeout: float = 300.0
     max_prompt_chars: int = DEFAULT_MAX_PROMPT_CHARS
+    total_timeout: float = 900.0        # wall clock for the whole attempt: every round and retry
+    deadline: float | None = None       # time.monotonic() value set by propose(); None: no overall limit
 
     @property
     def endpoint(self) -> str:
@@ -279,10 +284,10 @@ def load_config(environ: Mapping[str, str]) -> Config:
         raise NotConfigured(
             "not configured: set " + ", ".join(missing) + ". REPAIR_API_BASE is the base URL of an "
             "OpenAI-compatible API (the script POSTs to {base}/chat/completions), REPAIR_API_KEY its key, "
-            "REPAIR_MODEL the model name. In the workflow: the secret REPAIR_API_KEY and the variables "
-            "REPAIR_API_BASE and REPAIR_MODEL (README, \"Keeping packages current\"). Set the variable "
-            "REGISTRY_REPAIR_ENABLED to anything but `true` to stop invoking the repair step; a failed bump "
-            "then goes to `needs-human` instead.")
+            "REPAIR_MODEL the model name. In the workflow they are mapped from the `Openrouter` environment's "
+            "secret OPENROUTER_KEY and variable OPENROUTER_BASE, and the model is declared in the repair job "
+            "(README, \"Keeping packages current\"). Set the repository variable REGISTRY_REPAIR_ENABLED to "
+            "`false` to stop invoking the repair step; a failed bump then goes to `needs-human` instead.")
     check_api_base(env["REPAIR_API_BASE"])
     if re.search(r"\s", env["REPAIR_API_KEY"]) or re.search(r"\s", env["REPAIR_MODEL"]):
         raise RepairError("REPAIR_API_KEY and REPAIR_MODEL must not contain whitespace")
@@ -291,7 +296,8 @@ def load_config(environ: Mapping[str, str]) -> Config:
         temperature=_number(env, "REPAIR_TEMPERATURE", 0.0, float, 0.0, 2.0, omit_ok=True),
         max_tokens=_number(env, "REPAIR_MAX_TOKENS", 8192, int, 256, 1_000_000, omit_ok=True),
         timeout=_number(env, "REPAIR_TIMEOUT", 300.0, float, 5.0, 1500.0),
-        max_prompt_chars=prompt_budget(env))
+        max_prompt_chars=prompt_budget(env),
+        total_timeout=_number(env, "REPAIR_TOTAL_TIMEOUT", 900.0, float, 10.0, 2400.0))
 
 
 # ---------------------------------------------------------------------------
@@ -921,12 +927,29 @@ def chat(cfg: Config, messages: list[dict], sleep: Callable[[float], None] = tim
     for attempt in range(HTTP_RETRIES + 1):
         if attempt:
             sleep(RETRY_SLEEP[min(attempt - 1, len(RETRY_SLEEP) - 1)])
+        now = time.monotonic()
+        if cfg.deadline is not None and now >= cfg.deadline:
+            raise EndpointError((last + "; " if last else "") +
+                                f"out of time: the attempt's {cfg.total_timeout:g} s (REPAIR_TOTAL_TIMEOUT) are spent")
+        # One request may take cfg.timeout seconds of WALL CLOCK, and never past the attempt's deadline.
+        # The socket timeout alone does not bound it: it restarts with every byte received, and a
+        # router that keeps a slow request alive with filler bytes held one request open for over
+        # twenty minutes that way.
+        stop = now + cfg.timeout if cfg.deadline is None else min(now + cfg.timeout, cfg.deadline)
         req = urllib.request.Request(cfg.endpoint, data=body, method="POST", headers={
             "Content-Type": "application/json", "Accept": "application/json",
             "Authorization": f"Bearer {cfg.key}", "User-Agent": "repair-step/1"})
         try:
-            with _opener().open(req, timeout=cfg.timeout) as r:
-                raw = r.read(MAX_RESPONSE_BYTES + 1)
+            with _opener().open(req, timeout=max(1.0, stop - now)) as r:
+                buf = bytearray()
+                while len(buf) <= MAX_RESPONSE_BYTES:
+                    chunk = r.read1(65536)
+                    if not chunk:
+                        break
+                    buf += chunk
+                    if time.monotonic() > stop:
+                        raise TimeoutError(f"no complete response within {stop - now:.0f} s")
+                raw = bytes(buf)
         except urllib.error.HTTPError as e:
             detail = e.read(2000).decode("utf-8", "replace") if e.fp else ""
             last = f"HTTP {e.code} from the model endpoint: {hide(detail)}"
@@ -945,9 +968,16 @@ def chat(cfg: Config, messages: list[dict], sleep: Callable[[float], None] = tim
             content = choice["message"]["content"]
             if isinstance(content, list):       # some servers return typed parts
                 content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+            finish = str(choice.get("finish_reason") or "")
+            if content is None:
+                # A completion with no text: a reasoning model that spent its whole token budget
+                # thinking answers `content: null`. That is an empty reply, not a broken endpoint, so
+                # it goes back to the model like any other reply that cannot be used. The first real
+                # repair ended here after twenty minutes, without a second round.
+                return "", finish or "no-content"
             if not isinstance(content, str):
                 raise TypeError("message.content is not text")
-            return content, str(choice.get("finish_reason") or "")
+            return content, finish
         except (ValueError, KeyError, IndexError, TypeError, AttributeError) as e:
             err = doc.get("error") if isinstance(doc, dict) else None
             raise EndpointError("the response is not a chat completion: " + hide(err or e)) from None
@@ -974,6 +1004,8 @@ def propose(inp: Inputs, cfg: Config, call: Callable[[Config, list[dict]], tuple
         transcript.update(package=inp.package, model=cfg.model, prompt_notes=notes,
                           system=system, user=user, rounds=[])
     problems: list[str] = []
+    if cfg.deadline is None:            # the whole attempt, every round and retry, shares one clock
+        cfg = dataclasses.replace(cfg, deadline=time.monotonic() + cfg.total_timeout)
     for n in range(1, MAX_ROUNDS + 1):
         reply, finish = call(cfg, messages)
         record = {"round": n, "finish_reason": finish, "reply": reply, "problems": []}
@@ -986,6 +1018,10 @@ def propose(inp: Inputs, cfg: Config, call: Callable[[Config, list[dict]], tuple
             return materialise(inp, p), ""
         except ReplyError as e:
             problems = list(e.problems)
+            if not reply.strip():
+                problems.insert(0, "the reply contained no text at all" +
+                                   (f" (finish_reason: {finish})" if finish else "") +
+                                   ": answer with the blocks only, and keep any reasoning short")
             if finish == "length":
                 problems.insert(0, "the reply was cut off at the token limit: use EDIT blocks with small "
                                    "SEARCH/REPLACE hunks instead of rewriting whole files")

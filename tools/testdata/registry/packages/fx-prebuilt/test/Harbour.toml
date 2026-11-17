@@ -1,0 +1,10 @@
+[package]
+name = "fx-prebuilt-test"
+version = "0.1.0"
+
+[dependencies]
+fx-prebuilt = "*"
+
+[targets.fx-prebuilt-test]
+kind = "exe"
+sources = ["src/**/*.c"]

@@ -1,0 +1,18 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..e717603
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,12 @@
++[package]
++name = "fx-nowatch"
++version = "2.1.1700000000"
++license = "MIT"
++
++[targets.nowatch]
++kind = "staticlib"
++lang = "c"
++sources = ["src/*.c"]
++
++[targets.nowatch.surface.compile.public]
++include_dirs = ["include"]

@@ -1,0 +1,10 @@
+[package]
+name = "fx-dep-a-test"
+version = "0.1.0"
+
+[dependencies]
+fx-dep-a = "*"
+
+[targets.fx-dep-a-test]
+kind = "exe"
+sources = ["src/**/*.c"]

@@ -1,0 +1,23 @@
+[package]
+name = "fx-prebuilt"
+version = "2.12.1"
+
+[[source.archive]]
+os = "linux"
+arch = "x86_64"
+url = "https://dl.fx-upstream.invalid/fx-prebuilt-2.12.1-linux-x86_64.zip"
+sha256 = "b8aeb139fdc9ee583e47655d29618a5c07858053b78bdc67a5c6d120c00d44ed"
+strip_prefix = "fx-prebuilt"
+
+[[source.archive]]
+os = "macos"
+arch = "aarch64"
+url = "https://dl.fx-upstream.invalid/v2.12.1/fx-prebuilt-macos-arm64.tar.xz"
+sha256 = "81f9924310226d4ffdbdfebd0a4ad767a3b555d7d3bfcce8f9d73fed95d3872c"
+
+[metadata]
+license = "BSD-3-Clause"
+
+[[patches]]
+file = "2.12.1.patch"
+sha256 = "0bd117ec22cffd4f63b1ea32342378e29a51578f79f57cc875b0ce4d0b0a3643"

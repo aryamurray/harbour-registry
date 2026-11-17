@@ -1,0 +1,15 @@
+[package]
+name = "crc32c"
+version = "1.1.2"
+
+[source.git]
+url = "https://github.com/google/crc32c"
+rev = "02e65f4fd3065d27b2e29324800ca6d04df16126"
+
+[metadata]
+license = "BSD-3-Clause"
+upstream_url = "https://github.com/google/crc32c"
+
+[[patches]]
+file = "1.1.2.patch"
+sha256 = "c3ce87642241c86593058414635ec52289501537061ba77d62bcc1e11ab47d5b"

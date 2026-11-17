@@ -1,0 +1,10 @@
+[package]
+name = "fx-gitrev-test"
+version = "0.1.0"
+
+[dependencies]
+fx-gitrev = "*"
+
+[targets.fx-gitrev-test]
+kind = "exe"
+sources = ["src/**/*.c"]

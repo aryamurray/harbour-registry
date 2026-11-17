@@ -1,0 +1,15 @@
+[package]
+name = "fx-dep-b"
+version = "2.14.3"
+
+[source.git]
+url = "https://git.fx-upstream.invalid/fx-dep-b.git"
+rev = "7202054a6f224b2f47b58ba043b560a0ab975d3a"
+
+[metadata]
+license = "FTL OR GPL-2.0-or-later"
+upstream_url = "https://git.fx-upstream.invalid/fx-dep-b.git"
+
+[[patches]]
+file = "2.14.3.patch"
+sha256 = "ecc6099eeb030237698e300a5ee526dca609105348e7b4bbdc8ad01fbae3c295"
