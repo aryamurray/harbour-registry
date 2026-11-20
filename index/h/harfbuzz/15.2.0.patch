@@ -1,0 +1,61 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..2c17a42
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,55 @@
++[package]
++name = "harfbuzz"
++version = "15.2.0"
++license = "MIT"
++
++[dependencies]
++freetype = { version = "^2.14", optional = true }
++
++[features]
++default = []
++
++# HarfBuzz ships a single-translation-unit build: `harfbuzz.cc` includes every
++# other source. The FreeType glue (`hb-ft.cc`) is part of it only when
++# HAVE_FREETYPE is defined.
++[targets.harfbuzz]
++kind = "staticlib"
++lang = "c++"
++sources = ["src/harfbuzz.cc"]
++
++[targets.harfbuzz.surface.compile.public]
++include_dirs = ["src"]
++
++[targets.harfbuzz.surface.compile.private]
++defines = ["HB_NO_PRAGMA_GCC_DIAGNOSTIC_ERROR"]
++
++# HarfBuzz calls libm (floor, ceil, round, fmod, hypotf). A consumer that is a
++# C program is linked with the C++ driver because this library is C++ (Harbour
++# picks the driver from what is statically linked in), but the driver supplying
++# libm is a habit of g++, not a guarantee: say so here. MSVC has no libm: the
++# math functions are in the CRT.
++[[targets.harfbuzz.surface.when]]
++os = "linux"
++[targets.harfbuzz.surface.when."link.public"]
++libs = ["m"]
++
++[[targets.harfbuzz.surface.when]]
++os = "macos"
++[targets.harfbuzz.surface.when."link.public"]
++libs = ["m"]
++
++# Windows (MSVC). What upstream's CMakeLists.txt adds under `if (MSVC)`: /wd4244 /wd4267,
++# /bigobj (the one-translation-unit build is the "number of sections exceeded object file
++# format limit" case its comment names), /utf-8, and _CRT_SECURE_NO_WARNINGS and
++# _CRT_NONSTDC_NO_WARNINGS. HAVE_PTHREAD is Unix only (`if (NOT MSVC)` there). The Windows-only
++# shapers and helpers are OFF upstream by default (HB_HAVE_UNISCRIBE, HB_HAVE_GDI,
++# HB_HAVE_DIRECTWRITE) and stay off here.
++[[targets.harfbuzz.when]]
++compiler = "msvc"
++defines = ["_CRT_SECURE_NO_WARNINGS", "_CRT_NONSTDC_NO_WARNINGS"]
++cflags = ["/wd4244", "/wd4267", "/bigobj", "/utf-8"]
++
++[[targets.harfbuzz.surface.when]]
++feature = "freetype"
++[targets.harfbuzz.surface.when."compile.public"]
++defines = ["HAVE_FREETYPE=1"]
