@@ -1,0 +1,15 @@
+[package]
+name = "expat"
+version = "2.11.0"
+
+[source.tarball]
+url = "https://github.com/libexpat/libexpat/releases/download/R_2_11_0/expat-2.11.0.tar.gz"
+sha256 = "b3e3fcbb629e4d357a9cc0af5b146b85959bcf1cefe87e529d2c0a9234be737f"
+strip_prefix = "expat-2.11.0"
+
+[metadata]
+license = "MIT"
+
+[[patches]]
+file = "2.11.0.patch"
+sha256 = "907fe848f0f80854d21400883de087227d70216fa3b26f95fb31b15be6ad549c"

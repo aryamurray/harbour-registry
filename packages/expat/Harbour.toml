@@ -24,7 +24,7 @@
 # XML_STATIC below keeps expat_external.h from marking the API dllimport.
 [package]
 name = "expat"
-version = "2.10.0"
+version = "2.11.0"
 description = "Stream-oriented XML parser library, configured by Harbour probes"
 license = "MIT"
 homepage = "https://libexpat.github.io"
