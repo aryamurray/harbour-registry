@@ -17,7 +17,7 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [cpython](packages/cpython) | 3.14.9 | `PSF-2.0` | linux, macos | The Python interpreter, built from its generated sources |
 | [crc32c](packages/crc32c) | 1.1.2 | `BSD-3-Clause` | linux, macos, windows | CRC32C implementation with support for CPU-specific acceleration instructions |
 | [curl](packages/curl) | 8.22.0 | `curl` | linux, macos, windows | Command-line tool and library for transferring data with URLs, configured by Harbour probes |
-| [expat](packages/expat) | 2.10.0 | `MIT` | linux, macos, windows | Stream-oriented XML parser library, configured by Harbour probes |
+| [expat](packages/expat) | 2.11.0 | `MIT` | linux, macos, windows | Stream-oriented XML parser library, configured by Harbour probes |
 | [fmt](packages/fmt) | 11.2.0 | `MIT` | linux, macos, windows | A modern formatting library |
 | [freetype](packages/freetype) | 2.14.3 | `FTL OR GPL-2.0-or-later` | linux, macos, windows | Font rasterisation library (TrueType, OpenType, Type 1, bitmap fonts) |
 | [googletest](packages/googletest) | 1.18.0 | `BSD-3-Clause` | linux, macos, windows | Google's C++ testing (gtest) and mocking (gmock) framework |

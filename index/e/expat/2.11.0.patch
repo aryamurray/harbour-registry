@@ -1,0 +1,98 @@
+diff --git a/Harbour.toml b/Harbour.toml
+new file mode 100644
+index 0000000..cee1fe7
+--- /dev/null
++++ b/Harbour.toml
+@@ -0,0 +1,92 @@
++# expat 2.10.0, with its configuration header written by Harbour (probes) instead of by
++# configure or CMake.
++#
++# The release tarball ships an `expat_config.h` at its root that is a leftover of the maintainers'
++# own `./configure` run (a Linux machine's answers). It is never used: the generated header's
++# directory is first on the private include path, and the package root is not on it at all.
++#
++# Source list, from upstream's CMakeLists.txt (`_EXPAT_C_SOURCES`): lib/xcs.c, lib/xmlparse.c,
++# lib/xmlrole.c, lib/xmltok.c. lib/xmltok_impl.c and lib/xmltok_ns.c are #included by xmltok.c
++# (CMake's comment: "ISO C forbids an empty translation unit") and are not compiled on their own.
++# CMake then adds one lib/random_*.c per entropy source it detects (HAVE_ARC4RANDOM,
++# HAVE_ARC4RANDOM_BUF, HAVE_GETENTROPY, HAVE_GETRANDOM or HAVE_SYSCALL_GETRANDOM, rand_s on
++# Windows; /dev/urandom only if EXPAT_DEV_URANDOM, off by default). Those files are not guarded
++# internally (random_arc4random.c calls arc4random() unconditionally), so which one is compiled
++# cannot follow a probe, and a `when` block cannot key on one. It is chosen per OS below instead,
++# and the probes verify that choice. xmlparse.c's generate_hash_secret_salt() uses the first of
++# arc4random_buf, arc4random, getentropy, getrandom that is defined, so one source per OS is
++# exactly what runs.
++#
++# Windows (MSVC): CMakeLists.txt adds lib/random_rand_s.c when WIN32 (xmlparse.c then takes its
++# entropy from rand_s(); the Unix probes below all answer no there, and xmlparse.c's "no entropy
++# source" #error is skipped under _WIN32), and `add_definitions(-D_CRT_SECURE_NO_WARNINGS -wd4996)`
++# for MSVC. lib/winconfig.h (windows.h) is upstream's own and is included by xmlparse.c under _WIN32.
++# XML_STATIC below keeps expat_external.h from marking the API dllimport.
++[package]
++name = "expat"
++version = "2.11.0"
++description = "Stream-oriented XML parser library, configured by Harbour probes"
++license = "MIT"
++homepage = "https://libexpat.github.io"
++requires = "hosted"
++supports = ["*-apple-darwin", "*-*-linux-gnu", "*-*-linux-musl", "*-pc-windows-msvc"]
++
++[targets.expat]
++kind = "staticlib"
++lang = "c"
++sources = [
++  "lib/xcs.c",
++  "lib/xmlparse.c",
++  "lib/xmlrole.c",
++  "lib/xmltok.c",
++]
++public_headers = ["lib/expat.h", "lib/expat_external.h"]
++
++# Consumers write `#include <expat.h>`. XML_STATIC is what CMake puts on a static library's
++# public surface (`target_compile_definitions(... PUBLIC -DXML_STATIC)`): it keeps expat_external.h
++# from marking the API dllimport on Windows, and is inert elsewhere.
++[targets.expat.public]
++include_dirs = ["lib"]
++defines = ["XML_STATIC"]
++
++# The configuration header. Literal defines are upstream's CMake defaults (CMakeLists.txt:
++# EXPAT_CONTEXT_BYTES 1024, EXPAT_DTD ON, EXPAT_GE ON, EXPAT_NS ON; XML_LARGE_SIZE, XML_UNICODE
++# and XML_DEV_URANDOM are off by default and are left undefined). The two probes are the
++# CMake ConfigureChecks.cmake questions for the Linux entropy source; every other HAVE_* in
++# expat_config.h.cmake (headers, mmap, getpagesize, string.h...) is read only by the test
++# programs and xmlwf, not by lib/.
++[targets.expat.probes]
++emit = { header = "expat_config.h" }
++defines = ["XML_CONTEXT_BYTES=1024", "XML_DTD=1", "XML_GE=1", "XML_NS=1"]
++
++[targets.expat.probes.named.HAVE_GETRANDOM]
++symbol = "getrandom"
++prelude = ["sys/random.h"]
++
++[targets.expat.probes.named.HAVE_SYSCALL_GETRANDOM]
++constant = "SYS_getrandom"
++prelude = ["sys/syscall.h"]
++
++# Linux (glibc >= 2.25 or musl): getrandom(), via random_getrandom.c, which reads the two probe
++# answers above. A glibc too old for either answers no to both and the build then stops at
++# xmlparse.c's "You do not have support for any sources of high quality entropy" #error, rather
++# than silently using a weak salt.
++[[targets.expat.when]]
++os = "linux"
++sources = ["lib/random_getrandom.c"]
++
++# macOS: arc4random_buf() (10.7+), declared in <stdlib.h>. Asserted, not probed: probing it would
++# also define it on glibc >= 2.36, where the matching source is not compiled.
++[[targets.expat.when]]
++os = "macos"
++sources = ["lib/random_arc4random_buf.c"]
++defines = ["HAVE_ARC4RANDOM_BUF=1"]
++
++# Windows (MSVC): rand_s(), upstream's source for it, and the CRT warning define CMake sets for MSVC.
++[[targets.expat.when]]
++os = "windows"
++sources = ["lib/random_rand_s.c"]
++
++[[targets.expat.when]]
++compiler = "msvc"
++defines = ["_CRT_SECURE_NO_WARNINGS"]
