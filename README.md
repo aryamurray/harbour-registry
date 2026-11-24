@@ -46,7 +46,7 @@ plain file in this repository, and the index Harbour reads is rendered from thos
 | [xxhash](packages/xxhash) | 0.8.4 | `BSD-2-Clause` | linux, macos, windows | Extremely fast non-cryptographic hash algorithm: XXH32, XXH64, XXH3 and XXH128 |
 | [yaml-cpp](packages/yaml-cpp) | 0.9.0 | `MIT` | linux, macos, windows | YAML 1.2 parser and emitter in C++ |
 | [zlib](packages/zlib) | 1.4.0 | `Zlib` | linux, macos, windows | General-purpose lossless compression library (deflate/inflate, gzip, crc32, adler32) |
-| [zstd](packages/zstd) | 1.5.7 | `BSD-3-Clause OR GPL-2.0-only` | linux, macos, windows | Zstandard, fast real-time compression |
+| [zstd](packages/zstd) | 1.6.0 | `BSD-3-Clause OR GPL-2.0-only` | linux, macos, windows | Zstandard, fast real-time compression |
 <!-- packages:end -->
 
 (The table is generated from `packages/`, and `tools/render.py --check` fails if it is stale.)
